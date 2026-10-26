@@ -707,3 +707,401 @@ fn pattern_repr_eval(iterable: list<u8>, width: i8) -> option<IntSet>
     unwrap(result).members == filter(x in range(0, 256): x in iterable) and
     unwrap(result).width == max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) and
     unwrap(result).kind == "Pattern"
+
+# ---------------------------------------------------------------------------
+# 3.1 Codecs
+#
+# For an integer codec name c, its width is
+#   (if "128" in c then 128 else if "64" in c then 64 else if "32" in c then 32 else if "16" in c then 16 else 8),
+# its universe size FULL is the matching power of two (0x100, 0x10000, ...), it is signed when
+# not ("u" in c), and a value v encodes as v % FULL.
+
+type IntCodec = "int8" | "int16" | "int32" | "int64" | "int128" | "uint8" | "uint16" | "uint32" | "uint64" | "uint128"
+type Signed = "int8" | "int16" | "int32" | "int64" | "int128"
+type CodecName = "int8" | "int16" | "int32" | "int64" | "int128" | "uint8" | "uint16" | "uint32" | "uint64" | "uint128"
+  | "float16" | "bfloat16" | "float32" | "float64" | "float8_e5m2" | "float8_e4m3fn" | "char" | "ipv4" | "ipv6"
+  | "mac" | "dates" | "datetimes" | "naive_datetimes" | "uuid128"
+type Other = "set" | "frozenset" | "list" | "IntSet"
+
+# Codecs compare and hash by class and field values; codecs of different classes are never
+# equal: (x == y, hash(x) == hash(y)) for the built-in codecs.
+fn codecs_equal(x: CodecName, y: CodecName) -> (bool, bool)
+  ensures equal: result.0 == (x == y)
+  ensures equal_hash: result.0 implies result.1
+
+# (repr(c), c.name, c.width): repr(codec) is its name, which is the variable name for the codecs
+# whose construction the specification shows (datetimes is DateTime(datetime.UTC), named
+# datetimes[UTC]); the float codecs' names are not specified.
+fn codec_name(c: CodecName) -> (string, string, int)
+  ensures repr: result.0 == result.1
+  ensures name: not (c in ["float16", "bfloat16", "float32", "float64", "float8_e5m2", "float8_e4m3fn"]) implies
+    result.1 == (if c == "datetimes" then "datetimes[UTC]" else c)
+  ensures width: result.2 == (
+    if c in ["int8", "uint8", "float8_e5m2", "float8_e4m3fn"] then 8
+    else if c in ["int16", "uint16", "float16", "bfloat16"] then 16
+    else if c in ["int32", "uint32", "float32", "ipv4"] then 32
+    else if c in ["int64", "uint64", "float64"] then 64
+    else if c in ["int128", "uint128", "ipv6", "uuid128"] then 128
+    else if c == "char" then 21 else if c == "mac" then 48 else if c == "dates" then 22 else 59)
+
+# Assigning a field raises dataclasses.FrozenInstanceError.
+fn codec_assign(c: CodecName, field: "width" | "name")
+  raises FrozenInstanceError when true
+
+# Built-in codecs and their sets survive a pickle round trip (observed):
+# (loads(dumps(c)) == c, loads(dumps(c.all)) == c.all).
+fn codec_pickle(c: CodecName) -> (bool, bool)
+  ensures codec: result.0
+  ensures set: result.1
+
+# The base Codec(width, "base"): (dtype().value, all.size, none.size). The default dtype is the
+# narrowest unsigned type, UINT8 rows above 64 bits; all is the full universe; none is empty.
+fn base_codec(width: u8) -> ((int, int), int, int)
+  requires width <= 128
+  ensures dtype: result.0 == (if width <= 8 then (1, 8) else if width <= 16 then (1, 16)
+    else if width <= 32 then (1, 32) else if width <= 64 then (1, 64) else (1, 8))
+  ensures all: width <= 64 implies result.1 == [0x1p0, 0x1p1, 0x1p2, 0x1p3, 0x1p4, 0x1p5, 0x1p6,
+    0x1p7, 0x1p8, 0x1p9, 0x1p10, 0x1p11, 0x1p12, 0x1p13, 0x1p14, 0x1p15, 0x1p16, 0x1p17, 0x1p18,
+    0x1p19, 0x1p20, 0x1p21, 0x1p22, 0x1p23, 0x1p24, 0x1p25, 0x1p26, 0x1p27, 0x1p28, 0x1p29, 0x1p30,
+    0x1p31, 0x1p32, 0x1p33, 0x1p34, 0x1p35, 0x1p36, 0x1p37, 0x1p38, 0x1p39, 0x1p40, 0x1p41, 0x1p42,
+    0x1p43, 0x1p44, 0x1p45, 0x1p46, 0x1p47, 0x1p48, 0x1p49, 0x1p50, 0x1p51, 0x1p52, 0x1p53, 0x1p54,
+    0x1p55, 0x1p56, 0x1p57, 0x1p58, 0x1p59, 0x1p60, 0x1p61, 0x1p62, 0x1p63, 0x1p64][width]
+  ensures empty: result.2 == 0
+
+# The base class's encode raises NotImplementedError.
+fn base_codec_encode(width: u8, value: int) -> int
+  raises NotImplementedError when true
+
+# Two separately built Int codecs: (Int(w1, n1, s1) == Int(w2, n2, s2), whether their sets
+# combine (observed): the binding tries a.none | b.none).
+fn int_codec_fields(w1: u8, n1: "a" | "b", s1: bool, w2: u8, n2: "a" | "b", s2: bool) -> (bool, bool)
+  requires w1 >= 1 and w1 <= 16 and w2 >= 1 and w2 <= 16
+  partition w1
+    byte = {8}
+    other = u8.range(1, 8) | u8.range(9, 17)
+  partition w2
+    byte = {8}
+    other = u8.range(1, 8) | u8.range(9, 17)
+  ensures equal: result.0 == (w1 == w2 and n1 == n2 and s1 == s2)
+  ensures combine: result.1 == result.0
+
+type PatternCodec = "uint8" | "int8" | "uint16" | "int16" | "float16" | "bfloat16" | "float8_e5m2" | "float8_e4m3fn" | "uint32" | "int32" | "float32" | "ipv4" | "char"
+
+# c.pattern(text): the values whose encodings match Pattern(text) (quartets as for pattern),
+# intersected with all; ValueError when the pattern's width is not the codec's. The integer,
+# float and ipv4 codecs have the whole universe as all.
+fn codec_pattern(c: PatternCodec, quartets: list<list<Q>>) -> CodecSet
+  requires len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+  partition quartets
+    valid = len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+  raises ValueError when sum(q in quartets: if "*" in q then 4 else len(q)) != (
+    if c in ["uint8", "int8", "float8_e5m2", "float8_e4m3fn"] then 8
+    else if c in ["uint16", "int16", "float16", "bfloat16"] then 16 else if c == "char" then 21 else 32)
+  ensures size: (if c == "char" then result.size <= 0x1p21 else result.size == [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
+      1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304,
+      8388608, 16777216, 33554432, 67108864, 134217728, 268435456, 536870912, 1073741824, 2147483648,
+      4294967296][sum(q in quartets: count(c in q: c == "?") + (if "*" in q then 5 - len(q) else 0))])
+  ensures codec: result.codec == c
+
+# The message of that ValueError is "pattern is N bits, not W". The binding returns str(e), or ""
+# when nothing is raised.
+fn codec_pattern_message(c: PatternCodec, quartets: list<list<Q>>) -> string
+  requires len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+    and sum(q in quartets: if "*" in q then 4 else len(q)) != (
+      if c in ["uint8", "int8", "float8_e5m2", "float8_e4m3fn"] then 8
+      else if c in ["uint16", "int16", "float16", "bfloat16"] then 16 else if c == "char" then 21 else 32)
+    and sum(q in quartets: if "*" in q then 4 else len(q)) <= 99
+  partition quartets
+    valid = len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+  ensures message:
+    let digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] in
+    let n = sum(q in quartets: if "*" in q then 4 else len(q)) in
+    let w = (if c in ["uint8", "int8", "float8_e5m2", "float8_e4m3fn"] then 8
+             else if c in ["uint16", "int16", "float16", "bfloat16"] then 16 else if c == "char" then 21 else 32) in
+    result == "pattern is " + (if n < 10 then digits[n] else digits[n // 10] + digits[n % 10]) +
+      " bits, not " + digits[w // 10] + digits[w % 10]
+
+# ---------------------------------------------------------------------------
+# 3.3 BDDSet
+#
+# For a signed codec and values: list<i8>, encoding order puts the non-negative values first, so
+# the set iterates as filter(v in range(0, 128): v in values) + filter(v in range(-128, 0): v in values).
+
+# BDDSet(c, IntSet(iterable, width=width)): ValueError unless the storage's width is the codec's.
+fn bddset_new(c: "int8" | "uint8" | "int16" | "uint16" | "int32" | "uint32" | "int64" | "uint64", iterable: list<u8>, width: i8) -> CodecSet
+  partition width
+    named = {8, 16, 32, 64}
+    other = i8.all - {8, 16, 32, 64}
+  raises ValueError when max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v)
+    != (if "64" in c then 64 else if "32" in c then 32 else if "16" in c then 16 else 8)
+  ensures size: result.size == count(x in range(0, 256): x in iterable)
+  ensures members: all(x in iterable: result.has(x))
+  ensures codec: result.codec == c
+
+# c.set(values): each value goes through encode.
+fn codec_set(c: IntCodec, values: list<i8>) -> CodecSet
+  raises ValueError when "u" in c and exists(v in values: v < 0)
+  ensures size: result.size == count(v in range(-128, 128): v in values)
+  ensures members: let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    all(v in values: result.has(v % full))
+  ensures codec: result.codec == c
+
+# (list(s), list(reversed(s))): decoded values in encoding order, and backwards.
+fn codec_set_order(c: Signed, values: list<i8>) -> (list<int>, list<int>)
+  ensures order: result.0 == filter(v in range(0, 128): v in values) + filter(v in range(-128, 0): v in values)
+  ensures reversed: let a = filter(v in range(0, 128): v in values) + filter(v in range(-128, 0): v in values) in
+    result.1 == map(i in range(0, len(a)): a[len(a) - 1 - i])
+
+# (s.size, len(s), bool(s)).
+fn codec_set_measures(c: Signed, values: list<i8>) -> (int, int, bool)
+  ensures size: result.0 == count(v in range(-128, 128): v in values) and result.1 == result.0
+  ensures truth: result.2 == (len(values) > 0)
+
+# s[i], in encoding order; IndexError out of range.
+fn codec_set_at(c: Signed, values: list<i8>, i: i8) -> int
+  partition i
+    near = i8.range(-9, 9)
+    far = i8.all - i8.range(-9, 9)
+  raises IndexError when let n = count(v in range(-128, 128): v in values) in i >= n or i < -n
+  ensures value: let a = filter(v in range(0, 128): v in values) + filter(v in range(-128, 0): v in values) in
+    result == a[if i < 0 then i + len(a) else i]
+
+# s[start:stop] is a BDDSet of the members at those positions.
+fn codec_set_slice(c: Signed, values: list<i8>, start: option<i8>, stop: option<i8>) -> CodecSet
+  ensures members:
+    let a = filter(v in range(0, 128): v in values) + filter(v in range(-128, 0): v in values) in
+    let n = len(a) in
+    let lo = (if is_none(start) then 0 else if unwrap(start) < 0 then (if unwrap(start) + n < 0 then 0 else unwrap(start) + n)
+              else (if unwrap(start) > n then n else unwrap(start))) in
+    let hi = (if is_none(stop) then n else if unwrap(stop) < 0 then (if unwrap(stop) + n < 0 then 0 else unwrap(stop) + n)
+              else (if unwrap(stop) > n then n else unwrap(stop))) in
+    let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    result.size == (if hi > lo then hi - lo else 0) and
+    all(p in range(0, n): result.has(a[p] % full) == (lo <= p and p < hi))
+  ensures codec: result.codec == c
+
+# (x in s, s.count(x)): x in s is True iff x encodes and its encoding is stored; an encode error
+# gives False.
+fn codec_set_lookup(c: Signed, values: list<i8>, x: int) -> (bool, int)
+  ensures member: result.0 == (x in values)
+  ensures count: result.1 == (if x in values then 1 else 0)
+
+# The same for a value of the wrong type (1.0, "1", None or b"\x01"): 1.0 in int8.all is False.
+fn codec_set_lookup_other(c: IntCodec, values: list<i8>, x: "float" | "string" | "none" | "bytes") -> (bool, int)
+  requires not ("u" in c) or all(v in values: v >= 0)
+  ensures never: not result.0 and result.1 == 0
+
+# s.index(x): the position in encoding order; ValueError for a non-member, a value of the wrong
+# type and one that cannot be encoded.
+fn codec_set_index(c: Signed, values: list<i8>, x: int) -> int
+  raises ValueError when not (x in values)
+  ensures position: result == index_of(filter(v in range(0, 128): v in values) + filter(v in range(-128, 0): v in values), x)
+
+fn codec_set_index_other(c: Signed, values: list<i8>, x: "float" | "string" | "none") -> int
+  raises ValueError when true
+
+# s.choice(rng=random.Random(seed)) twice: a member, IndexError when empty.
+fn codec_set_choice(c: Signed, values: list<i8>, seed: u32) -> (int, int)
+  raises IndexError when len(values) == 0
+  ensures member: result.0 in values
+  ensures reproducible: result.0 == result.1
+
+# c.set(a) op d.set(b): only sets of an equal codec combine; anything else raises TypeError
+# ("<codec> sets only combine with each other"), even a codec of the same width.
+fn codec_set_combine(op: Op, c: IntCodec, a: list<i8>, d: IntCodec, b: list<i8>) -> CodecSet
+  raises ValueError when ("u" in c and exists(x in a: x < 0)) or ("u" in d and exists(x in b: x < 0))
+  raises TypeError when c != d
+  ensures members: let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    all(x in a + b: result.has(x % full) == (
+      if op == "&" then x in a and x in b
+      else if op == "|" then x in a or x in b
+      else if op == "-" then x in a and not (x in b)
+      else (x in a) != (x in b)))
+  ensures size: result.size == count(x in range(-128, 128):
+      if op == "&" then x in a and x in b
+      else if op == "|" then x in a or x in b
+      else if op == "-" then x in a and not (x in b)
+      else (x in a) != (x in b))
+  ensures codec: result.codec == c
+
+# With a built-in set, list or IntSet on either side, the operators raise TypeError.
+fn codec_set_combine_other(op: Op, c: Signed, a: list<i8>, other: Other, side: Side) -> CodecSet
+  raises TypeError when true
+
+# <=, <, >=, > and isdisjoint, between sets of one codec.
+fn codec_set_compare(op: "<=" | "<" | ">=" | ">" | "isdisjoint", c: IntCodec, a: list<i8>, d: IntCodec, b: list<i8>) -> bool
+  raises ValueError when ("u" in c and exists(x in a: x < 0)) or ("u" in d and exists(x in b: x < 0))
+  raises TypeError when c != d
+  ensures order: let sub = all(x in a: x in b) in let sup = all(x in b: x in a) in
+    result == (if op == "<=" then sub else if op == "<" then sub and not sup
+               else if op == ">=" then sup else if op == ">" then sup and not sub
+               else not exists(x in a: x in b))
+
+# The same with a built-in set, list or IntSet: TypeError, lists given to isdisjoint included.
+# (other.isdisjoint(s) is the other object's method, so isdisjoint is judged on the right only.)
+fn codec_set_compare_other(op: "<=" | "<" | ">=" | ">" | "isdisjoint", c: Signed, a: list<i8>, other: Other, side: Side) -> bool
+  requires not (op == "isdisjoint" and side == "left")
+  raises TypeError when true
+
+# (a == b, hash(a) == hash(b)): equal iff both codecs are equal and the encodings the same.
+fn codec_set_equal(c: IntCodec, a: list<i8>, d: IntCodec, b: list<i8>) -> (bool, bool)
+  raises ValueError when ("u" in c and exists(x in a: x < 0)) or ("u" in d and exists(x in b: x < 0))
+  ensures equal: result.0 == (c == d and all(x in a: x in b) and all(x in b: x in a))
+  ensures equal_hash: result.0 implies result.1
+
+# A BDDSet never equals a built-in set, a list or an IntSet, and == never raises.
+fn codec_set_equal_other(c: Signed, a: list<i8>, other: Other, side: Side) -> bool
+  ensures never: not result
+
+# ~s == s.codec.all - s.
+fn codec_set_complement(c: Signed, values: list<i8>) -> CodecSet
+  ensures size: result.size == (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) - count(v in range(-128, 128): v in values)
+  ensures members: let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    all(v in range(-128, 128): result.has(v % full) == (not (v in values)))
+
+# ~char.set(characters of text): the complement within the legal values, so no surrogate.
+fn char_complement(text: string) -> CodecSet
+  ensures size: result.size == 1112064 - count(i in range(0, len(text)): not (codepoints(text)[i] in codepoints(text)[0:i]))
+  ensures legal: not result.has(0xd800) and not result.has(0xdfff) and all(c in codepoints(text): not result.has(c))
+
+# repr(c.set(values)): BDDSet(<codec name>, [v1, v2, ...]) with at most 10 values, else the first
+# four and last two in encoding order and the size.
+fn codec_set_repr(c: Signed, values: list<i8>) -> string
+  ensures prefix: len(result) >= len(c) + 10 and result[0:len(c) + 10] == "BDDSet(" + c + ", ["
+  ensures elided: let n = count(v in range(-128, 128): v in values) in
+    (", ..., " in result) == (n > 10) and ("], size=" in result) == (n > 10)
+
+# repr(c.all): BDDSet(uint8, [0, 1, 2, 3, ..., 254, 255], size=256).
+fn all_repr(c: IntCodec) -> string
+  ensures prefix: len(result) >= len(c) + 10 and result[0:len(c) + 10] == "BDDSet(" + c + ", ["
+  ensures documented: c == "uint8" implies result == "BDDSet(uint8, [0, 1, 2, 3, ..., 254, 255], size=256)"
+
+# ---------------------------------------------------------------------------
+# 3.4 Int codecs
+
+record IntInfo { width: int, signed: bool, min: int, max: int, dtype: (int, int), all: int }
+
+# The codec table: width, signedness, min, max, dtype and the size of all (the full universe).
+fn int_codec_info(c: IntCodec) -> IntInfo
+  ensures width: result.width == (if "128" in c then 128 else if "64" in c then 64 else if "32" in c then 32
+    else if "16" in c then 16 else 8)
+  ensures bounds: let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    result.signed == (not ("u" in c)) and
+    result.min == (if "u" in c then 0 else -(full // 2)) and
+    result.max == (if "u" in c then full - 1 else full // 2 - 1) and result.all == full
+  ensures dtype: result.dtype == (if "128" in c then (1, 8) else
+    (if "u" in c then 1 else 0, if "64" in c then 64 else if "32" in c then 32 else if "16" in c then 16 else 8))
+
+# encode(v): an int (bool included) in [min, max], encoded as v mod 2**width.
+fn int_encode(c: IntCodec, v: int) -> int
+  raises ValueError when let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    (if "u" in c then v < 0 or v >= full else v < -(full // 2) or v >= full // 2)
+  ensures value: result == v % (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100)
+
+fn int_encode_bool(c: IntCodec, v: bool) -> int
+  ensures value: result == (if v then 1 else 0)
+
+# Values with __index__ work too (the binding passes numpy.int64).
+fn int_encode_numpy(c: IntCodec, v: i64) -> int
+  raises ValueError when let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    (if "u" in c then v < 0 or v >= full else v < -(full // 2) or v >= full // 2)
+  ensures value: result == v % (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100)
+
+# Floats, strings and None raise TypeError (the binding passes 1.0, "1" or None).
+fn int_encode_bad(c: IntCodec, bad: "float" | "string" | "none") -> int
+  raises TypeError when true
+
+# decode(b) is b - 2**width when b > max, else b.
+fn int_decode(c: IntCodec, b: int) -> int
+  requires b >= 0 and b < (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100)
+  partition b
+    small = b < 0x10000
+    large = b >= 0x10000
+  ensures value: let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    result == (if not ("u" in c) and b >= full // 2 then b - full else b)
+  relates roundtrip: int_encode(c, result) == b
+
+# range(start, stop): the integers of [start, stop), the bounds clamped to [min, max + 1].
+fn int_range(c: IntCodec, start: option<int>, stop: option<int>) -> CodecSet
+  ensures interval:
+    let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    let lowest = (if "u" in c then 0 else -(full // 2)) in
+    let top = lowest + full in
+    let lo = (if is_none(start) then lowest else if unwrap(start) < lowest then lowest
+              else if unwrap(start) > top then top else unwrap(start)) in
+    let hi = (if is_none(stop) then top else if unwrap(stop) < lowest then lowest
+              else if unwrap(stop) > top then top else unwrap(stop)) in
+    result.size == (if hi > lo then hi - lo else 0) and
+    (hi > lo implies result.has(lo % full) and result.has((hi - 1) % full) and
+      (lo > lowest implies not result.has((lo - 1) % full)) and (hi < top implies not result.has(hi % full)))
+  ensures codec: result.codec == c
+
+# list(c.range(start, start + span)), in encoding order.
+fn int_range_values(c: IntCodec, start: int, span: u8) -> list<int>
+  ensures values:
+    let full = (if "128" in c then 0x100000000000000000000000000000000
+      else if "64" in c then 0x10000000000000000 else if "32" in c then 0x100000000
+      else if "16" in c then 0x10000 else 0x100) in
+    let lowest = (if "u" in c then 0 else -(full // 2)) in
+    let top = lowest + full in
+    let lo = (if start < lowest then lowest else if start > top then top else start) in
+    let hi = (if start + span < lowest then lowest else if start + span > top then top else start + span) in
+    result == filter(v in range(lo, hi): v >= 0) + filter(v in range(lo, hi): v < 0)
+
+# Non-int bounds raise TypeError (observed).
+fn int_range_float(c: IntCodec, bound: f64) -> CodecSet
+  raises TypeError when true
+
+# A custom Int(width, "custom", signed): ((min, max), dtype().value). A signed Int up to 64 bits
+# exports as the narrowest signed type; any other Int uses the unsigned default.
+fn custom_int(width: u8, signed: bool) -> ((int, int), (int, int))
+  requires width >= 1 and width <= 128
+  partition width
+    small = u8.range(1, 65)
+    wide = u8.range(65, 129)
+  ensures bounds: width <= 64 implies
+    (let p = [0x1p0, 0x1p1, 0x1p2, 0x1p3, 0x1p4, 0x1p5, 0x1p6, 0x1p7, 0x1p8, 0x1p9, 0x1p10, 0x1p11,
+       0x1p12, 0x1p13, 0x1p14, 0x1p15, 0x1p16, 0x1p17, 0x1p18, 0x1p19, 0x1p20, 0x1p21, 0x1p22, 0x1p23,
+       0x1p24, 0x1p25, 0x1p26, 0x1p27, 0x1p28, 0x1p29, 0x1p30, 0x1p31, 0x1p32, 0x1p33, 0x1p34, 0x1p35,
+       0x1p36, 0x1p37, 0x1p38, 0x1p39, 0x1p40, 0x1p41, 0x1p42, 0x1p43, 0x1p44, 0x1p45, 0x1p46, 0x1p47,
+       0x1p48, 0x1p49, 0x1p50, 0x1p51, 0x1p52, 0x1p53, 0x1p54, 0x1p55, 0x1p56, 0x1p57, 0x1p58, 0x1p59,
+       0x1p60, 0x1p61, 0x1p62, 0x1p63, 0x1p64] in
+     result.0.0 == (if signed then -p[width - 1] else 0) and
+     result.0.1 == (if signed then p[width - 1] - 1 else p[width] - 1))
+  ensures dtype: result.1 == (
+    if signed and width <= 64 then (0, if width <= 8 then 8 else if width <= 16 then 16 else if width <= 32 then 32 else 64)
+    else (1, if width <= 8 then 8 else if width <= 16 then 16 else if width <= 32 then 32 else if width <= 64 then 64 else 8))
