@@ -1746,3 +1746,397 @@ fn mac_oui_text(text: string) -> CodecSet
      all(i in range(0, 8): if i % 3 == 2 then cp[i] == 45 else
        (cp[i] >= 48 and cp[i] <= 57) or (cp[i] >= 65 and cp[i] <= 70) or (cp[i] >= 97 and cp[i] <= 102))))
   ensures size: result.size == 0x1000000
+
+# ---------------------------------------------------------------------------
+# 3.9 Dates and datetimes
+#
+# date.toordinal() of a valid (year, month, day) is
+#   (year - 1) * 365 + (year - 1) // 4 - (year - 1) // 100 + (year - 1) // 400
+#   + [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][month - 1]
+#   + (if month > 2 and leap(year) then 1 else 0) + day,
+# with leap(y) = (y % 4 == 0 and y % 100 != 0) or y % 400 == 0.
+
+# dates.encode(date(year, month, day)) is date.toordinal(), so date(1, 1, 1) encodes to 1.
+fn date_encode(year: u16, month: u8, day: u8) -> int
+  requires year >= 1 and year <= 9999 and month >= 1 and month <= 12 and day >= 1 and day <= 31 and
+    day <= (if month == 2 then (if (year % 4 == 0 and year % 100 != 0) or year % 400 == 0 then 29 else 28)
+            else if month in [4, 6, 9, 11] then 30 else 31)
+  partition year
+    valid = u16.range(1, 10000)
+  partition month
+    valid = u8.range(1, 13)
+  partition day
+    valid = u8.range(1, 32)
+  ensures ordinal: result == (year - 1) * 365 + (year - 1) // 4 - (year - 1) // 100 + (year - 1) // 400
+    + [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][month - 1]
+    + (if month > 2 and ((year % 4 == 0 and year % 100 != 0) or year % 400 == 0) then 1 else 0) + day
+
+# A datetime raises TypeError rather than drop its time, as does any other non-date (the binding
+# passes datetime(2024, 1, 1), "2024-01-01" or 738886).
+fn date_encode_bad(bad: "datetime" | "string" | "int") -> int
+  raises TypeError when true
+
+# (year, month, day) of dates.decode(b): IndexError for 0 and past date.max.
+fn date_decode(b: u32) -> (int, int, int)
+  partition b
+    zero = {0}
+    valid = u32.range(1, 3652060)
+    beyond = u32.range(3652060, none)
+  raises IndexError when b == 0 or b > 3652059
+  ensures date: result.1 >= 1 and result.1 <= 12 and result.2 >= 1 and result.0 >= 1 and
+    (result.0 - 1) * 365 + (result.0 - 1) // 4 - (result.0 - 1) // 100 + (result.0 - 1) // 400
+    + [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][result.1 - 1]
+    + (if result.1 > 2 and ((result.0 % 4 == 0 and result.0 % 100 != 0) or result.0 % 400 == 0) then 1 else 0)
+    + result.2 == b
+  relates roundtrip: date_encode(result.0, result.1, result.2) == b
+
+# (dates.min, dates.max, dates.all.size): all is the ordinals 1 to 3652059.
+fn date_bounds() -> ((int, int, int), (int, int, int), int)
+  ensures bounds: result == ((1, 1, 1), (9999, 12, 31), 3652059)
+
+# dates.range(date(y1, m1, d1), date(y2, m2, d2)).size: the days in between;
+# dates.range(date(2024, 1, 1), date(2025, 1, 1)).size == 366.
+fn date_range_size(y1: u16, m1: u8, d1: u8, y2: u16, m2: u8, d2: u8) -> int
+  requires y1 >= 1 and y1 <= 9999 and m1 >= 1 and m1 <= 12 and d1 >= 1 and d1 <= 31 and
+    d1 <= (if m1 == 2 then (if (y1 % 4 == 0 and y1 % 100 != 0) or y1 % 400 == 0 then 29 else 28)
+           else if m1 in [4, 6, 9, 11] then 30 else 31) and
+    y2 >= 1 and y2 <= 9999 and m2 >= 1 and m2 <= 12 and d2 >= 1 and d2 <= 31 and
+    d2 <= (if m2 == 2 then (if (y2 % 4 == 0 and y2 % 100 != 0) or y2 % 400 == 0 then 29 else 28)
+           else if m2 in [4, 6, 9, 11] then 30 else 31)
+  partition y1
+    valid = u16.range(1, 10000)
+  partition m1
+    valid = u8.range(1, 13)
+  partition d1
+    valid = u8.range(1, 32)
+  partition y2
+    valid = u16.range(1, 10000)
+  partition m2
+    valid = u8.range(1, 13)
+  partition d2
+    valid = u8.range(1, 32)
+  ensures size:
+    let a = (y1 - 1) * 365 + (y1 - 1) // 4 - (y1 - 1) // 100 + (y1 - 1) // 400
+      + [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][m1 - 1]
+      + (if m1 > 2 and ((y1 % 4 == 0 and y1 % 100 != 0) or y1 % 400 == 0) then 1 else 0) + d1 in
+    let b = (y2 - 1) * 365 + (y2 - 1) // 4 - (y2 - 1) // 100 + (y2 - 1) // 400
+      + [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][m2 - 1]
+      + (if m2 > 2 and ((y2 % 4 == 0 and y2 % 100 != 0) or y2 % 400 == 0) then 1 else 0) + d2 in
+    result == (if b > a then b - a else 0)
+
+# DateTime(tz) encodes microseconds since 0001-01-01 00:00: UTC for aware codecs, wall time for
+# the naive one. Here zone is the codec's fixed UTC offset in minutes (none: naive_datetimes), and
+# the input is the local time micros microseconds into the day of the given ordinal, with tzinfo
+# timezone(offset minutes) when offset is some and opaque is false, a tzinfo whose utcoffset() is
+# None when opaque (it counts as naive), and no tzinfo otherwise. Aware input from any zone is
+# identified by its instant; an aware codec raises ValueError for naive input and the naive codec
+# for aware input; an instant that cannot be represented in the codec's zone raises ValueError.
+# The last local microsecond is 315537897599999999.
+fn datetime_encode(zone: option<i16>, ordinal: u32, micros: u64, offset: option<i16>, opaque: bool) -> int
+  requires ordinal >= 1 and ordinal <= 3652059 and micros < 86400000000 and
+    (is_none(zone) or (unwrap(zone) > -1440 and unwrap(zone) < 1440)) and
+    (is_none(offset) or (unwrap(offset) > -1440 and unwrap(offset) < 1440))
+  partition ordinal
+    early = u32.range(1, 3)
+    middle = u32.range(3, 3652058)
+    late = u32.range(3652058, 3652060)
+  partition micros
+    valid = u64.range(0, 86400000000)
+  raises naive_input: ValueError when is_some(zone) and (is_none(offset) or opaque)
+  raises aware_input: ValueError when is_none(zone) and is_some(offset) and not opaque
+  raises unrepresentable: ValueError when is_some(zone) and is_some(offset) and not opaque and (
+    let utc = (ordinal - 1) * 86400000000 + micros - unwrap(offset) * 60000000 in
+    let local = utc + unwrap(zone) * 60000000 in
+    utc < 0 or local < 0 or local > 315537897599999999)
+  ensures value: result == (ordinal - 1) * 86400000000 + micros -
+    (if is_some(offset) and not opaque then unwrap(offset) * 60000000 else 0)
+
+# A plain date and other non-datetimes raise TypeError.
+fn datetime_encode_bad(zone: option<i16>, bad: "date" | "string" | "int") -> int
+  requires is_none(zone) or (unwrap(zone) > -1440 and unwrap(zone) < 1440)
+  raises TypeError when true
+
+# (name, width, all.size, codec == datetimes) of DateTime(timezone(zone minutes)), or of
+# DateTime(None) for none: the name is naive_datetimes or datetimes[<tz>], the width 59; all
+# leaves out the instants that overflow datetime in the zone (3600 * 10**6 fewer for +01:00), and
+# DateTime(timezone.utc) == datetimes.
+fn datetime_codec(zone: option<i16>) -> (string, int, int, bool)
+  requires is_none(zone) or (unwrap(zone) > -1440 and unwrap(zone) < 1440)
+  ensures name: (is_none(zone) implies result.0 == "naive_datetimes") and
+    (zone == some(0) implies result.0 == "datetimes[UTC]") and
+    (zone == some(300) implies result.0 == "datetimes[UTC+05:00]") and
+    (is_some(zone) and zone != some(0) implies len(result.0) == 20 and result.0[0:13] == "datetimes[UTC")
+  ensures width: result.1 == 59
+  ensures size: result.2 == 315537897600000000 -
+    (if is_none(zone) then 0 else if unwrap(zone) < 0 then -unwrap(zone) * 60000000 else unwrap(zone) * 60000000)
+  ensures utc: result.3 == (zone == some(0))
+
+# (ordinal, micros into the day, utcoffset in minutes or None) of decode(b): the instant in the
+# codec's zone (a naive datetime for the naive codec); IndexError past the end.
+fn datetime_decode(zone: option<i16>, b: u64) -> (int, int, option<int>)
+  requires (is_none(zone) or (unwrap(zone) > -1440 and unwrap(zone) < 1440)) and
+    (is_none(zone) or unwrap(zone) >= 0 or b >= -unwrap(zone) * 60000000)
+  partition b
+    inside = u64.range(0, 315537897600000000)
+    beyond = u64.range(315537897600000000, none)
+  raises IndexError when b + (if is_some(zone) then unwrap(zone) * 60000000 else 0) > 315537897599999999
+  ensures value: let local = b + (if is_some(zone) then unwrap(zone) * 60000000 else 0) in
+    result == (local // 86400000000 + 1, local % 86400000000, if is_some(zone) then some(unwrap(zone)) else none)
+  relates roundtrip: datetime_encode(zone, result.0, result.1, zone, false) == b
+
+# ---------------------------------------------------------------------------
+# 3.10 UUID
+
+# uuid128.encode of uuid.UUID(int=hi * 2**64 + lo), or of its str, hex, braced or urn:uuid: form.
+fn uuid_encode(hi: u64, lo: u64, form: "object" | "hyphens" | "hex" | "braces" | "urn") -> int
+  ensures value: result == hi * 0x10000000000000000 + lo
+
+# Other types, int and bytes included, raise TypeError.
+fn uuid_encode_bad(bad: "int" | "bytes" | "none") -> int
+  raises TypeError when true
+
+# A malformed string raises ValueError; uuid.UUID needs 32 hex digits, so any shorter text is
+# malformed.
+fn uuid_encode_text(text: string) -> int
+  raises short: ValueError when len(text) < 32
+  may_raise ValueError
+
+# str(uuid128.decode(b)): the canonical lowercase hyphenated form of b; IndexError outside
+# [0, 2**128).
+fn uuid_decode(b: int) -> string
+  raises IndexError when b < 0 or b >= 0x100000000000000000000000000000000
+  ensures form: let cp = codepoints(result) in len(cp) == 36 and all(i in range(0, 36):
+    if i in [8, 13, 18, 23] then cp[i] == 45 else (cp[i] >= 48 and cp[i] <= 57) or (cp[i] >= 97 and cp[i] <= 102))
+  ensures value: let d = filter(c in codepoints(result): c != 45) in len(d) == 32 and
+    b == sum(i in range(0, 16): (if d[i] <= 57 then d[i] - 48 else d[i] - 87) *
+      [0x1000000000000000, 0x100000000000000, 0x10000000000000, 0x1000000000000, 0x100000000000,
+       0x10000000000, 0x1000000000, 0x100000000, 0x10000000, 0x1000000, 0x100000, 0x10000, 0x1000,
+       0x100, 0x10, 0x1][i]) * 0x10000000000000000 +
+    sum(i in range(16, 32): (if d[i] <= 57 then d[i] - 48 else d[i] - 87) *
+      [0x1000000000000000, 0x100000000000000, 0x10000000000000, 0x1000000000000, 0x100000000000,
+       0x10000000000, 0x1000000000, 0x100000000, 0x10000000, 0x1000000, 0x100000, 0x10000, 0x1000,
+       0x100, 0x10, 0x1][i - 16])
+
+# (rfc9562.size, u in rfc9562) for u = UUID(int=hi * 2**64 + lo): the variant bits are 10.
+fn uuid_rfc9562(hi: u64, lo: u64) -> (int, bool)
+  ensures size: result.0 == 0x40000000000000000000000000000000
+  ensures member: result.1 == (lo // 0x4000000000000000 == 2)
+
+# (version(n).size, u in version(n)): the RFC 9562-variant UUIDs with version digit n; ValueError
+# unless 1 <= n <= 8.
+fn uuid_version(n: i8, hi: u64, lo: u64) -> (int, bool)
+  partition n
+    valid = i8.range(1, 9)
+    invalid = i8.all - i8.range(1, 9)
+  raises ValueError when n < 1 or n > 8
+  ensures size: result.0 == 0x4000000000000000000000000000000
+  ensures member: result.1 == (lo // 0x4000000000000000 == 2 and (hi // 0x1000) % 16 == n)
+
+# uuid.uuid4() in uuid128.version(4).
+fn uuid4_member() -> bool
+  ensures member: result
+
+# ---------------------------------------------------------------------------
+# 3.11 Members and Flags
+#
+# The binding makes an Enum E with members M0 ... M(n-1) of values 0 ... n-1, in that order.
+
+# (width, all.size, name) of Members(E): width is max(n - 1, 0).bit_length(), all is [0, n), the
+# name is the enum's __name__.
+fn members_codec(n: u8) -> (int, int, string)
+  requires n <= 64
+  partition n
+    valid = u8.range(0, 65)
+  ensures width: result.0 == count(p in [1, 2, 4, 8, 16, 32]: p <= n - 1)
+  ensures all: result.1 == n
+  ensures name: result.2 == "E"
+
+# encode of member i, or of an alias A of it added to E: its 0-based definition index; an alias
+# is not a separate member.
+fn members_encode(n: u8, i: u8, alias: bool) -> (int, int)
+  requires n >= 1 and n <= 64 and i < n
+  partition n
+    valid = u8.range(1, 65)
+  ensures index: result.0 == i
+  ensures not_separate: result.1 == n
+
+# list(E).index(decode(i)): IndexError past the last member.
+fn members_decode(n: u8, i: u8) -> int
+  requires n <= 64
+  partition n
+    valid = u8.range(0, 65)
+  raises IndexError when i >= n
+  ensures member: result == i
+
+# A value that is not an instance of the enum raises TypeError: a member's raw value, an IntEnum's
+# plain int, or another enum's member. A Flag combination that is not a member raises ValueError
+# (the binding encodes Perm.R | Perm.W with Members(Perm)).
+fn members_encode_bad(n: u8, bad: "value" | "int_enum_int" | "other_enum" | "flag_combination") -> int
+  requires n >= 1 and n <= 64
+  partition n
+    valid = u8.range(1, 65)
+  raises TypeError when bad != "flag_combination"
+  raises ValueError when bad == "flag_combination"
+
+# The indices of ~Members(E).set(picked members), picked[i] choosing member i: sets iterate in
+# definition order; ~Members(Color).set([Color.GREEN]) is {RED, BLUE}.
+fn members_complement(n: u8, picks: list<bool>) -> list<int>
+  requires n <= 64
+  partition n
+    valid = u8.range(0, 65)
+  ensures complement: result == filter(i in range(0, n): not (i < len(picks) and picks[i]))
+
+# Flags of two classes: Perm with R=4, W=2, X=1, and Tree with LEAF=4, CHAIN=12, LOW=1.
+type FlagClass = "Perm" | "Tree"
+
+# (width, all as encodings, name): the width is the bit length of the largest member value,
+# multi-bit members included; all is every union of members, the empty value included, in order
+# of value: all 8 combinations for Perm, and {0, 1, 4, 5, 12, 13} for Tree (observed), since 8
+# alone is not a union of members.
+fn flags_codec(cls: FlagClass) -> (int, list<int>, string)
+  ensures width: result.0 == (if cls == "Perm" then 3 else 4)
+  ensures all: result.1 == (if cls == "Perm" then [0, 1, 2, 3, 4, 5, 6, 7] else [0, 1, 4, 5, 12, 13])
+  ensures name: result.2 == cls
+
+# encode(cls(mask)): the combination's own value; ValueError when it is not a union of members
+# (the class itself may refuse the bits with ValueError).
+fn flags_encode(cls: FlagClass, mask: u8) -> int
+  requires mask < 16
+  partition mask
+    valid = u8.range(0, 16)
+  raises ValueError when not (mask in (if cls == "Perm" then [0, 1, 2, 3, 4, 5, 6, 7] else [0, 1, 4, 5, 12, 13]))
+  ensures value: result == mask
+
+# decode(b).value for b in all.
+fn flags_decode(cls: FlagClass, b: u8) -> int
+  requires b in (if cls == "Perm" then [0, 1, 2, 3, 4, 5, 6, 7] else [0, 1, 4, 5, 12, 13])
+  ensures value: result == b
+
+# A plain int raises TypeError.
+fn flags_encode_int(cls: FlagClass, v: u8) -> int
+  raises TypeError when true
+
+# The values of having(cls(mask)) (every bit of mask set) or lacking(cls(mask)) (none of them);
+# the argument goes through encode. having(F(0)) == lacking(F(0)) == all, and
+# Flags(Perm).having(Perm.W) == Flags(Perm).pattern("?1?").
+fn flags_having(cls: FlagClass, mask: u8, lacking: bool) -> list<int>
+  requires mask < 16
+  partition mask
+    valid = u8.range(0, 16)
+  raises ValueError when not (mask in (if cls == "Perm" then [0, 1, 2, 3, 4, 5, 6, 7] else [0, 1, 4, 5, 12, 13]))
+  ensures members: result == filter(v in (if cls == "Perm" then [0, 1, 2, 3, 4, 5, 6, 7] else [0, 1, 4, 5, 12, 13]):
+    all(k in [1, 2, 4, 8]: (mask // k) % 2 == 1 implies (if lacking then (v // k) % 2 == 0 else (v // k) % 2 == 1)))
+
+# Members, Flags and Tuple are plain codecs: [hasattr(c, a) for a in ("min", "max", "range")].
+fn plain_codec_attributes(kind: "Members" | "Flags" | "Tuple") -> list<bool>
+  ensures plain: result == [false, false, false]
+
+# ---------------------------------------------------------------------------
+# 3.12 Tuple, product and project
+
+type Small = "uint8" | "int8" | "uint16" | "int16"
+
+# (width, name, all.size) of Tuple(*fields): the width is the sum, the name tuple[f1, f2, ...],
+# and all == product of the fields' all; Tuple() has width 0 and all == {()}.
+fn tuple_codec(fields: list<Small>) -> (int, string, int)
+  requires len(fields) <= 4
+  ensures width: result.0 == sum(f in fields: if "16" in f then 16 else 8)
+  ensures name: len(result.1) == 7 + sum(f in fields: len(f)) + (if len(fields) > 0 then 2 * (len(fields) - 1) else 0) and
+    result.1[0:6] == "tuple[" and result.1[len(result.1) - 1:len(result.1)] == "]" and
+    all(i in range(0, len(fields)):
+      let off = 6 + sum(j in range(0, i): len(fields[j]) + 2) in
+      result.1[off:off + len(fields[i])] == fields[i] and (i == 0 or result.1[off - 2:off] == ", "))
+  ensures all: result.2 == [0x1p0, 0x1p8, 0x1p16, 0x1p24, 0x1p32, 0x1p40, 0x1p48, 0x1p56, 0x1p64][
+    sum(f in fields: if "16" in f then 2 else 1)]
+
+# Tuple(a, b).encode((x, y)): the first field takes the most significant bits; each field's
+# errors propagate.
+fn tuple_encode(a: Small, b: Small, x: i32, y: i32) -> int
+  partition x
+    near = i32.range(-200, 300)
+    far = i32.all - i32.range(-200, 300)
+  partition y
+    near = i32.range(-200, 300)
+    far = i32.all - i32.range(-200, 300)
+  raises ValueError when not (
+    (if a == "uint8" then x >= 0 and x < 0x100 else if a == "int8" then x >= -0x80 and x < 0x80
+     else if a == "uint16" then x >= 0 and x < 0x10000 else x >= -0x8000 and x < 0x8000) and
+    (if b == "uint8" then y >= 0 and y < 0x100 else if b == "int8" then y >= -0x80 and y < 0x80
+     else if b == "uint16" then y >= 0 and y < 0x10000 else y >= -0x8000 and y < 0x8000))
+  ensures value: let fa = (if "16" in a then 0x10000 else 0x100) in let fb = (if "16" in b then 0x10000 else 0x100) in
+    result == (x % fa) * fb + y % fb
+
+# Tuple(int8, int8).encode of the values as a tuple, or as a list: non-tuples (lists included)
+# raise TypeError and a tuple of the wrong length ValueError.
+fn tuple_encode_shape(values: list<i8>, as_list: bool) -> int
+  partition values
+    two = len(values) == 2
+    other = len(values) != 2
+  raises TypeError when as_list
+  raises ValueError when not as_list and len(values) != 2
+  ensures value: result == (values[0] % 0x100) * 0x100 + values[1] % 0x100
+
+# Tuple(a, b).decode(e): the tuple of decoded fields.
+fn tuple_decode(a: Small, b: Small, e: u32) -> (int, int)
+  requires e < (if "16" in a then 0x10000 else 0x100) * (if "16" in b then 0x10000 else 0x100)
+  partition e
+    small = u32.range(0, 0x10000)
+    large = u32.range(0x10000, none)
+  ensures value: let fa = (if "16" in a then 0x10000 else 0x100) in let fb = (if "16" in b then 0x10000 else 0x100) in
+    let hi = e // fb in let lo = e % fb in
+    result == (if a in ["int8", "int16"] and hi >= fa // 2 then hi - fa else hi,
+               if b in ["int8", "int16"] and lo >= fb // 2 then lo - fb else lo)
+
+# list(Tuple(uint8, int8).set(pairs)): ordered lexicographically by field encodings, so
+# [(2, 0), (1, 5), (1, -1)] iterates (1, 5), (1, -1), (2, 0).
+fn tuple_set_order(pairs: list<(u8, i8)>) -> list<(int, int)>
+  ensures order: is_sorted(map(p in result: (p.0, p.1 % 0x100)))
+  ensures members: all(p in pairs: (p.0, p.1) in result) and all(r in result: r in pairs) and distinct(result)
+
+# product(uint8.set(a), int8.set(b)): every pair, of codec Tuple(uint8, int8); the size is the
+# product of the sizes.
+fn product_of(a: list<u8>, b: list<i8>) -> CodecSet
+  ensures size: result.size == count(x in range(0, 256): x in a) * count(y in range(-128, 128): y in b)
+  ensures members: all(x in a: all(y in b: result.has(x * 0x100 + y % 0x100)))
+  ensures codec: result.codec == "tuple[uint8, int8]"
+
+# (product().size, its codec name): product() is {()}.
+fn product_none() -> (int, string)
+  ensures unit: result == (1, "tuple[]")
+
+# (A * B == product(A, B), list(A * B * C)) for A = uint8.set(a), B = int8.set(b), C = uint8.set(c):
+# a * b * c nests as ((x, y), z).
+fn product_operator(a: list<u8>, b: list<i8>, c: list<u8>) -> (bool, list<((int, int), int)>)
+  ensures same: result.0
+  ensures nested: len(result.1) == count(x in range(0, 256): x in a) * count(y in range(-128, 128): y in b) *
+    count(z in range(0, 256): z in c) and all(t in result.1: t.0.0 in a and t.0.1 in b and t.1 in c) and distinct(result.1)
+
+# uint8.set(a) * other raises TypeError for a right operand that is not a BDDSet.
+fn product_operator_bad(a: list<u8>, other: "IntSet" | "list" | "int" | "set") -> CodecSet
+  raises TypeError when true
+
+# product(ipv4.cidr("10.0.0.0/8"), uint16.range(1024, 65536)).size.
+fn product_example() -> int
+  ensures documented: result == 1082331758592
+
+# ("a.b.c.d", port) in product(ipv4.all, uint16.all): membership takes tuples whose items each
+# codec can encode.
+fn product_contains(octets: list<u8>, port: int) -> bool
+  partition octets
+    four = len(octets) == 4
+    other = len(octets) != 4
+  ensures member: result == (len(octets) == 4 and port >= 0 and port < 0x10000)
+
+# list(project(Tuple(uint8, int8).set(pairs), index)): the values at that position, as a set of
+# the field's codec, so in its encoding order; a negative index counts from the end.
+fn project_of(pairs: list<(u8, i8)>, index: i8) -> list<int>
+  partition index
+    valid = i8.range(-2, 2)
+    invalid = i8.all - i8.range(-2, 2)
+  raises IndexError when index < -2 or index >= 2
+  ensures field: result == (if index == 0 or index == -2 then filter(x in range(0, 256): exists(p in pairs: p.0 == x))
+    else filter(y in range(0, 128): exists(p in pairs: p.1 == y)) + filter(y in range(-128, 0): exists(p in pairs: p.1 == y)))
+
+# project of a set whose codec is not a Tuple raises TypeError.
+fn project_bad(values: list<u8>) -> list<int>
+  raises TypeError when true
