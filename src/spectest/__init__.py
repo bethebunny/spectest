@@ -20,6 +20,7 @@ _EXPORTS = {
     "ModelBinding": "spectest.runtime.binding",
     "InterfaceBinding": "spectest.runtime.binding",
     "Unrepresentable": "spectest.values",
+    "marshal": "spectest.driver.convert",
     "NotAValue": "spectest.values",
 }
 
@@ -33,6 +34,7 @@ __all__ = [
     "__version__",
     "conformance",
     "load",
+    "marshal",
 ]
 
 if TYPE_CHECKING:
