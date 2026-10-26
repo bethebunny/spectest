@@ -27,16 +27,12 @@ from fractions import Fraction
 from functools import cache
 from typing import Any
 
+import bitpattern
 import hypothesis.strategies
 import numpy as np
+from bitpattern import BDD, IntSet, Pattern, bdd, codecs, dlpack, strategies
 
-import bitpattern
-import bitpattern.bdd as bdd
-import bitpattern.codecs as codecs
-import bitpattern.dlpack as dlpack
-import bitpattern.strategies as strategies
 import spectest
-from bitpattern import BDD, IntSet, Pattern
 
 spec = spectest.load("bitpattern.spec")
 
@@ -212,12 +208,16 @@ def contains(cls: str, iterable: list[int], width: int, x: Any) -> bool:
     return x in build(cls, iterable, width)
 
 
-def float_lookups(cls: str, iterable: list[int], width: int, x: float) -> tuple[bool, int]:
+def float_lookups(
+    cls: str, iterable: list[int], width: int, x: float
+) -> tuple[bool, int]:
     s = build(cls, iterable, width)
     return x in s, s.count(x)
 
 
-def contains_items(cls: str, iterable: list[int], width: int) -> tuple[list[bool], list[bool]]:
+def contains_items(
+    cls: str, iterable: list[int], width: int
+) -> tuple[list[bool], list[bool]]:
     s = build(cls, iterable, width)
     return [x in s for x in iterable], [float(x) in s for x in iterable]
 
@@ -231,12 +231,21 @@ def at(cls: str, iterable: list[int], width: int, i: Any) -> int:
     return build(cls, iterable, width)[i]
 
 
-def slice_(cls: str, iterable: list[int], width: int, start: Any, stop: Any, step: Any = OMIT) -> IntSet:
+def slice_(
+    cls: str, iterable: list[int], width: int, start: Any, stop: Any, step: Any = OMIT
+) -> IntSet:
     s = build(cls, iterable, width)
     return s[start:stop] if step is OMIT else s[start:stop:step]
 
 
-def index_value(cls: str, iterable: list[int], width: int, value: int, start: Any = OMIT, stop: Any = OMIT) -> int:
+def index_value(
+    cls: str,
+    iterable: list[int],
+    width: int,
+    value: int,
+    start: Any = OMIT,
+    stop: Any = OMIT,
+) -> int:
     s = build(cls, iterable, width)
     if stop is not OMIT:
         return s.index(value, 0 if start is OMIT else start, stop)
@@ -258,7 +267,9 @@ def index_float(cls: str, iterable: list[int], width: int, value: float) -> int:
     return build(cls, iterable, width).index(value)
 
 
-def choice_seeded(cls: str, iterable: list[int], width: int, seed: int) -> tuple[int, int]:
+def choice_seeded(
+    cls: str, iterable: list[int], width: int, seed: int
+) -> tuple[int, int]:
     s = build(cls, iterable, width)
     return s.choice(rng=random.Random(seed)), s.choice(rng=random.Random(seed))
 
@@ -271,15 +282,21 @@ def widened(cls: str, iterable: list[int], width: int, new_width: int) -> IntSet
     return build(cls, iterable, width).widened(new_width)
 
 
-def combine(op: str, cls_a: str, a: list[int], wa: int, cls_b: str, b: list[int], wb: int) -> IntSet:
+def combine(
+    op: str, cls_a: str, a: list[int], wa: int, cls_b: str, b: list[int], wb: int
+) -> IntSet:
     return OPS[op](build(cls_a, a, wa), build(cls_b, b, wb))
 
 
-def combine_iterable(op: str, cls: str, a: list[int], wa: int, b: list[int], container: str) -> IntSet:
+def combine_iterable(
+    op: str, cls: str, a: list[int], wa: int, b: list[int], container: str
+) -> IntSet:
     return OPS[op](build(cls, a, wa), CONTAINERS[container](b))
 
 
-def combine_reflected(op: str, container: str, a: list[int], cls: str, b: list[int], wb: int) -> IntSet:
+def combine_reflected(
+    op: str, container: str, a: list[int], cls: str, b: list[int], wb: int
+) -> IntSet:
     return OPS[op](CONTAINERS[container](a), build(cls, b, wb))
 
 
@@ -287,7 +304,13 @@ def combine_ints(op: str, cls: str, a: list[int], wa: int, b: list[int]) -> IntS
     return OPS[op](build(cls, a, wa), list(b))
 
 
-BAD_OPERANDS: dict[str, Any] = {"int": 5, "float": 1.5, "none": None, "floats": [1.5], "strings": ["1"]}
+BAD_OPERANDS: dict[str, Any] = {
+    "int": 5,
+    "float": 1.5,
+    "none": None,
+    "floats": [1.5],
+    "strings": ["1"],
+}
 
 
 def combine_bad(op: str, cls: str, a: list[int], wa: int, bad: str) -> IntSet:
@@ -298,7 +321,9 @@ def complement(cls: str, iterable: list[int], width: int) -> IntSet:
     return ~build(cls, iterable, width)
 
 
-def compare(op: str, cls_a: str, a: list[int], wa: int, cls_b: str, b: list[int], wb: int) -> bool:
+def compare(
+    op: str, cls_a: str, a: list[int], wa: int, cls_b: str, b: list[int], wb: int
+) -> bool:
     return CMP[op](build(cls_a, a, wa), build(cls_b, b, wb))
 
 
@@ -306,19 +331,27 @@ def _sides(fn: Any, mine: Any, other: Any, side: str) -> Any:
     return fn(mine, other) if side == "right" else fn(other, mine)
 
 
-def compare_other(op: str, cls: str, a: list[int], wa: int, b: list[int], container: str, side: str) -> bool:
+def compare_other(
+    op: str, cls: str, a: list[int], wa: int, b: list[int], container: str, side: str
+) -> bool:
     return _sides(CMP[op], build(cls, a, wa), CONTAINERS[container](b), side)
 
 
-def equality(op: str, cls_a: str, a: list[int], wa: int, cls_b: str, b: list[int], wb: int) -> bool:
+def equality(
+    op: str, cls_a: str, a: list[int], wa: int, cls_b: str, b: list[int], wb: int
+) -> bool:
     return EQ[op](build(cls_a, a, wa), build(cls_b, b, wb))
 
 
-def equality_other(op: str, cls: str, a: list[int], wa: int, b: list[int], container: str, side: str) -> bool:
+def equality_other(
+    op: str, cls: str, a: list[int], wa: int, b: list[int], container: str, side: str
+) -> bool:
     return _sides(EQ[op], build(cls, a, wa), CONTAINERS[container](b), side)
 
 
-def rebuilt(cls_a: str, a: list[int], wa: int, cls_b: str, wb: int) -> tuple[bool, bool]:
+def rebuilt(
+    cls_a: str, a: list[int], wa: int, cls_b: str, wb: int
+) -> tuple[bool, bool]:
     x, y = build(cls_a, a, wa), build(cls_b, a, wb)
     return x == y, hash(x) == hash(y)
 
@@ -329,7 +362,9 @@ def isdisjoint(cls: str, a: list[int], wa: int, b: list[int], container: str) ->
 
 
 def intset_repr_eval(iterable: list[int], width: int) -> Any:
-    return eval(repr(IntSet(iterable, width=width)), {"__builtins__": {}, "IntSet": IntSet})
+    return eval(
+        repr(IntSet(iterable, width=width)), {"__builtins__": {}, "IntSet": IntSet}
+    )
 
 
 INTSET_IMPLS = {
@@ -399,7 +434,12 @@ INTSET_EXAMPLES: dict[str, list[dict[str, Any]]] = {
         {"iterable": [1], "width": 8},
         {"width": 9},
     ],
-    "set_attribute": [{"name": "width"}, {"name": "bdd"}, {"name": "size"}, {"name": "colour"}],
+    "set_attribute": [
+        {"name": "width"},
+        {"name": "bdd"},
+        {"name": "size"},
+        {"name": "colour"},
+    ],
     "intset_range": [
         {"start": 0, "stop": 0},
         {"start": 0, "stop": 2},
@@ -409,13 +449,27 @@ INTSET_EXAMPLES: dict[str, list[dict[str, Any]]] = {
         {"start": 0, "stop": 4, "width": -1},
     ],
     "range_size": [{"start": 0, "stop": 2**100}, {"start": 0, "stop": 2**64}],
-    "range_len": [{"start": 0, "stop": 2**63 - 1}, {"start": 0, "stop": 2**63}, {"start": 0, "stop": 2**64}],
+    "range_len": [
+        {"start": 0, "stop": 2**63 - 1},
+        {"start": 0, "stop": 2**63},
+        {"start": 0, "stop": 2**64},
+    ],
     "range_clipped_size": [{"start": 0, "stop": 2**100}, {"start": 5, "stop": 2**200}],
     "range_ends": [{"start": 0, "stop": 2**64}],
-    "range_at": [{"start": 0, "stop": 2**100, "i": 2**70}, {"start": 0, "stop": 2**100, "i": -1}],
+    "range_at": [
+        {"start": 0, "stop": 2**100, "i": 2**70},
+        {"start": 0, "stop": 2**100, "i": -1},
+    ],
     "float_lookups": [{"cls": "IntSet", "iterable": [1], "width": 0, "x": 1.0}],
     "slice": [
-        {"cls": "IntSet", "iterable": TEN, "width": 0, "start": None, "stop": None, "step": -1},
+        {
+            "cls": "IntSet",
+            "iterable": TEN,
+            "width": 0,
+            "start": None,
+            "stop": None,
+            "step": -1,
+        },
         {"cls": "IntSet", "iterable": TEN, "width": 0, "start": 2, "stop": 5},
     ],
     "complement": [
@@ -424,18 +478,65 @@ INTSET_EXAMPLES: dict[str, list[dict[str, Any]]] = {
         {"cls": "Pattern", "iterable": [0, 1, 2, 3], "width": 4},
     ],
     "equality": [
-        {"op": "==", "cls_a": "IntSet", "a": [1], "wa": 1, "cls_b": "IntSet", "b": [1], "wb": 8},
-        {"op": "==", "cls_a": "IntSet", "a": [], "wa": 0, "cls_b": "IntSet", "b": [], "wb": 9},
-        {"op": "==", "cls_a": "Pattern", "a": [1, 3], "wa": 3, "cls_b": "IntSet", "b": [1, 3], "wb": 0},
+        {
+            "op": "==",
+            "cls_a": "IntSet",
+            "a": [1],
+            "wa": 1,
+            "cls_b": "IntSet",
+            "b": [1],
+            "wb": 8,
+        },
+        {
+            "op": "==",
+            "cls_a": "IntSet",
+            "a": [],
+            "wa": 0,
+            "cls_b": "IntSet",
+            "b": [],
+            "wb": 9,
+        },
+        {
+            "op": "==",
+            "cls_a": "Pattern",
+            "a": [1, 3],
+            "wa": 3,
+            "cls_b": "IntSet",
+            "b": [1, 3],
+            "wb": 0,
+        },
     ],
     "equality_other": [
-        {"op": "==", "cls": "IntSet", "a": [1], "wa": 0, "b": [1], "container": "set", "side": "right"},
-        {"op": "==", "cls": "IntSet", "a": [1], "wa": 0, "b": [1], "container": "frozenset", "side": "left"},
+        {
+            "op": "==",
+            "cls": "IntSet",
+            "a": [1],
+            "wa": 0,
+            "b": [1],
+            "container": "set",
+            "side": "right",
+        },
+        {
+            "op": "==",
+            "cls": "IntSet",
+            "a": [1],
+            "wa": 0,
+            "b": [1],
+            "container": "frozenset",
+            "side": "left",
+        },
     ],
     "combine_reflected": [
         {"op": "|", "container": "set", "a": [7], "cls": "Pattern", "b": [1], "wb": 3},
         {"op": "&", "container": "list", "a": [7], "cls": "Pattern", "b": [7], "wb": 3},
-        {"op": "-", "container": "set", "a": [7, 1], "cls": "Pattern", "b": [1], "wb": 3},
+        {
+            "op": "-",
+            "container": "set",
+            "a": [7, 1],
+            "cls": "Pattern",
+            "b": [1],
+            "wb": 3,
+        },
     ],
     "intset_repr": [
         {"iterable": list(range(20)), "width": 0},
@@ -443,7 +544,12 @@ INTSET_EXAMPLES: dict[str, list[dict[str, Any]]] = {
         {"iterable": [1, 3], "width": 2},
     ],
     "range_repr": [{"start": 0, "stop": 2**64}],
-    "count_repr": [{"total": 512}, {"total": 1024}, {"total": 2**63}, {"total": 2**64 - 1}],
+    "count_repr": [
+        {"total": 512},
+        {"total": 1024},
+        {"total": 2**63},
+        {"total": 2**64 - 1},
+    ],
 }
 
 test_intset = spectest.conformance(
@@ -456,7 +562,13 @@ test_intset = spectest.conformance(
 
 def pattern_view(quartets: list[list[str]]) -> dict[str, Any]:
     p = Pattern(text(quartets))
-    return {"bits": p.bits, "free": p.free, "branches": list(p.branches), "text": str(p), "shown": repr(p)}
+    return {
+        "bits": p.bits,
+        "free": p.free,
+        "branches": list(p.branches),
+        "text": str(p),
+        "shown": repr(p),
+    }
 
 
 def pattern_parts(iterable: list[int], width: int) -> dict[str, Any]:
@@ -485,7 +597,9 @@ def pattern_shape(quartets: list[list[str]]) -> tuple[int, int]:
 
 PATTERN_IMPLS = {
     "pattern": lambda quartets: Pattern(text(quartets)),
-    "pattern_padded": lambda quartets, before, after: Pattern("".join(before) + text(quartets) + "".join(after)),
+    "pattern_padded": lambda quartets, before, after: Pattern(
+        "".join(before) + text(quartets) + "".join(after)
+    ),
     "pattern_text": Pattern,
     "pattern_shape": pattern_shape,
     "pattern_view": pattern_view,
@@ -510,13 +624,24 @@ def set_examples(*sets: tuple[list[int], int]) -> list[dict[str, Any]]:
 
 
 DOCUMENTED_SETS = set_examples(
-    ([2, 3, 5, 6, 7], 3), ([5, 7], 5), ([0, 1], 4), (list(range(4, 16)), 4), ([], 4), ([1, 3], 0), ([5, 7], 3)
+    ([2, 3, 5, 6, 7], 3),
+    ([5, 7], 5),
+    ([0, 1], 4),
+    (list(range(4, 16)), 4),
+    ([], 4),
+    ([1, 3], 0),
+    ([5, 7], 3),
 )
 
 PATTERN_EXAMPLES: dict[str, list[dict[str, Any]]] = {
-    "pattern": quartet_examples("*1.0000", "1.*", "1?1", "1*1", "*", "11111", "1.1", ".1111", "1111.", "**", "")
+    "pattern": quartet_examples(
+        "*1.0000", "1.*", "1?1", "1*1", "*", "11111", "1.1", ".1111", "1111.", "**", ""
+    )
     + [{"quartets": [["1", "*", "1", "1", "1"]]}],
-    "pattern_text": [{"text": t} for t in ("1|0", "", "   ", "1.1", "11111", " *1.0000\n", "0000 | 0001", "1?1")],
+    "pattern_text": [
+        {"text": t}
+        for t in ("1|0", "", "   ", "1.1", "11111", " *1.0000\n", "0000 | 0001", "1?1")
+    ],
     "pattern_shape": quartet_examples("*1.*.*.0000.1111.?01?", "*1.0000"),
     "pattern_view": quartet_examples("*1.0000", "1.*", "1?1"),
     "branches": DOCUMENTED_SETS,
@@ -549,7 +674,9 @@ def codec_assign(c: str, field: str) -> None:
 
 def codec_pickle(c: str) -> tuple[bool, bool]:
     k = codec(c)
-    return pickle.loads(pickle.dumps(k)) == k, pickle.loads(pickle.dumps(k.all)) == k.all
+    return pickle.loads(pickle.dumps(k)) == k, pickle.loads(
+        pickle.dumps(k.all)
+    ) == k.all
 
 
 def base_codec(width: int) -> tuple[Any, int, int]:
@@ -557,7 +684,9 @@ def base_codec(width: int) -> tuple[Any, int, int]:
     return k.dtype().value, k.all.size, k.none.size
 
 
-def int_codec_fields(w1: int, n1: str, s1: bool, w2: int, n2: str, s2: bool) -> tuple[bool, bool]:
+def int_codec_fields(
+    w1: int, n1: str, s1: bool, w2: int, n2: str, s2: bool
+) -> tuple[bool, bool]:
     a, b = codecs.Int(w1, n1, s1), codecs.Int(w2, n2, s2)
     try:
         a.none | b.none
@@ -588,7 +717,12 @@ def codec_set_lookup(c: str, values: list[int], x: Any) -> tuple[bool, int]:
     return x in s, s.count(x)
 
 
-WRONG_VALUES: dict[str, Any] = {"float": 1.0, "string": "1", "none": None, "bytes": b"\x01"}
+WRONG_VALUES: dict[str, Any] = {
+    "float": 1.0,
+    "string": "1",
+    "none": None,
+    "bytes": b"\x01",
+}
 
 
 def codec_set_choice(c: str, values: list[int], seed: int) -> tuple[Any, Any]:
@@ -600,11 +734,23 @@ def codec_set_combine(op: str, c: str, a: list[int], d: str, b: list[int]) -> An
     return OPS[op](codec(c).set(a), codec(d).set(b))
 
 
+def codec_set_combine_message(
+    op: str, c: str, a: list[int], d: str, b: list[int]
+) -> str:
+    try:
+        OPS[op](codec(c).set(a), codec(d).set(b))
+    except TypeError as e:
+        return str(e)
+    return ""
+
+
 def other_operand(kind: str, values: list[int], s: Any) -> Any:
     return s.storage if kind == "IntSet" else CONTAINERS[kind](values)
 
 
-def codec_set_combine_other(op: str, c: str, a: list[int], other: str, side: str) -> Any:
+def codec_set_combine_other(
+    op: str, c: str, a: list[int], other: str, side: str
+) -> Any:
     s = codec(c).set(a)
     return _sides(OPS[op], s, other_operand(other, a, s), side)
 
@@ -616,7 +762,9 @@ def codec_set_compare(op: str, c: str, a: list[int], d: str, b: list[int]) -> bo
     return SET_CMP[op](codec(c).set(a), codec(d).set(b))
 
 
-def codec_set_compare_other(op: str, c: str, a: list[int], other: str, side: str) -> bool:
+def codec_set_compare_other(
+    op: str, c: str, a: list[int], other: str, side: str
+) -> bool:
     s = codec(c).set(a)
     return _sides(SET_CMP[op], s, other_operand(other, a, s), side)
 
@@ -681,7 +829,9 @@ def float_classes(c: str, b: int) -> dict[str, bool]:
     return {name: b in getattr(k, name).storage for name in FLOAT_SETS}
 
 
-def f16_range_ends(start: float | None, stop: float | None) -> tuple[float, float] | None:
+def f16_range_ends(
+    start: float | None, stop: float | None
+) -> tuple[float, float] | None:
     s = codecs.float16.range(start, stop)
     return (s[0], s[-1]) if s.size else None
 
@@ -706,7 +856,9 @@ def bad_ip_value(family: str, bad: str) -> Any:
         "bytes": bytes(4 if v4 else 16),
         "other_family": ipaddress.IPv6Address(1) if v4 else ipaddress.IPv4Address(1),
         "slash": "10.0.0.1/8" if v4 else "::1/64",
-        "interface": ipaddress.IPv4Interface("10.0.0.1/8") if v4 else ipaddress.IPv6Interface("::1/64"),
+        "interface": ipaddress.IPv4Interface("10.0.0.1/8")
+        if v4
+        else ipaddress.IPv6Interface("::1/64"),
     }[bad]
 
 
@@ -761,7 +913,11 @@ def date_decode(b: int) -> tuple[int, int, int]:
 
 def date_bounds() -> tuple[tuple[int, int, int], tuple[int, int, int], int]:
     lo, hi = codecs.dates.min, codecs.dates.max
-    return (lo.year, lo.month, lo.day), (hi.year, hi.month, hi.day), codecs.dates.all.size
+    return (
+        (lo.year, lo.month, lo.day),
+        (hi.year, hi.month, hi.day),
+        codecs.dates.all.size,
+    )
 
 
 class NoOffset(tzinfo):
@@ -781,8 +937,12 @@ def datetime_codec_of(zone: int | None) -> Any:
     return codecs.DateTime(None if zone is None else timezone(timedelta(minutes=zone)))
 
 
-def datetime_encode(zone: int | None, ordinal: int, micros: int, offset: int | None, opaque: bool) -> int:
-    local = datetime.combine(date.fromordinal(ordinal), time()) + timedelta(microseconds=micros)
+def datetime_encode(
+    zone: int | None, ordinal: int, micros: int, offset: int | None, opaque: bool
+) -> int:
+    local = datetime.combine(date.fromordinal(ordinal), time()) + timedelta(
+        microseconds=micros
+    )
     if opaque:
         tz: tzinfo | None = NoOffset()
     elif offset is not None:
@@ -792,7 +952,11 @@ def datetime_encode(zone: int | None, ordinal: int, micros: int, offset: int | N
     return datetime_codec_of(zone).encode(local.replace(tzinfo=tz))
 
 
-BAD_DATETIMES: dict[str, Any] = {"date": date(2024, 1, 1), "string": "2024-01-01T00:00", "int": 0}
+BAD_DATETIMES: dict[str, Any] = {
+    "date": date(2024, 1, 1),
+    "string": "2024-01-01T00:00",
+    "int": 0,
+}
 
 
 def datetime_codec(zone: int | None) -> tuple[str, int, int, bool]:
@@ -804,12 +968,22 @@ def datetime_decode(zone: int | None, b: int) -> tuple[int, int, int | None]:
     v = datetime_codec_of(zone).decode(b)
     micros = ((v.hour * 60 + v.minute) * 60 + v.second) * 1_000_000 + v.microsecond
     off = v.utcoffset()
-    return v.date().toordinal(), micros, None if off is None else off // timedelta(minutes=1)
+    return (
+        v.date().toordinal(),
+        micros,
+        None if off is None else off // timedelta(minutes=1),
+    )
 
 
 def uuid_encode(hi: int, lo: int, form: str) -> int:
     u = uuid.UUID(int=(hi << 64) | lo)
-    value = {"object": u, "hyphens": str(u), "hex": u.hex, "braces": "{" + str(u) + "}", "urn": u.urn}[form]
+    value = {
+        "object": u,
+        "hyphens": str(u),
+        "hex": u.hex,
+        "braces": "{" + str(u) + "}",
+        "urn": u.urn,
+    }[form]
     return codecs.uuid128.encode(value)
 
 
@@ -940,7 +1114,9 @@ def product_none() -> tuple[int, str]:
     return s.size, repr(s.codec)
 
 
-def product_operator(a: list[int], b: list[int], c: list[int]) -> tuple[bool, list[Any]]:
+def product_operator(
+    a: list[int], b: list[int], c: list[int]
+) -> tuple[bool, list[Any]]:
     x, y, z = codecs.uint8.set(a), codecs.int8.set(b), codecs.uint8.set(c)
     return x * y == codecs.product(x, y), list(x * y * z)
 
@@ -956,22 +1132,31 @@ CODEC_IMPLS = {
     "codec_assign": codec_assign,
     "codec_pickle": codec_pickle,
     "base_codec": base_codec,
-    "base_codec_encode": lambda width, value: codecs.Codec(width=width, name="base").encode(value),
+    "base_codec_encode": lambda width, value: codecs.Codec(
+        width=width, name="base"
+    ).encode(value),
     "int_codec_fields": int_codec_fields,
     "codec_pattern": lambda c, quartets: codec(c).pattern(text(quartets)),
     "codec_pattern_message": codec_pattern_message,
-    "bddset_new": lambda c, iterable, width: codecs.BDDSet(codec(c), IntSet(iterable, width=width)),
+    "bddset_new": lambda c, iterable, width: codecs.BDDSet(
+        codec(c), IntSet(iterable, width=width)
+    ),
     "codec_set": lambda c, values: codec(c).set(values),
     "codec_set_order": codec_set_order,
     "codec_set_measures": codec_set_measures,
     "codec_set_at": lambda c, values, i: codec(c).set(values)[i],
     "codec_set_slice": lambda c, values, start, stop: codec(c).set(values)[start:stop],
     "codec_set_lookup": codec_set_lookup,
-    "codec_set_lookup_other": lambda c, values, x: codec_set_lookup(c, values, WRONG_VALUES[x]),
+    "codec_set_lookup_other": lambda c, values, x: codec_set_lookup(
+        c, values, WRONG_VALUES[x]
+    ),
     "codec_set_index": lambda c, values, x: codec(c).set(values).index(x),
-    "codec_set_index_other": lambda c, values, x: codec(c).set(values).index(WRONG_VALUES[x]),
+    "codec_set_index_other": lambda c, values, x: (
+        codec(c).set(values).index(WRONG_VALUES[x])
+    ),
     "codec_set_choice": codec_set_choice,
     "codec_set_combine": codec_set_combine,
+    "codec_set_combine_message": codec_set_combine_message,
     "codec_set_combine_other": codec_set_combine_other,
     "codec_set_compare": codec_set_compare,
     "codec_set_compare_other": codec_set_compare_other,
@@ -988,7 +1173,9 @@ CODEC_IMPLS = {
     "int_encode_bad": lambda c, bad: codec(c).encode(BAD_INTS[bad]),
     "int_decode": lambda c, b: codec(c).decode(b),
     "int_range": lambda c, start, stop: codec(c).range(start, stop),
-    "int_range_values": lambda c, start, span: list(codec(c).range(start, start + span)),
+    "int_range_values": lambda c, start, span: list(
+        codec(c).range(start, start + span)
+    ),
     "int_range_float": lambda c, bound: codec(c).range(bound, None),
     "custom_int": custom_int,
     "float_codec_info": float_codec_info,
@@ -1009,34 +1196,48 @@ CODEC_IMPLS = {
     "f16_range_has": lambda start, stop, x: x in codecs.float16.range(start, stop),
     "float_range_size": lambda c, start, stop: codec(c).range(start, stop).size,
     "f16_range_ends": f16_range_ends,
-    "floatfn_dtype": lambda width, exponent: codecs.FloatFN(width, "custom", exponent).dtype().value,
+    "floatfn_dtype": lambda width, exponent: (
+        codecs.FloatFN(width, "custom", exponent).dtype().value
+    ),
     "char_encode": lambda s: codecs.char.encode(s),
     "char_encode_codepoint": lambda cp: codecs.char.encode(chr(cp)),
     "char_encode_narrow": lambda width, s: codecs.Char(width, "narrow").encode(s),
-    "char_encode_bad": lambda bad: codecs.char.encode({"int": 65, "bytes": b"A", "none": None}[bad]),
+    "char_encode_bad": lambda bad: codecs.char.encode(
+        {"int": 65, "bytes": b"A", "none": None}[bad]
+    ),
     "char_decode": lambda b: codecs.char.decode(b),
     "char_all": lambda width: codecs.Char(width, "narrow").all,
     "char_bounds": lambda: (codecs.char.min, codecs.char.max),
     "char_range": lambda start, stop: codecs.char.range(start, stop),
     "char_category": lambda name: codecs.char.category(name),
     "char_category_pair": char_category_pair,
-    "char_category_ascii": lambda name: "".join(codecs.char.category(name) & codecs.char.range("\0", "\x80")),
+    "char_category_ascii": lambda name: "".join(
+        codecs.char.category(name) & codecs.char.range("\0", "\x80")
+    ),
     "ip_encode_int": lambda family, v: ip(family).encode(v),
     "ip_encode_address": lambda family, v: ip(family).encode(address(family, v)),
     "ip_encode_text": lambda family, t: ip(family).encode(t),
     "ip_encode_dotted": lambda octets: codecs.ipv4.encode(".".join(map(str, octets))),
-    "ip_encode_groups": lambda groups: codecs.ipv6.encode(":".join(f"{g:x}" for g in groups)),
+    "ip_encode_groups": lambda groups: codecs.ipv6.encode(
+        ":".join(f"{g:x}" for g in groups)
+    ),
     "ip_encode_bad": lambda family, bad: ip(family).encode(bad_ip_value(family, bad)),
     "ip_decode": ip_decode,
     "ip_bounds": ip_bounds,
     "ip_range": lambda family, start, stop: ip(family).range(start, stop),
     "ip_cidr": ip_cidr,
-    "ip_networks": lambda start, span: networks(codecs.ipv4, codecs.ipv4.range(start, start + span)),
+    "ip_networks": lambda start, span: networks(
+        codecs.ipv4, codecs.ipv4.range(start, start + span)
+    ),
     "ip_networks_all": lambda family: networks(ip(family), ip(family).all),
     "ip_networks_wrong": ip_networks_wrong,
-    "mac_encode": lambda octets, style, upper: codecs.mac.encode(mac_text(octets, style, upper)),
+    "mac_encode": lambda octets, style, upper: codecs.mac.encode(
+        mac_text(octets, style, upper)
+    ),
     "mac_encode_text": lambda t: codecs.mac.encode(t),
-    "mac_encode_bad": lambda bad: codecs.mac.encode({"int": 1, "bytes": bytes(6), "none": None}[bad]),
+    "mac_encode_bad": lambda bad: codecs.mac.encode(
+        {"int": 1, "bytes": bytes(6), "none": None}[bad]
+    ),
     "mac_decode": lambda b: codecs.mac.decode(b),
     "mac_named": mac_named,
     "mac_oui": mac_oui,
@@ -1047,13 +1248,19 @@ CODEC_IMPLS = {
     ),
     "date_decode": date_decode,
     "date_bounds": date_bounds,
-    "date_range_size": lambda y1, m1, d1, y2, m2, d2: codecs.dates.range(date(y1, m1, d1), date(y2, m2, d2)).size,
+    "date_range_size": lambda y1, m1, d1, y2, m2, d2: (
+        codecs.dates.range(date(y1, m1, d1), date(y2, m2, d2)).size
+    ),
     "datetime_encode": datetime_encode,
-    "datetime_encode_bad": lambda zone, bad: datetime_codec_of(zone).encode(BAD_DATETIMES[bad]),
+    "datetime_encode_bad": lambda zone, bad: datetime_codec_of(zone).encode(
+        BAD_DATETIMES[bad]
+    ),
     "datetime_codec": datetime_codec,
     "datetime_decode": datetime_decode,
     "uuid_encode": uuid_encode,
-    "uuid_encode_bad": lambda bad: codecs.uuid128.encode({"int": 1, "bytes": bytes(16), "none": None}[bad]),
+    "uuid_encode_bad": lambda bad: codecs.uuid128.encode(
+        {"int": 1, "bytes": bytes(16), "none": None}[bad]
+    ),
     "uuid_encode_text": lambda t: codecs.uuid128.encode(t),
     "uuid_decode": lambda b: str(codecs.uuid128.decode(b)),
     "uuid_rfc9562": uuid_rfc9562,
@@ -1065,37 +1272,57 @@ CODEC_IMPLS = {
     "members_encode_bad": members_encode_bad,
     "members_complement": members_complement,
     "flags_codec": flags_codec,
-    "flags_encode": lambda cls, mask: codecs.Flags(FLAG_CLASSES[cls]).encode(FLAG_CLASSES[cls](mask)),
+    "flags_encode": lambda cls, mask: codecs.Flags(FLAG_CLASSES[cls]).encode(
+        FLAG_CLASSES[cls](mask)
+    ),
     "flags_decode": lambda cls, b: codecs.Flags(FLAG_CLASSES[cls]).decode(b).value,
     "flags_encode_int": lambda cls, v: codecs.Flags(FLAG_CLASSES[cls]).encode(v),
     "flags_having": flags_having,
     "plain_codec_attributes": plain_codec_attributes,
     "tuple_codec": tuple_codec,
     "tuple_encode": lambda a, b, x, y: codecs.Tuple(codec(a), codec(b)).encode((x, y)),
-    "tuple_encode_shape": lambda values, as_list: codecs.Tuple(codecs.int8, codecs.int8).encode(
-        list(values) if as_list else tuple(values)
-    ),
+    "tuple_encode_shape": lambda values, as_list: codecs.Tuple(
+        codecs.int8, codecs.int8
+    ).encode(list(values) if as_list else tuple(values)),
     "tuple_decode": lambda a, b, e: tuple(codecs.Tuple(codec(a), codec(b)).decode(e)),
     "tuple_set_order": lambda pairs: list(pair_codec().set(pairs)),
     "product_of": lambda a, b: codecs.product(codecs.uint8.set(a), codecs.int8.set(b)),
     "product_none": product_none,
     "product_operator": product_operator,
     "product_operator_bad": product_operator_bad,
-    "product_example": lambda: codecs.product(codecs.ipv4.cidr("10.0.0.0/8"), codecs.uint16.range(1024, 65536)).size,
-    "product_contains": lambda octets, port: (".".join(map(str, octets)), port)
-    in codecs.product(codecs.ipv4.all, codecs.uint16.all),
-    "project_of": lambda pairs, index: list(codecs.project(pair_codec().set(pairs), index)),
+    "product_example": lambda: (
+        codecs.product(
+            codecs.ipv4.cidr("10.0.0.0/8"), codecs.uint16.range(1024, 65536)
+        ).size
+    ),
+    "product_contains": lambda octets, port: (
+        (".".join(map(str, octets)), port)
+        in codecs.product(codecs.ipv4.all, codecs.uint16.all)
+    ),
+    "project_of": lambda pairs, index: list(
+        codecs.project(pair_codec().set(pairs), index)
+    ),
     "project_bad": lambda values: list(codecs.project(codecs.uint8.set(values), 0)),
 }
 
-ALL_FLOATS = ["float16", "bfloat16", "float32", "float64", "float8_e5m2", "float8_e4m3fn"]
+ALL_FLOATS = [
+    "float16",
+    "bfloat16",
+    "float32",
+    "float64",
+    "float8_e5m2",
+    "float8_e4m3fn",
+]
 
 CODEC_EXAMPLES: dict[str, list[dict[str, Any]]] = {
     "codec_set_order": [{"c": "int8", "values": [-1, 0, 1, -128, 127]}],
     "codec_set_lookup_other": [{"c": "uint8", "values": [1], "x": "float"}],
     "codec_set_equal": [{"c": "uint8", "a": [1], "d": "int8", "b": [1]}],
     "all_repr": [{"c": "uint8"}],
-    "int_range": [{"c": "int8", "start": -200, "stop": 200}, {"c": "int8", "start": 5, "stop": 3}],
+    "int_range": [
+        {"c": "int8", "start": -200, "stop": 200},
+        {"c": "int8", "start": 5, "stop": 3},
+    ],
     "custom_int": [{"width": 5, "signed": True}],
     "float_encode": [
         {"c": "float16", "x": 1 + 2**-11},
@@ -1112,8 +1339,14 @@ CODEC_EXAMPLES: dict[str, list[dict[str, Any]]] = {
     ],
     "float8_decode": [{"c": "float8_e4m3fn", "b": 0x7E}],
     "float_range_size": [{"c": c, "start": 1.0, "stop": 2.0} for c in ALL_FLOATS]
-    + [{"c": "float16", "start": None, "stop": None}, {"c": "float8_e4m3fn", "start": None, "stop": None}]
-    + [{"c": "float16", "start": 1e10, "stop": None}, {"c": "float16", "start": -1e10, "stop": -65504.0}],
+    + [
+        {"c": "float16", "start": None, "stop": None},
+        {"c": "float8_e4m3fn", "start": None, "stop": None},
+    ]
+    + [
+        {"c": "float16", "start": 1e10, "stop": None},
+        {"c": "float16", "start": -1e10, "stop": -65504.0},
+    ],
     "f16_range_has": [
         {"start": 0.0, "stop": None, "x": float("inf")},
         {"start": 0.0, "stop": float("inf"), "x": float("inf")},
@@ -1128,7 +1361,10 @@ CODEC_EXAMPLES: dict[str, list[dict[str, Any]]] = {
     "char_category_ascii": [{"name": "Sm"}],
     "char_all": [{"width": 7}, {"width": 21}],
     "ip_decode": [{"family": "ipv6", "b": 1}],
-    "ip_cidr": [{"octets": [10, 1, 2, 3], "prefix": 8}, {"octets": [0, 0, 0, 0], "prefix": 0}],
+    "ip_cidr": [
+        {"octets": [10, 1, 2, 3], "prefix": 8},
+        {"octets": [0, 0, 0, 0], "prefix": 0},
+    ],
     "ip_networks": [{"start": 0x0A000001, "span": 8}],
     "mac_encode_text": [
         {"text": t}
@@ -1144,13 +1380,27 @@ CODEC_EXAMPLES: dict[str, list[dict[str, Any]]] = {
         )
     ],
     "mac_oui_text": [{"text": t} for t in ("00:1a:2b", "00-1A-2B", "001a.2b", "00:1a")],
-    "mac_named": [{"name": n, "b": 0xFFFFFFFFFFFF} for n in ("broadcast", "multicast", "local")],
+    "mac_named": [
+        {"name": n, "b": 0xFFFFFFFFFFFF} for n in ("broadcast", "multicast", "local")
+    ],
     "date_encode": [{"year": 1, "month": 1, "day": 1}],
     "date_range_size": [{"y1": 2024, "m1": 1, "d1": 1, "y2": 2025, "m2": 1, "d2": 1}],
     "datetime_encode": [
         {"zone": 0, "ordinal": 1, "micros": 0, "offset": 60, "opaque": False},
-        {"zone": 0, "ordinal": 738886, "micros": 7 * 3600 * 10**6, "offset": -300, "opaque": False},
-        {"zone": 0, "ordinal": 738886, "micros": 12 * 3600 * 10**6, "offset": 0, "opaque": False},
+        {
+            "zone": 0,
+            "ordinal": 738886,
+            "micros": 7 * 3600 * 10**6,
+            "offset": -300,
+            "opaque": False,
+        },
+        {
+            "zone": 0,
+            "ordinal": 738886,
+            "micros": 12 * 3600 * 10**6,
+            "offset": 0,
+            "opaque": False,
+        },
     ],
     "datetime_codec": [{"zone": 0}, {"zone": 300}, {"zone": 60}, {"zone": None}],
     "members_complement": [{"n": 3, "picks": [False, True]}],
@@ -1199,7 +1449,12 @@ def bdd_leaves() -> dict[str, Any]:
 
 def not_bdd(kind: str) -> Any:
     """An operand that is not a BDD, made when needed."""
-    return {"int": lambda: 1, "IntSet": IntSet, "none": lambda: None, "string": lambda: "1"}[kind]()
+    return {
+        "int": lambda: 1,
+        "IntSet": IntSet,
+        "none": lambda: None,
+        "string": lambda: "1",
+    }[kind]()
 
 
 def bdd_node_bad(bit: int, bad: str, side: str) -> bool:
@@ -1233,7 +1488,9 @@ def bdd_path_count(iterable: list[int], width: int, extra: int) -> tuple[int, in
     return bdd.path_count(s.bdd), len(list(bdd.paths(s.bdd, width=s.width + extra)))
 
 
-def bdd_narrowed(iterable: list[int], width: int, q: int, value: int) -> tuple[int, bool]:
+def bdd_narrowed(
+    iterable: list[int], width: int, q: int, value: int
+) -> tuple[int, bool]:
     m = bdd.narrowed(node(iterable, width), width=q)
     return m.bit, bdd.accepts(m, value)
 
@@ -1243,7 +1500,9 @@ def bdd_exactly(values: list[int], width: int) -> tuple[int, list[int]]:
     return w, list(bdd.members(d, width=w))
 
 
-def bdd_interval(start: int, stop: int, width: int) -> tuple[list[int], bool, bool, list[tuple[int, int]]]:
+def bdd_interval(
+    start: int, stop: int, width: int
+) -> tuple[list[int], bool, bool, list[tuple[int, int]]]:
     d = bdd.interval(start, stop, width=width)
     blocks = [tuple(b) for b in bdd.blocks(d, width=width)]
     return list(bdd.members(d, width=width)), d is BDD.REJECT, d is BDD.ACCEPT, blocks
@@ -1254,11 +1513,18 @@ BDD_IMPLS = {
     "diagram_text": lambda t: bdd.diagram(t).bit,
     "diagram_accepts": lambda bits, value: bdd.accepts(diagram(bits), value),
     "bdd_leaves": bdd_leaves,
-    "bdd_node": lambda bit, left, right, value: bdd.accepts(BDD(bit, diagram(left), diagram(right)), value),
+    "bdd_node": lambda bit, left, right, value: bdd.accepts(
+        BDD(bit, diagram(left), diagram(right)), value
+    ),
     "bdd_identity": bdd_identity,
     "bdd_node_bad": bdd_node_bad,
-    "bdd_operator": lambda op, a, b, value: bdd.accepts(OPS[op](diagram(a), diagram(b)), value),
-    "bdd_invert": lambda a, value: (bdd.accepts(~diagram(a), value), (~BDD.ACCEPT) is BDD.REJECT),
+    "bdd_operator": lambda op, a, b, value: bdd.accepts(
+        OPS[op](diagram(a), diagram(b)), value
+    ),
+    "bdd_invert": lambda a, value: (
+        bdd.accepts(~diagram(a), value),
+        (~BDD.ACCEPT) is BDD.REJECT,
+    ),
     "bdd_operator_bad": bdd_operator_bad,
     "bdd_equal": bdd_equal,
     "bdd_equal_other": lambda a, other: diagram(a) == not_bdd(other),
@@ -1266,22 +1532,39 @@ BDD_IMPLS = {
     "bdd_repr": lambda bits: repr(diagram(bits)),
     "bdd_count": lambda iterable, width, q: bdd.count(node(iterable, width), width=q),
     "bdd_nth": lambda iterable, width, n, q: bdd.nth(node(iterable, width), n, width=q),
-    "bdd_rank": lambda iterable, width, value, q: bdd.rank(node(iterable, width), value, width=q),
-    "bdd_members": lambda iterable, width, q: list(bdd.members(node(iterable, width), width=q)),
-    "bdd_blocks": lambda iterable, width, q: [tuple(b) for b in bdd.blocks(node(iterable, width), width=q)],
-    "bdd_paths": lambda iterable, width, q: list(bdd.paths(node(iterable, width), width=q)),
-    "leaf_paths": lambda accept, q: list(bdd.paths(BDD.ACCEPT if accept else BDD.REJECT, width=q)),
+    "bdd_rank": lambda iterable, width, value, q: bdd.rank(
+        node(iterable, width), value, width=q
+    ),
+    "bdd_members": lambda iterable, width, q: list(
+        bdd.members(node(iterable, width), width=q)
+    ),
+    "bdd_blocks": lambda iterable, width, q: [
+        tuple(b) for b in bdd.blocks(node(iterable, width), width=q)
+    ],
+    "bdd_paths": lambda iterable, width, q: list(
+        bdd.paths(node(iterable, width), width=q)
+    ),
+    "leaf_paths": lambda accept, q: list(
+        bdd.paths(BDD.ACCEPT if accept else BDD.REJECT, width=q)
+    ),
     "bdd_path_count": bdd_path_count,
     "bdd_narrowed": bdd_narrowed,
     "bdd_exactly": bdd_exactly,
     "bdd_exactly_ints": lambda values: bdd.exactly_these(values, width=0)[1],
-    "bdd_exactly_bad": lambda bad: bdd.exactly_these([{"float": 1.5, "string": "1"}[bad]], width=0)[1],
+    "bdd_exactly_bad": lambda bad: bdd.exactly_these(
+        [{"float": 1.5, "string": "1"}[bad]], width=0
+    )[1],
     "bdd_interval": bdd_interval,
-    "bdd_lshift": lambda bits, by, value: bdd.accepts(bdd.lshift(diagram(bits), by), value),
+    "bdd_lshift": lambda bits, by, value: bdd.accepts(
+        bdd.lshift(diagram(bits), by), value
+    ),
     "bdd_freed": lambda bits, low, high, value: bdd.accepts(
         bdd.freed_between(diagram(bits), low_bit=low, high_bit=high), value
     ),
-    "bdd_relations": lambda a, b: (bdd.subset(diagram(a), diagram(b)), bdd.disjoint(diagram(a), diagram(b))),
+    "bdd_relations": lambda a, b: (
+        bdd.subset(diagram(a), diagram(b)),
+        bdd.disjoint(diagram(a), diagram(b)),
+    ),
     "bdd_collect": bdd.collect,
     "bdd_stats": bdd.stats,
 }
@@ -1290,11 +1573,20 @@ BDD_EXAMPLES: dict[str, list[dict[str, Any]]] = {
     "diagram_node": [{"bits": ["1", "?", "0"]}, {"bits": []}],
     "diagram_text": [{"text": t} for t in ("", "1*0", "1.0", "1?0")],
     "diagram_accepts": [{"bits": [], "value": 999}],
-    "bdd_interval": [{"start": 3, "stop": 17, "width": 5}, {"start": 0, "stop": 32, "width": 5}],
-    "leaf_paths": [{"accept": True, "q": 3}, {"accept": True, "q": 0}, {"accept": False, "q": 3}],
+    "bdd_interval": [
+        {"start": 3, "stop": 17, "width": 5},
+        {"start": 0, "stop": 32, "width": 5},
+    ],
+    "leaf_paths": [
+        {"accept": True, "q": 3},
+        {"accept": True, "q": 0},
+        {"accept": False, "q": 3},
+    ],
 }
 
-test_bdd = spectest.conformance(spec, impls=BDD_IMPLS, models=MODELS, errors=ERRORS, examples=BDD_EXAMPLES)
+test_bdd = spectest.conformance(
+    spec, impls=BDD_IMPLS, models=MODELS, errors=ERRORS, examples=BDD_EXAMPLES
+)
 
 # ---------------------------------------------------------------------------
 # 5 and 6. strategies, DLPack and DType
@@ -1319,7 +1611,9 @@ def export_members(n: int, picks: list[bool]) -> list[int]:
     return np.from_dlpack(codecs.Members(e).set(picked(e, picks))).tolist()
 
 
-def dlpack_errors(cls: str, iterable: list[int], stream: Any, device: Any, copy: Any) -> bool:
+def dlpack_errors(
+    cls: str, iterable: list[int], stream: Any, device: Any, copy: Any
+) -> bool:
     source(cls, iterable).__dlpack__(stream=stream, dl_device=device, copy=copy)
     return True
 
@@ -1335,7 +1629,11 @@ EXPORT_IMPLS = {
     ),
     "dtype_member": dtype_member,
     "dlpack_device": lambda cls, iterable, width: tuple(
-        (codecs.uint8.set(iterable) if cls == "BDDSet" else build(cls, iterable, width)).__dlpack_device__()
+        (
+            codecs.uint8.set(iterable)
+            if cls == "BDDSet"
+            else build(cls, iterable, width)
+        ).__dlpack_device__()
     ),
     "export_intset": lambda iterable, width: exported(IntSet(iterable, width=width)),
     "export_rows": lambda iterable, width: exported(IntSet(iterable, width=width)),
@@ -1348,15 +1646,37 @@ EXPORT_IMPLS = {
 }
 
 EXPORT_EXAMPLES: dict[str, list[dict[str, Any]]] = {
-    "export_intset": [{"iterable": [300, 1, 20], "width": 0}, {"iterable": [], "width": 0}],
+    "export_intset": [
+        {"iterable": [300, 1, 20], "width": 0},
+        {"iterable": [], "width": 0},
+    ],
     "export_signed": [{"c": "int8", "values": [-1, 0, 1, -128]}],
     "dlpack_errors": [
-        {"cls": "IntSet", "iterable": [1], "stream": None, "device": (1, 0), "copy": None},
-        {"cls": "IntSet", "iterable": [1], "stream": None, "device": None, "copy": True},
-        {"cls": "BDDSet", "iterable": [1], "stream": None, "device": None, "copy": False},
+        {
+            "cls": "IntSet",
+            "iterable": [1],
+            "stream": None,
+            "device": (1, 0),
+            "copy": None,
+        },
+        {
+            "cls": "IntSet",
+            "iterable": [1],
+            "stream": None,
+            "device": None,
+            "copy": True,
+        },
+        {
+            "cls": "BDDSet",
+            "iterable": [1],
+            "stream": None,
+            "device": None,
+            "copy": False,
+        },
     ],
     "dlpack_capsule": [
-        {"cls": "IntSet", "iterable": [1], "max_version": v} for v in (None, (0, 8), (1, 0), (1, 1))
+        {"cls": "IntSet", "iterable": [1], "max_version": v}
+        for v in (None, (0, 8), (1, 0), (1, 1))
     ],
 }
 

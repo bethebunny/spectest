@@ -938,6 +938,12 @@ fn codec_set_combine(op: Op, c: IntCodec, a: list<i8>, d: IntCodec, b: list<i8>)
       else (x in a) != (x in b))
   ensures codec: result.codec == c
 
+# The message of that TypeError is "<codec> sets only combine with each other", read here as
+# naming the left operand's codec. The binding returns str(e), or "" when nothing is raised.
+fn codec_set_combine_message(op: Op, c: Signed, a: list<i8>, d: Signed, b: list<i8>) -> string
+  requires c != d
+  ensures message: result == c + " sets only combine with each other"
+
 # With a built-in set, list or IntSet on either side, the operators raise TypeError. An IntSet on
 # the left is left out: IntSet's own operators convert any iterable of ints (section 1), which
 # the two sections leave in conflict.
