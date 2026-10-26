@@ -508,6 +508,7 @@ examples = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "mojo-compiler" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "polars" },
@@ -529,6 +530,7 @@ provides-extras = ["examples"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "mojo-compiler", specifier = "==1.2.0" },
     { name = "numpy", specifier = ">=2.1" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "polars", specifier = ">=1.0" },
