@@ -938,8 +938,11 @@ fn codec_set_combine(op: Op, c: IntCodec, a: list<i8>, d: IntCodec, b: list<i8>)
       else (x in a) != (x in b))
   ensures codec: result.codec == c
 
-# With a built-in set, list or IntSet on either side, the operators raise TypeError.
+# With a built-in set, list or IntSet on either side, the operators raise TypeError. An IntSet on
+# the left is left out: IntSet's own operators convert any iterable of ints (section 1), which
+# the two sections leave in conflict.
 fn codec_set_combine_other(op: Op, c: Signed, a: list<i8>, other: Other, side: Side) -> CodecSet
+  requires not (other == "IntSet" and side == "left")
   raises TypeError when true
 
 # <=, <, >=, > and isdisjoint, between sets of one codec.
@@ -1957,6 +1960,9 @@ fn members_encode(n: u8, i: u8, alias: bool) -> (int, int)
   requires n >= 1 and n <= 64 and i < n
   partition n
     valid = u8.range(1, 65)
+  partition i
+    low = u8.range(0, 64)
+    high = u8.range(64, none)
   ensures index: result.0 == i
   ensures not_separate: result.1 == n
 
