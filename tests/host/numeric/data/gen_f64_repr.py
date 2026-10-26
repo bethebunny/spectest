@@ -4,6 +4,7 @@ Run from the repository root: `python tests/host/numeric/data/gen_f64_repr.py`.
 The patterns are fixed: a seeded random sample plus the extremes and powers of ten.
 """
 
+import math
 import random
 import struct
 from pathlib import Path
@@ -45,7 +46,7 @@ patterns |= {p | (1 << 63) for p in list(patterns)[:1500]}
 lines = []
 for p in sorted(patterns):
     x = value_of(p)
-    if x != x or x in (float("inf"), float("-inf")):
+    if not math.isfinite(x):
         continue
     lines.append(f"{p} {x!r}")
 Path(__file__).with_name("f64_repr.txt").write_text("\n".join(lines) + "\n")

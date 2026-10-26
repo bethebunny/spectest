@@ -128,3 +128,10 @@ author.
 | Package | State |
 | --- | --- |
 | contracts | landed |
+| bridge | landed. About 0.25 µs per call is the host's own cost; see `docs/v2/spike.md` |
+| driver | landed. `call` costs 0.2 to 0.6 µs for a two-int function |
+| wire | landed |
+| numeric | landed. Literal exponents are capped at 10\*\*6, which v1 doesn't cap |
+| syntax | landed. `bitpattern.spec` parses in about 7 ms |
+| mcheck | landed. About 0.18 µs per trivial example |
+| sets | landed. Every named set of every format builds in about 0.1 ms |

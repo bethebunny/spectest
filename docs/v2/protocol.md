@@ -37,7 +37,7 @@ objects. An exception escaping a method is a bug in the driver or the host.
 | Method | Returns | Does |
 | --- | --- | --- |
 | `resolve(name)` | `int` or `Error` | Resolves a qualified name (`bitpattern.IntSet.range`) to a target id: import the longest module prefix, then read attributes. The same name gives the same id. A name that doesn't resolve is `Error("spectest.ResolveError", ...)`. |
-| `call(target, args, kwargs)` | wire object | Calls the target with the arguments converted to Python, and converts the result back. A method target takes its receiver first. A property target reads the property of `args[0]`. An exception the call raises is returned as `Error`. |
+| `call(target, args, kwargs)` | wire object | Calls the target with the arguments converted to Python, and converts the result back. `kwargs` is a `dict` from parameter name to wire object, empty when there are none. A method target takes its receiver first. A property target reads the property of `args[0]`. An exception the call raises is returned as `Error`. |
 | `get(target)` | wire object | The target's value, converted: a constant such as `bitpattern.codecs.int8`, usually a `Handle`. |
 | `observe(obj, name, args)` | wire object | Reads attribute `name` of `obj` (a `Handle` or a wire object), then calls it with `args` when `args` is a list. `args` is `None` for a plain attribute or property. |
 | `release(ids)` | `None` | Forgets the handles with these ids. |

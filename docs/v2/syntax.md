@@ -90,3 +90,11 @@ Two additions to v1's operators:
 
 Calls to library functions in clauses need no new syntax: `bitpattern.IntSet.__contains__(s, x)`
 is a call whose callee is an attribute chain.
+
+## Choices the parser makes where the language doc is silent
+
+- A `def` may continue on deeper-indented lines after `=`, like any clause.
+- Generic calls keep v1's rule: only `wrap`, `fits`, `round`, `ulp` and `qe` followed
+  by `<` start type arguments, so a qualified `mp.round<f64>(x)` is a comparison.
+- A `perf` clause keeps its text, continuation lines joined by a space.
+- Names are ASCII, as in v1.

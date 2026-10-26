@@ -24,8 +24,12 @@ takes about a second.
 - Include roots: `-I host -I host/vendor/bitpattern`. Packages under `host/` need an
   `__init__.mojo`. Import by module path: `from wire.value import Value`,
   `from arena import Arena`, `from bigint import BigUInt`.
-- A cold compile of a small test takes 4 to 10 s; unchanged code reruns from the cache
-  in about 1 s. `-O0` is not faster.
+- A cold compile of a small test takes 4 to 10 s, and `mojo run` spends 1 to 3 s even
+  when its cache is warm. `tests/host/conftest.py` therefore builds each test file
+  once per state of `host/` and keeps the binary in `.mojo-tests/`, so an unchanged
+  test reruns at once. `-O0` is not faster.
+- A Mojo test can scale its sample counts with `getenv("SPECTEST_STRENGTH")`: `dev`
+  in the dev loop, `full` under `--ci`.
 
 ## Idioms that compile in 1.2
 
@@ -55,6 +59,40 @@ takes about a second.
 - Errors: `raise Error("message")` in a `def ... raises`. Typed raises
   (`raises Interrupted`) exist; bitpattern's arena uses them.
 - `InlineArray` is not in scope by default; prefer a `List` or a function.
+- Imports that aren't where older Mojo had them: `from std.builtin.sort import sort`,
+  `from std.os import abort, getenv`, `from std.bit import count_trailing_zeros`,
+  `from std.hash import default_hasher` (`var h = default_hasher()`, then
+  `h^.finish()`). `std.time.perf_counter_ns`, `std.os.makedirs`, `std.pathlib.Path`
+  and `std.tempfile.mkdtemp` work.
+- `Pointer[T, MutUntrackedOrigin](unsafe_from_address=a)`, indexed with
+  `p[unsafe_offset=i]`, replaces the deprecated `UnsafePointer`. A destructor is
+  `def __deinit__(deinit self)`.
+- `Comparable` needs only `__eq__` and `__lt__`. `abs(x)` needs the `Absable` trait;
+  `BigInt` lacks it, so call `x.__abs__()`. `BigUInt` isn't `Writable`, so
+  `assert_equal` rejects it; compare with `assert_true(a == b)`.
+- `BigInt`, `BigUInt` and `Real` are `Copyable` but not `ImplicitlyCopyable`: pass them
+  with `.copy()` or `^`, also inside call arguments and when returning a local (`r^`).
+  `BigUInt(x)` takes a `UInt64`, `UInt128` or literal, not a runtime `Int`.
+- A list literal of one element type can infer a fixed-size array: write
+  `var xs: List[T] = [a, b]` where a `List` is expected. `for x in xs` needs a
+  copyable element type; use `for i in range(len(xs))` otherwise. A module-level
+  `comptime` list needs `materialize[NAMES]()` to be iterated at run time.
+- `len(s)` on a `String` is an error: use `s.byte_length()`. `String.split` returns
+  `StringSlice`s; wrap one in `String(...)` to own it. `String(unsafe_from_utf8=Span(bytes))`
+  builds a String from a `List[UInt8]`, NULs included. `chr(code)` encodes a code
+  point. A `\u` escape in a literal takes exactly four hex digits.
+- Moves out of the middle of a value fail ("destroyed out of the middle of a value"):
+  `return holder.field^` from a local, or `tok.text^` with `tok` used later. Copy
+  instead, or consume the holder: `def into_ast(deinit self) -> Ast: return self.ast^`.
+- A `Span` or pointer into a `String` field of `self` is invalidated by any later
+  `mut self` call. Pass such bytes down as an argument from a string that isn't a
+  field of the struct being changed.
+- `syntax.ast.Span` hides std's `Span` when imported; alias one of them.
+- `comptime` constants typed `UInt8` don't convert to `Int` in a `List[Int]` literal.
+- Integer arithmetic on `Int` and `UInt64` wraps without trapping; `Int //` floors,
+  as Python's does.
+- A file given to `mojo build` as the top-level module can't use relative imports;
+  use package paths there.
 
 ## Limits found so far
 
@@ -67,6 +105,14 @@ takes about a second.
 - A defaulted argument of a recursive type (`var items: List[Value] = ...`) in a
   helper struct's constructor triggers the same error; build such values inside the
   recursive type's own constructor.
+- Temporaries die early. A local that owns a Python reference is destroyed right
+  after its last use, so passing `owner.ptr` to a call can free the object before the
+  call runs. Pass the owning struct itself as a borrowed argument, or keep the owner
+  alive past the call (`_ = len(buf)` after a call that reads `buf` through a raw
+  pointer). `host/bridge` shows both.
+- Module-level state in a shared library: `std.ffi._Global[name, init_fn]`, whose
+  `init_fn` is a non-raising `def() -> T`; `get_or_create_ptr()` raises and returns a
+  `MutUntrackedOrigin` pointer.
 
 ## Reference code
 
