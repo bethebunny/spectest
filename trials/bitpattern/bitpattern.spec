@@ -2140,3 +2140,441 @@ fn project_of(pairs: list<(u8, i8)>, index: i8) -> list<int>
 # project of a set whose codec is not a Tuple raises TypeError.
 fn project_bad(values: list<u8>) -> list<int>
   raises TypeError when true
+
+# ---------------------------------------------------------------------------
+# 4. bitpattern.bdd
+#
+# For a pattern bits: list<Bit> of length L, diagram(bits) tests bit L - 1 - i at character i,
+# and its highest tested bit is
+#   max(v in [-1] + map(i in filter(i in range(0, L): bits[i] != "?"): L - 1 - i): v).
+# It accepts value when all(i in range(0, L): bits[i] == "?" or bit L - 1 - i of value matches),
+# where bit k of value is (value // 2**k) % 2.
+
+# (bit, leaf, size, bool(node), node_count(node), path_count(node)) of diagram(bits): a pattern's
+# diagram has one internal node per fixed bit and a single path; size counts the accepted values
+# below 2**(bit + 1); bool is False only for REJECT; node_count(diagram("1?0")) == 2.
+fn diagram_node(bits: list<Bit>) -> (int, bool, int, bool, int, int)
+  requires len(bits) <= 16
+  ensures bit: result.0 == max(v in [-1] + map(i in filter(i in range(0, len(bits)): bits[i] != "?"): len(bits) - 1 - i): v)
+  ensures leaf: result.1 == all(b in bits: b == "?")
+  ensures size: let top = max(v in [-1] + map(i in filter(i in range(0, len(bits)): bits[i] != "?"): len(bits) - 1 - i): v) in
+    result.2 == [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536][
+      count(i in range(0, len(bits)): bits[i] == "?" and len(bits) - 1 - i < top)]
+  ensures truth: result.3
+  ensures nodes: result.4 == count(b in bits: b != "?")
+  ensures paths: result.5 == 1
+
+# diagram(text).bit for any string: a character other than 0, 1 and ? raises ValueError (* and .
+# included); diagram("") is ACCEPT.
+fn diagram_text(text: string) -> int
+  raises ValueError when exists(c in codepoints(text): not (c in [48, 49, 63]))
+  ensures bit: let cp = codepoints(text) in
+    result == max(v in [-1] + map(i in filter(i in range(0, len(cp)): cp[i] != 63): len(cp) - 1 - i): v)
+
+# accepts(diagram(bits), value): untested bits are free, so accepts(ACCEPT, 999) is True.
+fn diagram_accepts(bits: list<Bit>, value: u16) -> bool
+  requires len(bits) <= 16
+  ensures pattern: result == all(i in range(0, len(bits)): bits[i] == "?" or
+    (value // [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768][len(bits) - 1 - i]) % 2
+      == (if bits[i] == "1" then 1 else 0))
+
+record Leaves { accept_bit: int, reject_bit: int, accept_leaf: bool, reject_leaf: bool, accept_size: int, reject_size: int, accept_true: bool, reject_true: bool, inverse: bool, children: bool, match_args: list<string>, accept_repr: string, reject_repr: string }
+
+# The leaves: bit -1, leaf True, size 1 and 0, bool True and False, ~BDD.ACCEPT is BDD.REJECT, a
+# leaf's left and right are the leaf itself (observed), __match_args__ == ("bit", "left",
+# "right"), and the reprs BDD.ACCEPT and BDD.REJECT.
+fn bdd_leaves() -> Leaves
+  ensures bits: result.accept_bit == -1 and result.reject_bit == -1
+  ensures leaf: result.accept_leaf and result.reject_leaf
+  ensures size: result.accept_size == 1 and result.reject_size == 0
+  ensures truth: result.accept_true and not result.reject_true
+  ensures inverse: result.inverse
+  ensures children: result.children
+  ensures match_args: result.match_args == ["bit", "left", "right"]
+  ensures reprs: result.accept_repr == "BDD.ACCEPT" and result.reject_repr == "BDD.REJECT"
+
+# accepts(BDD(bit, diagram(left), diagram(right)), value): when bit `bit` of value is 0 follow
+# left, otherwise right. ValueError if bit < 0 or a child tests a bit >= bit.
+fn bdd_node(bit: i8, left: list<Bit>, right: list<Bit>, value: u16) -> bool
+  requires bit <= 15 and len(left) <= 15 and len(right) <= 15
+  partition bit
+    negative = i8.range(none, 0)
+    valid = i8.range(0, 16)
+  raises ValueError when bit < 0 or
+    max(v in [-1] + map(i in filter(i in range(0, len(left)): left[i] != "?"): len(left) - 1 - i): v) >= bit or
+    max(v in [-1] + map(i in filter(i in range(0, len(right)): right[i] != "?"): len(right) - 1 - i): v) >= bit
+  ensures branch: let p = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768] in
+    result == (if (value // p[bit]) % 2 == 0
+      then all(i in range(0, len(left)): left[i] == "?" or (value // p[len(left) - 1 - i]) % 2 == (if left[i] == "1" then 1 else 0))
+      else all(i in range(0, len(right)): right[i] == "?" or (value // p[len(right) - 1 - i]) % 2 == (if right[i] == "1" then 1 else 0)))
+
+# (BDD(bit, d, d) is d, diagram(child) is diagram(child)): diagrams are canonical (observed).
+fn bdd_identity(bit: u8, child: list<Bit>) -> (bool, bool)
+  requires bit <= 15 and len(child) <= 15 and
+    max(v in [-1] + map(i in filter(i in range(0, len(child)): child[i] != "?"): len(child) - 1 - i): v) < bit
+  ensures reduced: result.0
+  ensures canonical: result.1
+
+# A child that is not a BDD raises TypeError (the binding gives 1, IntSet() or None on one side
+# and BDD.REJECT on the other).
+fn bdd_node_bad(bit: u8, bad: "int" | "IntSet" | "none", side: Side) -> bool
+  requires bit >= 1 and bit <= 15
+  raises TypeError when true
+
+# accepts(diagram(a) op diagram(b), value): pointwise boolean operations.
+fn bdd_operator(op: Op, a: list<Bit>, b: list<Bit>, value: u16) -> bool
+  requires len(a) <= 16 and len(b) <= 16
+  ensures pointwise: let p = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768] in
+    let x = all(i in range(0, len(a)): a[i] == "?" or (value // p[len(a) - 1 - i]) % 2 == (if a[i] == "1" then 1 else 0)) in
+    let y = all(i in range(0, len(b)): b[i] == "?" or (value // p[len(b) - 1 - i]) % 2 == (if b[i] == "1" then 1 else 0)) in
+    result == (if op == "&" then x and y else if op == "|" then x or y else if op == "-" then x and not y else x != y)
+
+# (accepts(~diagram(a), value), ~BDD.ACCEPT is BDD.REJECT).
+fn bdd_invert(a: list<Bit>, value: u16) -> (bool, bool)
+  requires len(a) <= 16
+  ensures complement: result.0 == (not all(i in range(0, len(a)): a[i] == "?" or
+    (value // [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768][len(a) - 1 - i]) % 2
+      == (if a[i] == "1" then 1 else 0)))
+  ensures leaves: result.1
+
+# An operand that is not a BDD raises TypeError, on either side.
+fn bdd_operator_bad(op: Op, a: list<Bit>, bad: "int" | "IntSet" | "none", side: Side) -> bool
+  requires len(a) <= 16
+  raises TypeError when true
+
+# (diagram(a) == diagram(b), equal hashes): == follows the function.
+fn bdd_equal(a: list<Bit>, b: list<Bit>) -> (bool, bool)
+  requires len(a) <= 16 and len(b) <= 16
+  ensures function: result.0 == all(k in range(0, max(v in [len(a), len(b)]: v)):
+    (if k < len(a) then a[len(a) - 1 - k] else "?") == (if k < len(b) then b[len(b) - 1 - k] else "?"))
+  ensures equal_hash: result.0 implies result.1
+
+# == against a non-BDD is False.
+fn bdd_equal_other(a: list<Bit>, other: "int" | "IntSet" | "none" | "string") -> bool
+  requires len(a) <= 16
+  ensures never: not result
+
+# (copy.copy(d) is d, copy.deepcopy(d) is d, pickle.loads(pickle.dumps(d)) is d) (observed).
+fn bdd_copies(a: list<Bit>) -> (bool, bool, bool)
+  requires len(a) <= 16
+  ensures same: result.0 and result.1 and result.2
+
+# repr(diagram(bits)): BDD.ACCEPT for the leaf, else <BDD bit=B, N nodes, S members>, S written by
+# count_repr (in decimal below 1024).
+fn bdd_repr(bits: list<Bit>) -> string
+  requires len(bits) <= 8
+  ensures shown:
+    let top = max(v in [-1] + map(i in filter(i in range(0, len(bits)): bits[i] != "?"): len(bits) - 1 - i): v) in
+    let digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] in
+    if top < 0 then result == "BDD.ACCEPT"
+    else result == "<BDD bit=" + digits[top] + ", " + digits[count(b in bits: b != "?")] + " nodes, " +
+      ["1", "2", "4", "8", "16", "32", "64", "128"][count(i in range(0, len(bits)): bits[i] == "?" and len(bits) - 1 - i < top)] +
+      " members>"
+
+# For the functions below, node is IntSet(iterable, width=width).bdd with W as above. The set is
+# the values below 2**W the node accepts and the node tests no bit >= W, so below 2**q with
+# q >= W it accepts x exactly when x % 2**W is a member. Functions taking a node and a width
+# raise ValueError when width < 0 or node.bit >= width; below W that depends on node.bit, which
+# the specification leaves to the implementation (may_raise).
+
+# count(node, width=q): the accepted values below 2**q.
+fn bdd_count(iterable: list<u8>, width: i8, q: i8) -> int
+  requires width <= 8 and q <= 16
+  partition q
+    negative = i8.range(none, 0)
+    narrow = i8.range(0, 9)
+    wide = i8.range(9, 17)
+  raises ValueError when q < 0
+  may_raise ValueError when q < max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v)
+  ensures count: let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536] in
+    result == (if q >= w then count(x in range(0, 256): x in iterable) * pow[q - w]
+               else count(x in range(0, pow[q]): x in iterable))
+
+# nth(node, n, width=q): the n-th accepted value below 2**q, ascending; a negative n counts from
+# the end; IndexError out of range.
+fn bdd_nth(iterable: list<u8>, width: i8, n: i16, q: i8) -> int
+  requires width <= 8 and q <= 16
+  partition q
+    negative = i8.range(none, 0)
+    narrow = i8.range(0, 9)
+    wide = i8.range(9, 17)
+  raises ValueError when q < 0
+  may_raise ValueError when q < max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v)
+  raises IndexError when q >= 0 and (
+    let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536] in
+    let c = (if q >= w then count(x in range(0, 256): x in iterable) * pow[q - w] else count(x in range(0, pow[q]): x in iterable)) in
+    n >= c or n < -c)
+  ensures value:
+    let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536] in
+    let a = filter(x in range(0, 256): x in iterable) in
+    let c = (if q >= w then len(a) * pow[q - w] else count(x in range(0, pow[q]): x in iterable)) in
+    let m = (if n < 0 then n + c else n) in
+    result == (if q >= w then (m // len(a)) * pow[w] + a[m % len(a)] else filter(x in range(0, pow[q]): x in iterable)[m])
+
+# rank(node, value, width=q): the accepted values below value, so a member's index; values past
+# the universe give the full count (observed).
+fn bdd_rank(iterable: list<u8>, width: i8, value: u16, q: i8) -> int
+  requires width <= 8 and q <= 16
+  partition q
+    negative = i8.range(none, 0)
+    narrow = i8.range(0, 9)
+    wide = i8.range(9, 17)
+  raises ValueError when q < 0
+  may_raise ValueError when q < max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v)
+  ensures rank:
+    let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536] in
+    let n = count(x in range(0, 256): x in iterable) in
+    let c = (if q >= w then n * pow[q - w] else count(x in range(0, pow[q]): x in iterable)) in
+    result == (if value >= pow[q] then c
+               else if q >= w then (value // pow[w]) * n + count(x in range(0, 256): x in iterable and x < value % pow[w])
+               else count(x in range(0, 256): x in iterable and x < value))
+
+# list(members(node, width=q)): the accepted values below 2**q, ascending.
+fn bdd_members(iterable: list<u8>, width: i8, q: i8) -> list<int>
+  requires width <= 8 and q <= 10
+  partition q
+    negative = i8.range(none, 0)
+    narrow = i8.range(0, 9)
+    wide = i8.range(9, 11)
+  raises ValueError when q < 0
+  may_raise ValueError when q < max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v)
+  ensures members: let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] in
+    result == filter(x in range(0, pow[q]): (x % pow[w]) in iterable)
+
+# list(blocks(node, width=q)): ascending (start, free) pairs, each the aligned block
+# [start, start + 2**free), disjoint, covering the accepted values exactly, and as few as
+# possible: no block's aligned parent lies inside the set.
+fn bdd_blocks(iterable: list<u8>, width: i8, q: i8) -> list<(int, int)>
+  requires width <= 8 and q <= 10
+  partition q
+    negative = i8.range(none, 0)
+    narrow = i8.range(0, 9)
+    wide = i8.range(9, 11)
+  raises ValueError when q < 0
+  may_raise ValueError when q < max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v)
+  ensures sizes: all(b in result: b.1 >= 0 and b.1 <= q)
+  ensures exact: let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048] in
+    all(b in result: b.1 >= 0 and b.1 <= q) implies
+      all(b in result: b.0 >= 0 and b.0 % pow[b.1] == 0 and b.0 + pow[b.1] <= pow[q] and
+        all(x in range(b.0, b.0 + pow[b.1]): (x % pow[w]) in iterable)) and
+      all(i in range(1, len(result)): result[i - 1].0 + pow[result[i - 1].1] <= result[i].0) and
+      sum(b in result: pow[b.1]) == count(x in range(0, pow[q]): (x % pow[w]) in iterable)
+  ensures fewest: let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048] in
+    all(b in result: b.1 >= 0 and b.1 < q and b.0 >= 0 implies (
+      let start = b.0 - b.0 % pow[b.1 + 1] in
+      not all(x in range(start, start + pow[b.1 + 1]): (x % pow[w]) in iterable)))
+
+# list(paths(node, width=q)): q-character strings over 0 1 ?, most significant first, disjoint and
+# covering the accepted values; REJECT gives none.
+fn bdd_paths(iterable: list<u8>, width: i8, q: i8) -> list<string>
+  requires width <= 8 and q <= 8
+  partition q
+    negative = i8.range(none, 0)
+    narrow = i8.range(0, 9)
+  raises ValueError when q < 0
+  may_raise ValueError when q < max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v)
+  ensures form: all(p in result: len(p) == q and all(c in codepoints(p): c in [48, 49, 63]))
+  ensures exact: let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256] in
+    all(p in result: len(p) == q) implies
+      sum(p in result: pow[count(c in codepoints(p): c == 63)]) == count(x in range(0, pow[q]): (x % pow[w]) in iterable) and
+      all(x in range(0, pow[q]): (x % pow[w]) in iterable implies exists(p in result:
+        let d = codepoints(p) in all(i in range(0, q): d[i] == 63 or (x // pow[q - 1 - i]) % 2 == d[i] - 48)))
+  ensures empty: len(iterable) == 0 implies result == []
+
+# list(paths(leaf, width=q)): ACCEPT gives the one all-? string ("???" at width 3, "" at width 0),
+# REJECT gives none.
+fn leaf_paths(accept: bool, q: u8) -> list<string>
+  requires q <= 16
+  ensures leaf: if accept then len(result) == 1 and len(result[0]) == q and all(c in codepoints(result[0]): c == 63)
+    else result == []
+
+# (path_count(node), len(list(paths(node, width=W + extra)))): equal for any valid width.
+fn bdd_path_count(iterable: list<u8>, width: i8, extra: u8) -> (int, int)
+  requires width <= 8 and extra <= 8
+  ensures equal: result.0 == result.1
+
+# (narrowed(node, width=q).bit, accepts(narrowed, value)): tests no bit >= q and agrees with node
+# below 2**q; ValueError only for q < 0.
+fn bdd_narrowed(iterable: list<u8>, width: i8, q: i8, value: u16) -> (int, bool)
+  requires width <= 8 and q <= 16
+  partition q
+    negative = i8.range(none, 0)
+    narrow = i8.range(0, 9)
+    wide = i8.range(9, 17)
+  raises ValueError when q < 0
+  ensures bit: result.0 < q
+  ensures agrees: let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536] in
+    value < pow[q] implies result.1 == ((value % pow[w]) in iterable)
+
+# exactly_these(values, width=width) as (w, list(members(node, width=w))): w is the larger of width
+# (negative as 0, observed) and the largest bit length, and node accepts exactly the values.
+fn bdd_exactly(values: list<u8>, width: i8) -> (int, list<int>)
+  ensures width: result.0 == max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in values: x >= p))]: v)
+  ensures members: result.1 == filter(x in range(0, 256): x in values)
+
+# It raises as IntSet() does: ValueError for a negative value.
+fn bdd_exactly_ints(values: list<int>) -> int
+  partition values
+    naturals = all(x in values: x >= 0)
+    with_negative = exists(x in values: x < 0)
+  raises ValueError when exists(x in values: x < 0)
+
+# ... and TypeError for a float or a string.
+fn bdd_exactly_bad(bad: "float" | "string") -> int
+  raises TypeError when true
+
+# interval(start, stop, width=width) as (list(members(node, width=width)), node is REJECT, node is
+# ACCEPT, list(blocks(node, width=width))): it accepts [max(start, 0), min(stop, 2**width)); an
+# empty range gives REJECT and the full universe ACCEPT; ValueError only for width < 0.
+fn bdd_interval(start: i16, stop: i16, width: i8) -> (list<int>, bool, bool, list<(int, int)>)
+  requires width <= 10
+  partition width
+    negative = i8.range(none, 0)
+    valid = i8.range(0, 11)
+  raises ValueError when width < 0
+  ensures members: let top = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024][width] in
+    let lo = (if start > 0 then start else 0) in let hi = (if stop < top then stop else top) in
+    result.0 == filter(x in range(0, top): lo <= x and x < hi)
+  ensures leaves: let top = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024][width] in
+    let lo = (if start > 0 then start else 0) in let hi = (if stop < top then stop else top) in
+    result.1 == (hi <= lo) and result.2 == (lo == 0 and hi == top)
+  ensures documented: start == 3 and stop == 17 and width == 5 implies result.3 == [(3, 0), (4, 2), (8, 3), (16, 0)]
+
+# accepts(lshift(diagram(bits), by), value): every tested bit moves up by `by` (down when
+# negative), so it is accepts(diagram(bits), value >> by) for by >= 0; ValueError if a tested bit
+# would go below 0.
+fn bdd_lshift(bits: list<Bit>, by: i8, value: u16) -> bool
+  requires len(bits) <= 12 and by >= -12 and by <= 4
+  partition by
+    down = i8.range(-12, 0)
+    zero = {0}
+    up = i8.range(1, 5)
+  raises ValueError when exists(i in range(0, len(bits)): bits[i] != "?" and len(bits) - 1 - i + by < 0)
+  ensures moved: let p = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096] in
+    let y = (if by >= 0 then value // p[by] else value * p[-by]) in
+    result == all(i in range(0, len(bits)): bits[i] == "?" or (y // p[len(bits) - 1 - i]) % 2 == (if bits[i] == "1" then 1 else 0))
+
+# accepts(freed_between(diagram(bits), low_bit=low, high_bit=high), value): x is accepted iff some
+# x' that differs only in bits [low, high) is; an empty range leaves the diagram unchanged.
+fn bdd_freed(bits: list<Bit>, low: u8, high: u8, value: u16) -> bool
+  requires len(bits) <= 16 and low <= high and high <= 16
+  ensures existential: result == all(i in range(0, len(bits)):
+    let k = len(bits) - 1 - i in (low <= k and k < high) or bits[i] == "?" or
+      (value // [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768][k]) % 2 == (if bits[i] == "1" then 1 else 0))
+
+# (subset(da, db), disjoint(da, db)) of two pattern diagrams.
+fn bdd_relations(a: list<Bit>, b: list<Bit>) -> (bool, bool)
+  requires len(a) <= 16 and len(b) <= 16
+  ensures subset: result.0 == all(k in range(0, max(v in [len(a), len(b)]: v)):
+    (if k < len(b) then b[len(b) - 1 - k] else "?") == "?" or
+    (if k < len(a) then a[len(a) - 1 - k] else "?") == (if k < len(b) then b[len(b) - 1 - k] else "?"))
+  ensures disjoint: result.1 == exists(k in range(0, max(v in [len(a), len(b)]: v)):
+    (if k < len(a) then a[len(a) - 1 - k] else "?") != "?" and (if k < len(b) then b[len(b) - 1 - k] else "?") != "?" and
+    (if k < len(a) then a[len(a) - 1 - k] else "?") != (if k < len(b) then b[len(b) - 1 - k] else "?"))
+
+# collect() returns an int (diagnostic only).
+fn bdd_collect() -> int
+
+# stats(): a dict[str, int] with keys nodes, free, wrapped, room, memo and memo_room (observed).
+fn bdd_stats() -> map<string, int>
+  ensures keys: is_permutation(keys(result), ["nodes", "free", "wrapped", "room", "memo", "memo_room"])
+
+# ---------------------------------------------------------------------------
+# 5. strategies
+
+# from_set(source) returns a hypothesis search strategy.
+fn from_set_strategy(cls: "IntSet" | "Pattern" | "BDDSet", iterable: list<u8>) -> bool
+  ensures strategy: result
+
+# ---------------------------------------------------------------------------
+# 6. DLPack and DType
+
+type DTypeName = "INT8" | "INT16" | "INT32" | "INT64" | "UINT8" | "UINT16" | "UINT32" | "UINT64" | "FLOAT16" | "FLOAT32" | "FLOAT64" | "BFLOAT16" | "FLOAT8_E4M3FN" | "FLOAT8_E5M2"
+
+# (DType[name].value, .code, .bits, isinstance(DType[name], enum.Enum)).
+fn dtype_member(name: DTypeName) -> ((int, int), int, int, bool)
+  ensures value: result.0 == (
+    if name == "INT8" then (0, 8) else if name == "INT16" then (0, 16) else if name == "INT32" then (0, 32)
+    else if name == "INT64" then (0, 64) else if name == "UINT8" then (1, 8) else if name == "UINT16" then (1, 16)
+    else if name == "UINT32" then (1, 32) else if name == "UINT64" then (1, 64) else if name == "FLOAT16" then (2, 16)
+    else if name == "FLOAT32" then (2, 32) else if name == "FLOAT64" then (2, 64) else if name == "BFLOAT16" then (4, 16)
+    else if name == "FLOAT8_E4M3FN" then (10, 8) else (12, 8))
+  ensures properties: result.1 == result.0.0 and result.2 == result.0.1
+  ensures enum: result.3
+
+# __dlpack_device__() is (1, 0): host memory.
+fn dlpack_device(cls: "IntSet" | "Pattern" | "BDDSet", iterable: list<u8>, width: i8) -> (int, int)
+  ensures host: result == (1, 0)
+
+# numpy.from_dlpack(IntSet(iterable, width=width)) as (dtype name, values): every member in
+# order, in the narrowest unsigned type that holds the width (UINT8 up to 8 bits, width 0
+# included); numpy.from_dlpack(IntSet([300, 1, 20])) is array([1, 20, 300], dtype=uint16). The
+# empty set gives an empty uint8 array (judged where that agrees with the width rule).
+fn export_intset(iterable: list<u16>, width: i8) -> (string, list<int>)
+  requires width <= 64
+  ensures values: is_sorted(result.1) and distinct(result.1) and
+    all(x in iterable: x in result.1) and all(v in result.1: v in iterable)
+  ensures dtype: let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192,
+      16384, 32768]: exists(x in iterable: x >= p))]: v) in
+    (len(iterable) > 0 or w <= 8) implies
+    result.0 == (if w <= 8 then "uint8" else if w <= 16 then "uint16" else if w <= 32 then "uint32" else "uint64")
+
+# Above 64 bits: a 2-D uint8 array of shape (size, ceil(width / 8)), one big-endian row per member.
+fn export_rows(iterable: list<u8>, width: i8) -> (string, list<list<int>>)
+  requires width > 64
+  partition width
+    wide = i8.range(65, 128)
+  ensures dtype: result.0 == "uint8"
+  ensures rows: let r = (width + 7) // 8 in
+    result.1 == map(m in filter(x in range(0, 256): x in iterable): map(j in range(0, r): if j == r - 1 then m else 0))
+
+# A BDDSet exports with codec.dtype(): signed ints as signed values, in encoding order, so
+# from_dlpack(int8.set([-1, 0, 1, -128])) is [0, 1, -128, -1].
+fn export_signed(c: "int8" | "int16" | "int32" | "int64", values: list<i8>) -> (string, list<int>)
+  ensures dtype: result.0 == c
+  ensures values: result.1 == filter(v in range(0, 128): v in values) + filter(v in range(-128, 0): v in values)
+
+# int128 sets come out as rows of 16 big-endian bytes, in two's complement.
+fn export_int128(values: list<i8>) -> list<list<int>>
+  ensures rows: result == map(v in filter(v in range(0, 128): v in values) + filter(v in range(-128, 0): v in values):
+    map(j in range(0, 16): ((v % 0x100000000000000000000000000000000) // [0x1000000000000000000000000000000,
+      0x10000000000000000000000000000, 0x100000000000000000000000000, 0x1000000000000000000000000,
+      0x10000000000000000000000, 0x100000000000000000000, 0x1000000000000000000, 0x10000000000000000,
+      0x100000000000000, 0x1000000000000, 0x10000000000, 0x100000000, 0x1000000, 0x10000, 0x100, 0x1][j]) % 0x100))
+
+# Floats come out as floats, in encoding order.
+fn export_f16(xs: list<f16>) -> (string, list<f16>)
+  ensures dtype: result.0 == "float16"
+  ensures order: is_sorted(map(v in result.1: if is_nan(v) then (if signbit(v) then 0x10000 else 0x7c01) else bits(v)))
+  ensures members: all(x in xs: is_nan(x) or exists(v in result.1: same(v, x))) and
+    all(v in result.1: is_nan(v) or exists(x in xs: same(x, v)))
+
+# Members sets export the indices, not the values, even for an IntEnum (the binding's IntEnum has
+# values 100 + i).
+fn export_members(n: u8, picks: list<bool>) -> list<int>
+  requires n <= 64
+  partition n
+    valid = u8.range(0, 65)
+  ensures indices: result == filter(i in range(0, n): i < len(picks) and picks[i])
+
+# s.__dlpack__(stream=stream, dl_device=device, copy=copy) returns: a stream that is not None
+# raises ValueError, a dl_device other than None or (1, 0) BufferError, and copy=False BufferError
+# because nothing can be shared.
+fn dlpack_errors(cls: "IntSet" | "BDDSet", iterable: list<u8>, stream: option<i8>, device: option<(u8, u8)>, copy: option<bool>) -> bool
+  raises ValueError when is_some(stream)
+  raises BufferError when (is_some(device) and unwrap(device) != (1, 0)) or copy == some(false)
+  ensures returned: result
+
+# The name of the capsule __dlpack__(max_version=...) returns: a legacy unversioned tensor
+# ("dltensor") for None or below (1, 0), a versioned one ("dltensor_versioned") from (1, 0).
+fn dlpack_capsule(cls: "IntSet" | "BDDSet", iterable: list<u8>, max_version: option<(u8, u8)>) -> string
+  ensures versioned: result == (if is_some(max_version) and unwrap(max_version) >= (1, 0) then "dltensor_versioned" else "dltensor")
