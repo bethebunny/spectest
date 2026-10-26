@@ -19,7 +19,8 @@ Type hints everywhere, short docstrings, no comments that narrate. Docs and
 messages describe the language and the tool only. Tests live in `tests/<area>/`.
 Commit small and often, with jj. Each worker runs in its own jj workspace and commits
 there as it goes; finished work goes to one merge queue that owns `main`, rebases each
-submission onto it, runs the checks and lands submissions one at a time.
+submission onto it, runs the checks and lands submissions one at a time. A lone worker whose
+change is still a child of `main` may move `main` to it directly.
 
 ## Package layout
 
