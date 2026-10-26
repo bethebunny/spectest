@@ -1,3 +1,4 @@
+from std.os import getenv
 from std.testing import assert_equal, assert_true, TestSuite
 
 from numeric.floats import is_inf, is_nan, is_zero, round_to, signbit, to_real
@@ -67,13 +68,15 @@ struct Rng:
         return x * 0xBF58476D1CE4E5B9 ^ (self.state >> 17)
 
 
-comptime SAMPLES = 100_000
+def samples() -> Int:
+    """100,000 patterns per format at full strength, 5,000 in the dev loop."""
+    return 100_000 if getenv("SPECTEST_STRENGTH") == "full" else 5_000
 
 
 def sample(format: FloatFormat, seed: UInt64) raises:
     var rng = Rng(seed)
     var mask = (UInt64(1) << UInt64(format.width())) - 1 if format.width() < 64 else UInt64.MAX
-    for _ in range(SAMPLES):
+    for _ in range(samples()):
         check_pattern(format, rng.next() & mask)
     # Patterns near the extremes, which random bits rarely reach.
     for k in range(64):

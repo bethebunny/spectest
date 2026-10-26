@@ -9,3 +9,4 @@ src/spectest/_host.abi3.so
 src/spectest/libKGENCompilerRTShared.*
 src/spectest/libAsyncRTRuntimeGlobals.*
 src/spectest/libMSupportGlobals.*
+.mojo-tests/
