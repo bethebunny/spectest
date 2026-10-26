@@ -1866,8 +1866,10 @@ fn datetime_encode_bad(zone: option<i16>, bad: "date" | "string" | "int") -> int
   raises TypeError when true
 
 # (name, width, all.size, codec == datetimes) of DateTime(timezone(zone minutes)), or of
-# DateTime(None) for none: the name is naive_datetimes or datetimes[<tz>], the width 59; all
-# leaves out the instants that overflow datetime in the zone (3600 * 10**6 fewer for +01:00), and
+# DateTime(None) for none: the name is naive_datetimes or datetimes[<tz>], the width 59; all is
+# every microsecond representable in the zone that has an encoding (3600 * 10**6 fewer for
+# +01:00, whose first local hour would encode below 0; a negative zone loses its first local
+# hours to datetime's range but gains as many encodings past 315537897599999999), and
 # DateTime(timezone.utc) == datetimes.
 fn datetime_codec(zone: option<i16>) -> (string, int, int, bool)
   requires is_none(zone) or (unwrap(zone) > -1440 and unwrap(zone) < 1440)
@@ -1877,7 +1879,7 @@ fn datetime_codec(zone: option<i16>) -> (string, int, int, bool)
     (is_some(zone) and zone != some(0) implies len(result.0) == 20 and result.0[0:13] == "datetimes[UTC")
   ensures width: result.1 == 59
   ensures size: result.2 == 315537897600000000 -
-    (if is_none(zone) then 0 else if unwrap(zone) < 0 then -unwrap(zone) * 60000000 else unwrap(zone) * 60000000)
+    (if is_none(zone) or unwrap(zone) <= 0 then 0 else unwrap(zone) * 60000000)
   ensures utc: result.3 == (zone == some(0))
 
 # (ordinal, micros into the day, utcoffset in minutes or None) of decode(b): the instant in the
