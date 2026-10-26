@@ -149,9 +149,6 @@ struct SetContext(Movable):
         return self.interval_inclusive(_u64(low), _u64(last), width)
 
     def float_named(mut self, format: FloatFormat, name: StringSlice) raises -> BitSet:
-        var width = format.width()
-        var e = format.exponent_bits
-        var f = format.fraction_bits
         if name == "nan":
             return self.difference(
                 self._float_glob(format, "?", "1", "?"),
