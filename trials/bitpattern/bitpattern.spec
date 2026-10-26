@@ -323,3 +323,387 @@ fn widened(cls: Cls, iterable: list<u8>, width: i8, new_width: i8) -> IntSet
   ensures members: result.members == filter(x in range(0, 256): x in iterable)
   ensures width: result.width == max(v in [width, new_width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v)
   ensures kind: result.kind == cls
+
+# ---------------------------------------------------------------------------
+# 1. IntSet: set algebra
+
+# a op b on two IntSets: x in a | b iff x in a or x in b; & is "and", - is "and not" and ^ is
+# "exactly one". The width is the larger of the two and the type that of the left operand.
+fn combine(op: Op, cls_a: Cls, a: list<u8>, wa: i8, cls_b: Cls, b: list<u8>, wb: i8) -> IntSet
+  ensures members: result.members == filter(x in range(0, 256):
+    if op == "&" then x in a and x in b
+    else if op == "|" then x in a or x in b
+    else if op == "-" then x in a and not (x in b)
+    else (x in a) != (x in b))
+  ensures width: result.width == max(v in [wa, wb,
+    count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in a: x >= p)),
+    count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in b: x >= p))]: v)
+  ensures kind: result.kind == cls_a
+  relates commutative: op != "-" implies combine(op, cls_b, b, wb, cls_a, a, wa).members == result.members
+  relates inclusion_exclusion: op == "|" implies
+    result.size + combine("&", cls_a, a, wa, cls_b, b, wb).size ==
+    count(x in range(0, 256): x in a) + count(x in range(0, 256): x in b)
+
+# a op container(b): a right operand that is not an IntSet is first converted as IntSet(other).
+fn combine_iterable(op: Op, cls: Cls, a: list<u8>, wa: i8, b: list<u8>, container: Builtin) -> IntSet
+  ensures members: result.members == filter(x in range(0, 256):
+    if op == "&" then x in a and x in b
+    else if op == "|" then x in a or x in b
+    else if op == "-" then x in a and not (x in b)
+    else (x in a) != (x in b))
+  ensures width: result.width == max(v in [wa,
+    count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in a: x >= p)),
+    count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in b: x >= p))]: v)
+  ensures kind: result.kind == cls
+
+# container(a) op s: built-in iterables also work on the left. |, & and ^ give type(s), while -
+# gives a plain IntSet.
+fn combine_reflected(op: Op, container: Builtin, a: list<u8>, cls: Cls, b: list<u8>, wb: i8) -> IntSet
+  ensures members: result.members == filter(x in range(0, 256):
+    if op == "&" then x in a and x in b
+    else if op == "|" then x in a or x in b
+    else if op == "-" then x in a and not (x in b)
+    else (x in a) != (x in b))
+  ensures width: result.width == max(v in [wb,
+    count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in a: x >= p)),
+    count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in b: x >= p))]: v)
+  ensures kind: result.kind == (if op == "-" then "IntSet" else cls)
+
+# The conversion raises as the constructor does: ValueError for a negative item.
+fn combine_ints(op: Op, cls: Cls, a: list<u8>, wa: i8, b: list<int>) -> IntSet
+  partition b
+    naturals = all(x in b: x >= 0)
+    with_negative = exists(x in b: x < 0)
+  raises ValueError when exists(x in b: x < 0)
+  ensures members:
+    all(m in result.members: (m in a or m in b) and
+      (if op == "&" then m in a and m in b
+       else if op == "|" then m in a or m in b
+       else if op == "-" then m in a and not (m in b)
+       else (m in a) != (m in b))) and
+    all(x in a + b:
+      (if op == "&" then x in a and x in b
+       else if op == "|" then x in a or x in b
+       else if op == "-" then x in a and not (x in b)
+       else (x in a) != (x in b)) implies x in result.members)
+
+# A right operand that is not an iterable of ints raises TypeError: the binding passes 5, 1.5,
+# None, [1.5] or ["1"].
+fn combine_bad(op: Op, cls: Cls, a: list<u8>, wa: i8, bad: "int" | "float" | "none" | "floats" | "strings") -> IntSet
+  raises TypeError when true
+
+# ~s: the complement within s's own universe, with the same width and type.
+fn complement(cls: Cls, iterable: list<u8>, width: i8) -> IntSet
+  requires width <= 10
+  partition width
+    negative = i8.range(none, 0)
+    narrow = i8.range(0, 9)
+    wider = i8.range(9, 11)
+  ensures members:
+    let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    result.members == filter(x in range(0, [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024][w]): not (x in iterable))
+  ensures width: result.width == max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v)
+  ensures kind: result.kind == cls
+  relates involution: result.width <= 8 implies
+    complement(cls, result.members, result.width).members == filter(x in range(0, 256): x in iterable)
+
+# <=, <, >= and > mean subset and superset, ignoring width.
+fn compare(op: Cmp, cls_a: Cls, a: list<u8>, wa: i8, cls_b: Cls, b: list<u8>, wb: i8) -> bool
+  ensures order: let sub = all(x in a: x in b) in let sup = all(x in b: x in a) in
+    result == (if op == "<=" then sub else if op == "<" then sub and not sup
+               else if op == ">=" then sup else sup and not sub)
+  relates difference: op == "<=" implies result == (combine("-", cls_a, a, wa, cls_b, b, wb).size == 0)
+
+# Comparisons accept only IntSet operands: anything else raises TypeError, built-in sets included,
+# on either side.
+fn compare_other(op: Cmp, cls: Cls, a: list<u8>, wa: i8, b: list<u8>, container: Builtin, side: Side) -> bool
+  raises TypeError when true
+
+# a == b (or a != b) exactly when both are IntSets with the same members, whatever their widths.
+fn equality(op: "==" | "!=", cls_a: Cls, a: list<u8>, wa: i8, cls_b: Cls, b: list<u8>, wb: i8) -> bool
+  ensures members: let same = all(x in a: x in b) and all(x in b: x in a) in
+    result == (if op == "==" then same else not same)
+
+# An IntSet never equals a non-IntSet, and the comparison returns without raising.
+fn equality_other(op: "==" | "!=", cls: Cls, a: list<u8>, wa: i8, b: list<u8>, container: Builtin, side: Side) -> bool
+  ensures never_equal: result == (op == "!=")
+
+# The same items built twice, at other widths or classes: (a == b, hash(a) == hash(b)).
+fn rebuilt(cls_a: Cls, a: list<u8>, wa: i8, cls_b: Cls, wb: i8) -> (bool, bool)
+  ensures equal: result.0
+  ensures equal_hash: result.1
+
+# s.isdisjoint(other) takes any iterable of ints.
+fn isdisjoint(cls: Cls, a: list<u8>, wa: i8, b: list<u8>, container: "list" | "set" | "IntSet") -> bool
+  ensures disjoint: result == (not exists(x in b: x in a))
+
+# ---------------------------------------------------------------------------
+# 1. IntSet: repr
+
+# repr(IntSet(iterable, width=width)): IntSet([m1, m2, ...], width=W) with at most 10 members;
+# with more, the first four and the last two, then the size.
+fn intset_repr(iterable: list<u16>, width: i8) -> string
+  ensures prefix: len(result) >= 9 and result[0:8] == "IntSet(["
+  ensures suffix: len(result) >= 1 and codepoints(result)[len(result) - 1] == 41
+  ensures elided: let n = count(i in range(0, len(iterable)): not (iterable[i] in iterable[0:i])) in
+    (", ..., " in result) == (n > 10) and ("], size=" in result) == (n > 10)
+  ensures documented:
+    (len(iterable) == 0 and width <= 0 implies result == "IntSet([], width=0)") and
+    (iterable == [1, 3] and width == 2 implies result == "IntSet([1, 3], width=2)") and
+    (iterable == range(0, 20) and width <= 5 implies
+      result == "IntSet([0, 1, 2, 3, ..., 18, 19], size=20, width=5)")
+
+# With at most 10 members the repr evaluates back to the set: eval(repr(s)).
+fn intset_repr_eval(iterable: list<u16>, width: i8) -> IntSet
+  requires count(i in range(0, len(iterable)): not (iterable[i] in iterable[0:i])) <= 10
+  ensures members: all(x in iterable: x in result.members) and all(m in result.members: m in iterable)
+  ensures width: result.width == max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
+    1024, 2048, 4096, 8192, 16384, 32768]: exists(x in iterable: x >= p))]: v)
+
+# repr(IntSet.range(start, stop)): sizes in a repr use count_repr.
+fn range_repr(start: int, stop: int) -> string
+  requires start >= 0
+  ensures prefix: len(result) >= 9 and result[0:8] == "IntSet(["
+  ensures elided: (", ..., " in result) == (stop - start > 10)
+  ensures documented: start == 0 and stop == 0x10000000000000000 implies
+    result == "IntSet([0, 1, 2, 3, ..., 18446744073709551614, 18446744073709551615], size=2**64, width=64)"
+
+# bdd.count_repr(total): decimal, except that an exact power of two 2**k with k >= 10 is "2**k".
+# total >= 1024 is a power of two exactly when it equals 2**52 * ulp<f64>(total).
+fn count_repr(total: u64) -> string
+  partition total
+    small = u64.range(0, 1024)
+    medium = u64.range(1024, 0x100000000)
+    large = u64.range(0x100000000, none)
+  ensures decimal: not (total >= 1024 and real(total) == ulp<f64>(total) * 0x1p52) implies
+    (let d = codepoints(result) in
+     len(d) >= 1 and len(d) <= 20 and all(c in d: c >= 48 and c <= 57) and (len(d) == 1 or d[0] != 48) and
+     sum(i in range(0, len(d)): (d[i] - 48) * [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10,
+       1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19][len(d) - 1 - i]) == total)
+  ensures power: total >= 1024 and real(total) == ulp<f64>(total) * 0x1p52 implies
+    (let k = count(p in [0x1p0, 0x1p1, 0x1p2, 0x1p3, 0x1p4, 0x1p5, 0x1p6, 0x1p7, 0x1p8, 0x1p9, 0x1p10,
+       0x1p11, 0x1p12, 0x1p13, 0x1p14, 0x1p15, 0x1p16, 0x1p17, 0x1p18, 0x1p19, 0x1p20, 0x1p21, 0x1p22,
+       0x1p23, 0x1p24, 0x1p25, 0x1p26, 0x1p27, 0x1p28, 0x1p29, 0x1p30, 0x1p31, 0x1p32, 0x1p33, 0x1p34,
+       0x1p35, 0x1p36, 0x1p37, 0x1p38, 0x1p39, 0x1p40, 0x1p41, 0x1p42, 0x1p43, 0x1p44, 0x1p45, 0x1p46,
+       0x1p47, 0x1p48, 0x1p49, 0x1p50, 0x1p51, 0x1p52, 0x1p53, 0x1p54, 0x1p55, 0x1p56, 0x1p57, 0x1p58,
+       0x1p59, 0x1p60, 0x1p61, 0x1p62, 0x1p63]: p <= total) - 1 in
+     let d = codepoints(result) in
+     len(d) == 5 and result[0:3] == "2**" and d[3] >= 48 and d[3] <= 57 and d[4] >= 48 and d[4] <= 57 and
+     (d[3] - 48) * 10 + (d[4] - 48) == k)
+  ensures documented: (total == 512 implies result == "512") and (total == 1024 implies result == "2**10")
+    and (total == 0xffffffffffffffff implies result == "18446744073709551615")
+
+# ---------------------------------------------------------------------------
+# 2. Pattern
+#
+# Pattern(text) with text = ".".join("".join(q) for q in quartets). The text is valid when there is
+# at least one quartet, each quartet has 1 to 4 characters and at most one *, and every quartet but
+# the first has exactly 4 bits once its * is expanded (a * becomes the ? that bring its quartet
+# to 4 characters). Written out, valid is:
+#   len(quartets) >= 1 and all(j in range(0, len(quartets)):
+#     count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+#     (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+# the width is sum(q in quartets: if "*" in q then 4 else len(q)), and the number of ? after
+# expansion is sum(q in quartets: count(c in q: c == "?") + (if "*" in q then 5 - len(q) else 0)).
+
+# The members are the ints below 2**width whose bits match, so size == 2**(number of ?).
+fn pattern(quartets: list<list<Q>>) -> IntSet
+  requires not (len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4)))
+    or sum(q in quartets: if "*" in q then 4 else len(q)) <= 8
+  partition quartets
+    valid = len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+    invalid = not (len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4)))
+  raises syntax: ValueError when not (len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4)))
+  ensures width: result.width == sum(q in quartets: if "*" in q then 4 else len(q))
+  ensures size: result.size == [1, 2, 4, 8, 16, 32, 64, 128, 256][
+    sum(q in quartets: count(c in q: c == "?") + (if "*" in q then 5 - len(q) else 0))]
+  ensures members: result.members == filter(x in range(0,
+      [1, 2, 4, 8, 16, 32, 64, 128, 256][sum(q in quartets: if "*" in q then 4 else len(q))]):
+    all(j in range(0, len(quartets)):
+      let q = quartets[j] in
+      let after = sum(k in range(j + 1, len(quartets)): if "*" in quartets[k] then 4 else len(quartets[k])) in
+      all(i in range(0, len(q)): q[i] == "?" or q[i] == "*" or
+        (x // [1, 2, 4, 8, 16, 32, 64, 128][after +
+            (if "*" in q and i < index_of(q, "*") then 3 - i else len(q) - 1 - i)]) % 2
+          == (if q[i] == "1" then 1 else 0))))
+  ensures kind: result.kind == "Pattern"
+
+# Surrounding whitespace is stripped (observed).
+fn pattern_padded(quartets: list<list<Q>>, before: list<" " | "\t" | "\n" | "\r">, after: list<" " | "\t" | "\n" | "\r">) -> IntSet
+  requires len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+    and sum(q in quartets: if "*" in q then 4 else len(q)) <= 8
+  partition quartets
+    valid = len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+  relates stripped: let p = pattern(quartets) in p.members == result.members and p.width == result.width
+
+# Pattern(text) on any string: a character other than 0 1 ? * . and whitespace raises ValueError
+# ("|" included), and so does text that is empty once stripped. Other malformed text also raises
+# ValueError, which pattern judges in full.
+fn pattern_text(text: string) -> IntSet
+  raises bad_character: ValueError when exists(c in codepoints(text): not (c in [48, 49, 63, 42, 46] or
+    c in [9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197,
+          8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288]))
+  raises empty: ValueError when all(c in codepoints(text): c in [9, 10, 11, 12, 13, 28, 29, 30, 31, 32,
+    133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233,
+    8239, 8287, 12288])
+  may_raise ValueError
+
+# (p.width, p.size) at any width: Pattern("*1.*.*.0000.1111.?01?").size == 8192, width 24.
+fn pattern_shape(quartets: list<list<Q>>) -> (int, int)
+  requires len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+    and sum(q in quartets: if "*" in q then 4 else len(q)) <= 64
+  partition quartets
+    valid = len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+  ensures width: result.0 == sum(q in quartets: if "*" in q then 4 else len(q))
+  ensures size: result.1 == [0x1p0, 0x1p1, 0x1p2, 0x1p3, 0x1p4, 0x1p5, 0x1p6, 0x1p7, 0x1p8, 0x1p9,
+    0x1p10, 0x1p11, 0x1p12, 0x1p13, 0x1p14, 0x1p15, 0x1p16, 0x1p17, 0x1p18, 0x1p19, 0x1p20, 0x1p21,
+    0x1p22, 0x1p23, 0x1p24, 0x1p25, 0x1p26, 0x1p27, 0x1p28, 0x1p29, 0x1p30, 0x1p31, 0x1p32, 0x1p33,
+    0x1p34, 0x1p35, 0x1p36, 0x1p37, 0x1p38, 0x1p39, 0x1p40, 0x1p41, 0x1p42, 0x1p43, 0x1p44, 0x1p45,
+    0x1p46, 0x1p47, 0x1p48, 0x1p49, 0x1p50, 0x1p51, 0x1p52, 0x1p53, 0x1p54, 0x1p55, 0x1p56, 0x1p57,
+    0x1p58, 0x1p59, 0x1p60, 0x1p61, 0x1p62, 0x1p63, 0x1p64][
+    sum(q in quartets: count(c in q: c == "?") + (if "*" in q then 5 - len(q) else 0))]
+
+record PatternView { bits: string, free: int, branches: list<string>, text: string, shown: string }
+
+# A pattern made from text has one branch, its dotted text with every * expanded:
+# p.bits is that text without dots, p.free its number of ?, str(p) the dotted text, p.branches
+# the tuple of it, and repr(p) Pattern('<dotted text>') (Pattern("1.*") is Pattern('1.????')).
+fn pattern_view(quartets: list<list<Q>>) -> PatternView
+  requires len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+    and sum(q in quartets: if "*" in q then 4 else len(q)) <= 64
+  partition quartets
+    valid = len(quartets) >= 1 and all(j in range(0, len(quartets)):
+      count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and
+      (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4))
+  ensures bits: len(result.bits) == sum(q in quartets: if "*" in q then 4 else len(q)) and
+    all(j in range(0, len(quartets)):
+      let q = quartets[j] in
+      let off = sum(k in range(0, j): if "*" in quartets[k] then 4 else len(quartets[k])) in
+      let cs = map(c in q: if c == "0" then 48 else if c == "1" then 49 else 63) in
+      if "*" in q then codepoints(result.bits)[off:off + 4] ==
+        cs[0:index_of(q, "*")] + [63, 63, 63, 63][0:5 - len(q)] + cs[index_of(q, "*") + 1:len(q)]
+      else codepoints(result.bits)[off:off + len(q)] == cs)
+  ensures free: result.free == sum(q in quartets: count(c in q: c == "?") + (if "*" in q then 5 - len(q) else 0))
+  ensures text: len(result.text) == sum(q in quartets: if "*" in q then 4 else len(q)) + len(quartets) - 1 and
+    all(j in range(0, len(quartets)):
+      let q = quartets[j] in
+      let off = sum(k in range(0, j): if "*" in quartets[k] then 4 else len(quartets[k])) + j in
+      let cs = map(c in q: if c == "0" then 48 else if c == "1" then 49 else 63) in
+      (if "*" in q then codepoints(result.text)[off:off + 4] ==
+         cs[0:index_of(q, "*")] + [63, 63, 63, 63][0:5 - len(q)] + cs[index_of(q, "*") + 1:len(q)]
+       else codepoints(result.text)[off:off + len(q)] == cs) and
+      (j == len(quartets) - 1 or
+       codepoints(result.text)[off + (if "*" in q then 4 else len(q))] == 46))
+  ensures branches: result.branches == [result.text]
+  ensures shown: result.shown == "Pattern('" + result.text + "')"
+
+# p.branches for any set (p = Pattern.from_bdd(IntSet(iterable, width=width).bdd, W)): dotted
+# single-branch patterns of width W, pairwise disjoint, whose union is p, ordered by smallest
+# member (observed). The empty pattern has none. Disjoint and covering follows from every member
+# being matched and the branch sizes adding up to the size.
+fn branches(iterable: list<u8>, width: i8) -> list<string>
+  requires width <= 8
+  ensures dotted: let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    w >= 1 implies all(b in result:
+      let cp = codepoints(b) in
+      let r = (w - 1) % 4 + 1 in
+      len(cp) == w + (w - 1) // 4 and all(i in range(0, len(cp)):
+        if i >= r and (i - r) % 5 == 0 then cp[i] == 46 else cp[i] == 48 or cp[i] == 49 or cp[i] == 63))
+  ensures cover: all(x in iterable: exists(b in result:
+    let d = filter(c in codepoints(b): c != 46) in
+    all(i in range(0, len(d)): d[i] == 63 or (x // [1, 2, 4, 8, 16, 32, 64, 128][len(d) - 1 - i]) % 2 == d[i] - 48)))
+  ensures exact: sum(b in result: [1, 2, 4, 8, 16, 32, 64, 128, 256][count(c in codepoints(b): c == 63)])
+    == count(x in range(0, 256): x in iterable)
+  ensures ordered: all(i in range(1, len(result)):
+    (let d = filter(c in codepoints(result[i - 1]): c != 46) in
+     sum(k in range(0, len(d)): if d[k] == 49 then [1, 2, 4, 8, 16, 32, 64, 128][len(d) - 1 - k] else 0)) <
+    (let d = filter(c in codepoints(result[i]): c != 46) in
+     sum(k in range(0, len(d)): if d[k] == 49 then [1, 2, 4, 8, 16, 32, 64, 128][len(d) - 1 - k] else 0)))
+  ensures documented:
+    (len(iterable) == 0 implies result == []) and
+    (iterable == [2, 3, 5, 6, 7] and width == 3 implies result == ["01?", "101", "11?"]) and
+    (iterable == [5, 7] and width == 5 implies result == ["0.01?1"]) and
+    (iterable == [0, 1] and width == 4 implies result == ["000?"]) and
+    (iterable == range(4, 16) and width == 4 implies result == ["01??", "1???"])
+
+record PatternParts { branches: list<string>, bits: option<string>, free: option<int>, error: option<string> }
+
+# p.bits and p.free raise ValueError ("pattern has N branches, not 1") unless p has one branch.
+# The binding records None for a ValueError, and the message of the one p.bits raised.
+fn pattern_parts(iterable: list<u8>, width: i8) -> PatternParts
+  requires width <= 8
+  ensures single: is_some(result.bits) == (len(result.branches) == 1) and
+    is_some(result.free) == (len(result.branches) == 1) and is_none(result.error) == (len(result.branches) == 1)
+  ensures bits: len(result.branches) == 1 and is_some(result.bits) implies
+    codepoints(unwrap(result.bits)) == filter(c in codepoints(result.branches[0]): c != 46)
+  ensures free: len(result.branches) == 1 and is_some(result.free) implies
+    unwrap(result.free) == count(c in codepoints(result.branches[0]): c == 63)
+  ensures message: len(result.branches) != 1 and len(result.branches) <= 9 implies
+    result.error == some("pattern has " + ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"][len(result.branches)] + " branches, not 1")
+
+record PatternTexts { branches: list<string>, text: string, shown: string }
+
+# str(p) is " | ".join(p.branches). repr(p) is <Pattern: width=0, size=N> at width 0,
+# ~Pattern('<all-? dotted>') when empty, Pattern('b1') | Pattern('b2') | ... for 1 to 8 branches
+# (whose text stays under 200 characters at these widths), and <Pattern: K branches, width=W,
+# size=S> otherwise.
+fn pattern_texts(iterable: list<u8>, width: i8) -> PatternTexts
+  requires width <= 8
+  ensures text: let br = result.branches in
+    (len(br) == 0 implies result.text == "") and
+    (len(br) >= 1 implies len(result.text) == sum(b in br: len(b)) + 3 * (len(br) - 1) and
+      all(i in range(0, len(br)):
+        let off = sum(j in range(0, i): len(br[j]) + 3) in
+        result.text[off:off + len(br[i])] == br[i] and (i == 0 or result.text[off - 3:off] == " | ")))
+  ensures shown:
+    let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let n = count(x in range(0, 256): x in iterable) in
+    let br = result.branches in
+    let s = result.shown in
+    if w == 0 then s == (if n == 0 then "<Pattern: width=0, size=0>" else "<Pattern: width=0, size=1>")
+    else if n == 0 then len(s) >= 12 and s[0:10] == "~Pattern('" and s[len(s) - 2:len(s)] == "')" and
+      (let cp = codepoints(s[10:len(s) - 2]) in
+       let r = (w - 1) % 4 + 1 in
+       len(cp) == w + (w - 1) // 4 and
+       all(i in range(0, len(cp)): if i >= r and (i - r) % 5 == 0 then cp[i] == 46 else cp[i] == 63))
+    else if len(br) <= 8 then
+      len(s) == sum(b in br: len(b) + 11) + 3 * (len(br) - 1) and
+      all(i in range(0, len(br)):
+        let off = sum(j in range(0, i): len(br[j]) + 14) in
+        s[off:off + len(br[i]) + 11] == "Pattern('" + br[i] + "')" and (i == 0 or s[off - 3:off] == " | "))
+    else len(s) >= 10 and s[0:10] == "<Pattern: " and " branches, width=" in s
+  ensures documented:
+    (iterable == [2, 3, 5, 6, 7] and width == 3 implies
+      result.shown == "Pattern('01?') | Pattern('101') | Pattern('11?')") and
+    (iterable == range(4, 16) and width == 4 implies result.shown == "Pattern('01??') | Pattern('1???')") and
+    (len(iterable) == 0 and width == 4 implies result.shown == "~Pattern('????')") and
+    (iterable == [5, 7] and width == 5 implies result.shown == "Pattern('0.01?1')")
+
+# In the third form eval(repr(p)) equals p and has the same width (observed). The binding
+# evaluates the repr when it starts with Pattern( and returns None otherwise.
+fn pattern_repr_eval(iterable: list<u8>, width: i8) -> option<IntSet>
+  requires width <= 8
+  ensures applies: (let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in
+    let n = count(x in range(0, 256): x in iterable) in w > 0 and n >= 1 and n <= 8) implies is_some(result)
+  ensures roundtrip: is_some(result) implies
+    unwrap(result).members == filter(x in range(0, 256): x in iterable) and
+    unwrap(result).width == max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) and
+    unwrap(result).kind == "Pattern"
