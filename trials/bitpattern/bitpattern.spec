@@ -1105,3 +1105,326 @@ fn custom_int(width: u8, signed: bool) -> ((int, int), (int, int))
   ensures dtype: result.1 == (
     if signed and width <= 64 then (0, if width <= 8 then 8 else if width <= 16 then 16 else if width <= 32 then 32 else 64)
     else (1, if width <= 8 then 8 else if width <= 16 then 16 else if width <= 32 then 32 else if width <= 64 then 64 else 8))
+
+# ---------------------------------------------------------------------------
+# 3.5 Float codecs
+#
+# For a float codec the sign bit is SIGN = 2**(width - 1); an encoding b has the magnitude
+# b % SIGN, and with the all-ones exponent and zero mantissa INF (0x7c00 for float16, 0x7f80 for
+# bfloat16, 0x7f800000 for float32, 0x7ff0000000000000 for float64, 0x7c for float8_e5m2) a Float
+# encoding is NaN when its magnitude exceeds INF. float8_e4m3fn (FloatFN) has no infinities and
+# its NaNs are the two encodings of magnitude 0x7f.
+
+type FloatCodec = "float16" | "bfloat16" | "float32" | "float64" | "float8_e5m2" | "float8_e4m3fn"
+type IeeeCodec = "float16" | "bfloat16" | "float32" | "float64"
+type Float8 = "float8_e5m2" | "float8_e4m3fn"
+
+record FloatInfo { kind: string, width: int, exponent: int, max: f64, min: f64, dtype: (int, int) }
+
+# The table: (type(c).__name__, width, exponent, max, min, dtype().value); min == -max, and both
+# are the extreme finite values.
+fn float_codec_info(c: FloatCodec) -> FloatInfo
+  ensures table: (result.kind, result.width, result.exponent, result.dtype) == (
+    if c == "float64" then ("Float", 64, 11, (2, 64))
+    else if c == "float32" then ("Float", 32, 8, (2, 32))
+    else if c == "float16" then ("Float", 16, 5, (2, 16))
+    else if c == "bfloat16" then ("Float", 16, 8, (4, 16))
+    else if c == "float8_e5m2" then ("Float", 8, 5, (12, 8))
+    else ("FloatFN", 8, 4, (10, 8)))
+  ensures max: is_finite(result.max) and real(result.max) == (
+    if c == "float64" then 0x1.fffffffffffffp1023 else if c == "float32" then 0x1.fffffep127
+    else if c == "float16" then 65504 else if c == "bfloat16" then 0x1.fep127
+    else if c == "float8_e5m2" then 57344 else 448)
+  ensures min: is_finite(result.min) and is_finite(result.max) and real(result.min) == -real(result.max)
+
+# float16.decode over every encoding: a non-NaN encoding gives the float16 value with those
+# bits, a NaN encoding a NaN of the same sign.
+fn f16_decode(b: u16) -> f16
+  ensures decoded: if b % 0x8000 > 0x7c00 then is_nan(result) and signbit(result) == (b >= 0x8000)
+    else not is_nan(result) and bits(result) == b
+  relates roundtrip: not is_nan(result) implies f16_encode(result) == b
+
+# float16.encode over every float16 value: its own bits, and for a NaN a NaN of the same sign.
+fn f16_encode(x: f16) -> u16
+  ensures encoded: if is_nan(x) then result % 0x8000 > 0x7c00 and (result >= 0x8000) == signbit(x)
+    else result == bits(x)
+
+# encode(x) for a double x rounds to the nearest value, ties to even; tiny values keep their
+# sign; a finite value that rounds beyond max raises ValueError; infinities encode as the
+# matching infinity, zeros keep their sign, and a NaN gives a NaN of the same sign.
+fn float_encode(c: IeeeCodec, x: f64) -> int
+  partition x
+    nan = f64.nan
+    inf = f64.inf
+    zero = f64.zero
+    tiny = f64.range(-0x1p-14, 0x1p-14) - f64.zero
+    half = f64.range(-65520, 65520) - f64.range(-0x1p-14, 0x1p-14)
+    single = f64.range(-0x1p128, 0x1p128) - f64.range(-65520, 65520)
+    huge = f64.finite - f64.range(-0x1p128, 0x1p128)
+  raises ValueError when is_finite(x) and (
+    if c == "float16" then is_inf(round<f16>(real(x)))
+    else if c == "bfloat16" then is_inf(round<bf16>(real(x)))
+    else if c == "float32" then is_inf(round<f32>(real(x))) else false)
+  ensures encoded:
+    let sign = (if c == "float64" then 0x8000000000000000 else if c == "float32" then 0x80000000 else 0x8000) in
+    let inf = (if c == "float64" then 0x7ff0000000000000 else if c == "float32" then 0x7f800000
+               else if c == "bfloat16" then 0x7f80 else 0x7c00) in
+    if is_nan(x) then result % sign > inf and (result >= sign) == signbit(x)
+    else if is_zero(x) then result == (if signbit(x) then sign else 0)
+    else result == (if c == "float16" then bits(round<f16>(real(x)))
+                    else if c == "bfloat16" then bits(round<bf16>(real(x)))
+                    else if c == "float32" then bits(round<f32>(real(x))) else bits(x))
+
+# Ints (exactly representable as doubles here) are accepted and rounded the same way.
+fn float_encode_int(c: IeeeCodec, v: int) -> int
+  requires v >= -0x20000000000000 and v <= 0x20000000000000
+  raises ValueError when if c == "float16" then is_inf(round<f16>(v))
+    else if c == "bfloat16" then is_inf(round<bf16>(v)) else false
+  ensures encoded: result == (if c == "float16" then bits(round<f16>(v))
+    else if c == "bfloat16" then bits(round<bf16>(v))
+    else if c == "float32" then bits(round<f32>(v)) else bits(round<f64>(v)))
+
+fn float_encode_bool(c: IeeeCodec, v: bool) -> int
+  ensures encoded: result == (if c == "float16" then bits(round<f16>(if v then 1 else 0))
+    else if c == "bfloat16" then bits(round<bf16>(if v then 1 else 0))
+    else if c == "float32" then bits(round<f32>(if v then 1 else 0)) else bits(round<f64>(if v then 1 else 0)))
+
+# Other real numbers that convert to float work too (observed): the binding passes
+# fractions.Fraction(num, den).
+fn float_encode_fraction(c: IeeeCodec, num: i16, den: u8) -> int
+  requires den > 0
+  ensures encoded: result == (if c == "float16" then bits(round<f16>(num / den))
+    else if c == "bfloat16" then bits(round<bf16>(num / den))
+    else if c == "float32" then bits(round<f32>(num / den)) else bits(round<f64>(num / den)))
+
+# Strings, None and bytes raise TypeError.
+fn float_encode_bad(c: FloatCodec, bad: "string" | "none" | "bytes") -> int
+  raises TypeError when true
+
+# decode(b) returns a Python float with the encoding's value; a NaN encoding gives a NaN of the
+# same sign.
+fn float_decode(c: IeeeCodec, b: u64) -> f64
+  requires b < (if c == "float64" then 0x10000000000000000 else if c == "float32" then 0x100000000 else 0x10000)
+  partition b
+    byte = u64.range(0, 0x100)
+    half = u64.range(0x100, 0x10000)
+    word = u64.range(0x10000, 0x100000000)
+    wide = u64.range(0x100000000, none)
+  ensures decoded:
+    let sign = (if c == "float64" then 0x8000000000000000 else if c == "float32" then 0x80000000 else 0x8000) in
+    let inf = (if c == "float64" then 0x7ff0000000000000 else if c == "float32" then 0x7f800000
+               else if c == "bfloat16" then 0x7f80 else 0x7c00) in
+    if b % sign > inf then is_nan(result) and signbit(result) == (b >= sign)
+    else if is_nan(result) then false
+    else if c == "float64" then bits(result) == b
+    else if is_zero(result) then b == (if signbit(result) then sign else 0)
+    else if c == "float16" then fits<f16>(real(result)) and bits(round<f16>(real(result))) == b
+    else if c == "bfloat16" then fits<bf16>(real(result)) and bits(round<bf16>(real(result))) == b
+    else fits<f32>(real(result)) and bits(round<f32>(real(result))) == b
+  relates roundtrip: not is_nan(result) implies float_encode(c, result) == b
+
+# Float.decode raises IndexError for b < 0 or b >= 2**width (FloatFN does not check).
+fn float_decode_out_of_range(c: "float16" | "bfloat16" | "float32" | "float64" | "float8_e5m2", b: int) -> f64
+  requires b < 0 or b >= (if c == "float64" then 0x10000000000000000 else if c == "float32" then 0x100000000
+    else if c == "float8_e5m2" then 0x100 else 0x10000)
+  partition b
+    negative = b < 0
+    beyond = b >= 0
+  raises IndexError when true
+
+# The float8 values, from their bit fields: float8_e5m2 has 2 mantissa bits and bias 15,
+# float8_e4m3fn 3 mantissa bits and bias 7 (0x7e decodes to 448.0).
+fn float8_decode(c: Float8, b: u8) -> f64
+  ensures decoded:
+    if c == "float8_e5m2" then
+      (if b % 128 > 0x7c then is_nan(result) and signbit(result) == (b >= 128)
+       else if b % 128 == 0x7c then is_inf(result) and signbit(result) == (b >= 128)
+       else not is_nan(result) and signbit(result) == (b >= 128) and
+         (let e = (b % 128) // 4 in
+          let m = b % 4 in
+          let mag = (if e == 0 then m * 0x1p-16 else (4 + m) * [0x1p-16, 0x1p-15, 0x1p-14, 0x1p-13,
+            0x1p-12, 0x1p-11, 0x1p-10, 0x1p-9, 0x1p-8, 0x1p-7, 0x1p-6, 0x1p-5, 0x1p-4, 0x1p-3, 0x1p-2,
+            0x1p-1, 0x1p0, 0x1p1, 0x1p2, 0x1p3, 0x1p4, 0x1p5, 0x1p6, 0x1p7, 0x1p8, 0x1p9, 0x1p10,
+            0x1p11, 0x1p12, 0x1p13][e - 1]) in
+          real(result) == (if b >= 128 then -mag else mag)))
+    else
+      (if b % 128 == 0x7f then is_nan(result) and signbit(result) == (b >= 128)
+       else not is_nan(result) and signbit(result) == (b >= 128) and
+         (let e = (b % 128) // 8 in
+          let m = b % 8 in
+          let mag = (if e == 0 then m * 0x1p-9 else (8 + m) * [0x1p-9, 0x1p-8, 0x1p-7, 0x1p-6, 0x1p-5,
+            0x1p-4, 0x1p-3, 0x1p-2, 0x1p-1, 0x1p0, 0x1p1, 0x1p2, 0x1p3, 0x1p4, 0x1p5][e - 1]) in
+          real(result) == (if b >= 128 then -mag else mag)))
+  relates roundtrip: not is_nan(result) implies float8_encode(c, result) == b
+
+# encode(x) for float8: the nearest value, ties to even, with the format's spacing (2**-16 below
+# 2**-14 and a quarter of the binade above for e5m2; 2**-9 below 2**-6 and an eighth of the binade
+# above for e4m3fn), computed from the float16 spacing ulp<f16>; below 2**16 the quotient v / step
+# is under 17, so counting gives its floor. Beyond max raises ValueError (e4m3fn encodes 464.0, a
+# tie, as 448.0 and raises on 465.0), and so do infinities for FloatFN.
+fn float8_encode(c: Float8, x: f64) -> u8
+  partition x
+    nan = f64.nan
+    inf = f64.inf
+    zero = f64.zero
+    small = f64.range(-0x1p-6, 0x1p-6) - f64.zero
+    normal = f64.range(-512, 512) - f64.range(-0x1p-6, 0x1p-6)
+    medium = f64.range(-65536, 65536) - f64.range(-512, 512)
+    huge = f64.finite - f64.range(-65536, 65536)
+  raises infinite: ValueError when is_inf(x) and c == "float8_e4m3fn"
+  raises overflow: ValueError when is_finite(x) and (
+    let v = (if real(x) < 0 then -real(x) else real(x)) in
+    v >= 0x1p16 or (
+      let step = (if c == "float8_e5m2" then (if v >= 0x1p-14 then ulp<f16>(v) * 256 else 0x1p-16)
+                  else (if v >= 0x1p-6 then ulp<f16>(v) * 128 else 0x1p-9)) in
+      let q = v / step in
+      let n = count(i in range(1, 17): i <= q) in
+      let k = n + (if q - n > 1/2 or (q - n == 1/2 and n % 2 == 1) then 1 else 0) in
+      k * step > (if c == "float8_e5m2" then 57344 else 448)))
+  ensures special:
+    (is_nan(x) implies (if c == "float8_e5m2" then result % 128 > 0x7c else result % 128 == 0x7f) and
+      (result >= 128) == signbit(x)) and
+    (is_inf(x) implies result == (if signbit(x) then 0xfc else 0x7c)) and
+    (is_zero(x) implies result == (if signbit(x) then 0x80 else 0))
+  relates rounded: is_finite(x) and not is_zero(x) and real(x) < 0x1p16 and real(x) > -0x1p16 implies (
+    let v = (if real(x) < 0 then -real(x) else real(x)) in
+    let step = (if c == "float8_e5m2" then (if v >= 0x1p-14 then ulp<f16>(v) * 256 else 0x1p-16)
+                else (if v >= 0x1p-6 then ulp<f16>(v) * 128 else 0x1p-9)) in
+    let q = v / step in
+    let n = count(i in range(1, 17): i <= q) in
+    let k = n + (if q - n > 1/2 or (q - n == 1/2 and n % 2 == 1) then 1 else 0) in
+    let d = float8_decode(c, result) in
+    not is_nan(d) and signbit(d) == signbit(x) and real(d) == (if signbit(x) then -(k * step) else k * step))
+
+record FloatSets { total: int, sign_clear: int, sign_set: int, zeros: int, positive: int, negative: int, nonnegative: int, subnormal: int, infinities: int, nan: int, finite: int }
+
+# The sizes of the named sets (total is all): with M mantissa bits, subnormal has 2 * (2**M - 1)
+# members, a Float has 2 infinities and 2 * (2**M - 1) NaNs, a FloatFN none and 2; finite is all
+# minus both; positive and negative split the rest but the zeros; nonnegative adds the zeros.
+fn float_set_sizes(c: FloatCodec) -> FloatSets
+  ensures counts:
+    let total = (if c == "float64" then 0x10000000000000000 else if c == "float32" then 0x100000000
+                 else if c == "float16" or c == "bfloat16" then 0x10000 else 0x100) in
+    let man = (if c == "float64" then 0x10000000000000 else if c == "float32" then 0x800000
+               else if c == "float16" then 0x400 else if c == "bfloat16" then 0x80
+               else if c == "float8_e5m2" then 4 else 8) in
+    let n_inf = (if c == "float8_e4m3fn" then 0 else 2) in
+    let n_nan = (if c == "float8_e4m3fn" then 2 else 2 * (man - 1)) in
+    result.total == total and result.sign_clear == total // 2 and result.sign_set == total // 2 and
+    result.zeros == 2 and result.subnormal == 2 * (man - 1) and result.infinities == n_inf and
+    result.nan == n_nan and result.finite == total - n_inf - n_nan
+  ensures signs:
+    let total = (if c == "float64" then 0x10000000000000000 else if c == "float32" then 0x100000000
+                 else if c == "float16" or c == "bfloat16" then 0x10000 else 0x100) in
+    let man = (if c == "float64" then 0x10000000000000 else if c == "float32" then 0x800000
+               else if c == "float16" then 0x400 else if c == "bfloat16" then 0x80
+               else if c == "float8_e5m2" then 4 else 8) in
+    let n_nan = (if c == "float8_e4m3fn" then 2 else 2 * (man - 1)) in
+    result.positive == (total - n_nan - 2) // 2 and result.negative == result.positive and
+    result.nonnegative == result.positive + 2
+  ensures documented: c == "float16" implies result.total == 65536 and result.nan == 2046 and
+    result.subnormal == 2046 and result.finite == 63488 and result.positive == 31744 and result.nonnegative == 31746
+
+record FloatClasses { sign_clear: bool, sign_set: bool, zeros: bool, positive: bool, negative: bool, nonnegative: bool, subnormal: bool, infinities: bool, nan: bool, finite: bool }
+
+# Whether encoding b is in each named set: positive and negative include the infinities, neither
+# holds zeros or NaN, nonnegative includes -0.0, subnormal has a zero exponent and nonzero mantissa.
+# finite, infinities and nan partition all, and so do positive, negative, zeros and nan.
+fn float_classes(c: FloatCodec, b: u64) -> FloatClasses
+  requires b < (if c == "float64" then 0x10000000000000000 else if c == "float32" then 0x100000000
+                else if c == "float16" or c == "bfloat16" then 0x10000 else 0x100)
+  partition b
+    byte = u64.range(0, 0x100)
+    half = u64.range(0x100, 0x10000)
+    word = u64.range(0x10000, 0x100000000)
+    wide = u64.range(0x100000000, none)
+  ensures named:
+    let sign = (if c == "float64" then 0x8000000000000000 else if c == "float32" then 0x80000000
+                else if c == "float16" or c == "bfloat16" then 0x8000 else 0x80) in
+    let inf = (if c == "float64" then 0x7ff0000000000000 else if c == "float32" then 0x7f800000
+               else if c == "float16" then 0x7c00 else if c == "bfloat16" then 0x7f80 else 0x7c) in
+    let man = (if c == "float64" then 0x10000000000000 else if c == "float32" then 0x800000
+               else if c == "float16" then 0x400 else if c == "bfloat16" then 0x80
+               else if c == "float8_e5m2" then 4 else 8) in
+    let mag = b % sign in
+    let s = b >= sign in
+    let n = (if c == "float8_e4m3fn" then mag == 0x7f else mag > inf) in
+    let i = c != "float8_e4m3fn" and mag == inf in
+    let z = mag == 0 in
+    result.sign_clear == (not s) and result.sign_set == s and result.zeros == z and result.nan == n and
+    result.infinities == i and result.finite == (not n and not i) and
+    result.subnormal == (mag > 0 and mag < man) and
+    result.positive == (not s and not z and not n) and result.negative == (s and not z and not n) and
+    result.nonnegative == ((not s and not n) or z)
+  ensures partitions:
+    count(p in [result.finite, result.infinities, result.nan]: p) == 1 and
+    count(p in [result.positive, result.negative, result.zeros, result.nan]: p) == 1
+
+# list(float16.set(xs)) iterates in encoding order: +0.0 up to +inf, the sign-clear NaNs, then -0.0
+# down to -inf and the sign-set NaNs.
+fn f16_set_order(xs: list<f16>) -> list<f16>
+  ensures order: is_sorted(map(v in result: if is_nan(v) then (if signbit(v) then 0x10000 else 0x7c01) else bits(v)))
+  ensures members: all(x in xs: is_nan(x) or exists(v in result: same(v, x))) and
+    all(v in result: is_nan(v) or exists(x in xs: same(x, v)))
+
+# x in float16.range(start, stop): the non-NaN values with start <= v < stop, -0.0 counting as
+# just below 0.0; None leaves an end open (with its infinity); bounds need not be representable;
+# a NaN bound raises ValueError.
+fn f16_range_has(start: option<f32>, stop: option<f32>, x: f16) -> bool
+  partition x
+    nan = f16.nan
+    inf = f16.inf
+    zero = f16.zero
+    subnormal = f16.subnormal
+    normal = f16.normal
+  raises ValueError when (is_some(start) and is_nan(unwrap(start))) or (is_some(stop) and is_nan(unwrap(stop)))
+  ensures member: result == (not is_nan(x) and
+    (is_none(start) or (let s = unwrap(start) in
+      real(x) > real(s) or (real(x) == real(s) and not (is_zero(x) and signbit(x) and not signbit(s))))) and
+    (is_none(stop) or (let t = unwrap(stop) in
+      real(x) < real(t) or (real(x) == real(t) and is_zero(x) and signbit(x) and not signbit(t)))))
+
+# c.range(start, stop).size: 2**M for [1, 2), all minus the NaNs with no bounds (for FloatFN too,
+# whose range starts at min); observed: float16.range(1e10) is {inf} and
+# float16.range(-1e10, -65504.0) is empty.
+fn float_range_size(c: FloatCodec, start: option<f64>, stop: option<f64>) -> int
+  raises ValueError when (is_some(start) and is_nan(unwrap(start))) or (is_some(stop) and is_nan(unwrap(stop)))
+  ensures bounded:
+    let total = (if c == "float64" then 0x10000000000000000 else if c == "float32" then 0x100000000
+                 else if c == "float16" or c == "bfloat16" then 0x10000 else 0x100) in
+    let man = (if c == "float64" then 0x10000000000000 else if c == "float32" then 0x800000
+               else if c == "float16" then 0x400 else if c == "bfloat16" then 0x80
+               else if c == "float8_e5m2" then 4 else 8) in
+    let n_nan = (if c == "float8_e4m3fn" then 2 else 2 * (man - 1)) in
+    result >= 0 and result <= total - n_nan and (is_none(start) and is_none(stop) implies result == total - n_nan)
+  ensures unit_binade: is_some(start) and is_some(stop) and not is_nan(unwrap(start)) and not is_nan(unwrap(stop)) and
+    real(unwrap(start)) == 1 and real(unwrap(stop)) == 2 implies
+    result == (if c == "float64" then 0x10000000000000 else if c == "float32" then 0x800000
+               else if c == "float16" then 0x400 else if c == "bfloat16" then 0x80
+               else if c == "float8_e5m2" then 4 else 8)
+  ensures documented: c == "float16" implies
+    (is_some(start) and is_none(stop) and not is_nan(unwrap(start)) and real(unwrap(start)) == 1e10 implies result == 1) and
+    (is_some(start) and is_some(stop) and not is_nan(unwrap(start)) and not is_nan(unwrap(stop)) and
+      real(unwrap(start)) == -1e10 and real(unwrap(stop)) == -65504 implies result == 0)
+
+# (s[0], s[-1]) of float16.range(start, stop), None when empty: still in encoding order, so
+# float16.range(-1.0, 1.0) starts with 0.0 and ends with -1.0.
+fn f16_range_ends(start: option<f64>, stop: option<f64>) -> option<(f16, f16)>
+  raises ValueError when (is_some(start) and is_nan(unwrap(start))) or (is_some(stop) and is_nan(unwrap(stop)))
+  ensures within: is_some(result) implies all(x in [unwrap(result).0, unwrap(result).1]: not is_nan(x) and
+    (is_none(start) or (let s = unwrap(start) in
+      real(x) > real(s) or (real(x) == real(s) and not (is_zero(x) and signbit(x) and not signbit(s))))) and
+    (is_none(stop) or (let t = unwrap(stop) in
+      real(x) < real(t) or (real(x) == real(t) and is_zero(x) and signbit(x) and not signbit(t)))))
+  ensures documented: is_some(start) and is_some(stop) and not is_nan(unwrap(start)) and not is_nan(unwrap(stop)) and
+    real(unwrap(start)) == -1 and real(unwrap(stop)) == 1 implies
+    is_some(result) and bits(unwrap(result).0) == 0 and not is_nan(unwrap(result).1) and real(unwrap(result).1) == -1
+
+# FloatFN(width, "custom", exponent).dtype(): FLOAT8_E4M3FN only for width 8 and exponent 4.
+fn floatfn_dtype(width: u8, exponent: u8) -> (int, int)
+  requires width >= 2 and width <= 64 and exponent >= 1 and exponent <= width - 2
+  partition width
+    byte = {8}
+    other = u8.range(2, 8) | u8.range(9, 65)
+  ensures dtype: result == (if width == 8 and exponent == 4 then (10, 8)
+    else (1, if width <= 8 then 8 else if width <= 16 then 16 else if width <= 32 then 32 else 64))
