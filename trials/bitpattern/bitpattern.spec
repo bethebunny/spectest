@@ -1428,3 +1428,321 @@ fn floatfn_dtype(width: u8, exponent: u8) -> (int, int)
     other = u8.range(2, 8) | u8.range(9, 65)
   ensures dtype: result == (if width == 8 and exponent == 4 then (10, 8)
     else (1, if width <= 8 then 8 else if width <= 16 then 16 else if width <= 32 then 32 else 64))
+
+# ---------------------------------------------------------------------------
+# 3.6 Char
+
+type Category = "Lu" | "Ll" | "Lt" | "Lm" | "Lo" | "Mn" | "Mc" | "Me" | "Nd" | "Nl" | "No" | "Pc" | "Pd" | "Ps" | "Pe"
+  | "Pi" | "Pf" | "Po" | "Sm" | "Sc" | "Sk" | "So" | "Zs" | "Zl" | "Zp" | "Cc" | "Cf" | "Cs" | "Co" | "Cn"
+type Major = "L" | "M" | "N" | "P" | "S" | "Z" | "C"
+
+# char.encode(s): the code point of a one-character string; ValueError for other lengths.
+fn char_encode(s: string) -> int
+  partition s
+    one = len(s) == 1
+    other = len(s) != 1
+  raises ValueError when len(s) != 1
+  ensures code_point: result == codepoints(s)[0]
+
+# char.encode(chr(cp)): surrogates raise ValueError.
+fn char_encode_codepoint(cp: u32) -> int
+  requires cp <= 0x10ffff
+  partition cp
+    ascii = u32.range(0, 0x80)
+    bmp = u32.range(0x80, 0xd800) | u32.range(0xe000, 0x10000)
+    surrogate = u32.range(0xd800, 0xe000)
+    astral = u32.range(0x10000, 0x110000)
+  raises ValueError when cp >= 0xd800 and cp < 0xe000
+  ensures code_point: result == cp
+
+# Char(width, "narrow").encode(s): ValueError when the code point is >= 2**width.
+fn char_encode_narrow(width: u8, s: string) -> int
+  requires width >= 1 and width <= 21
+  partition s
+    one = len(s) == 1
+    other = len(s) != 1
+  raises ValueError when len(s) != 1 or codepoints(s)[0] >= [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024,
+    2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152][width]
+  ensures code_point: result == codepoints(s)[0]
+
+# Non-strings raise TypeError (the binding passes 65, b"A" or None).
+fn char_encode_bad(bad: "int" | "bytes" | "none") -> int
+  raises TypeError when true
+
+# char.decode(b) is chr(b), IndexError above U+10FFFF (decoding a surrogate is unspecified).
+fn char_decode(b: u32) -> string
+  requires b < 0xd800 or b >= 0xe000
+  partition b
+    bmp = u32.range(0, 0xd800) | u32.range(0xe000, 0x10000)
+    astral = u32.range(0x10000, 0x110000)
+    beyond = u32.range(0x110000, none)
+  raises IndexError when b > 0x10ffff
+  ensures character: codepoints(result) == [b]
+
+# Char(width, "narrow").all: every non-surrogate code point up to 0x10FFFF that fits the width;
+# char.all has 1112064 members and Char(7, "ascii").all is [0, 128).
+fn char_all(width: u8) -> CodecSet
+  requires width >= 1 and width <= 21
+  ensures size: let p = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
+      65536, 131072, 262144, 524288, 1048576, 2097152][width] in
+    let top = (if p < 0x110000 then p else 0x110000) in
+    result.size == top - (if top <= 0xd800 then 0 else if top >= 0xe000 then 0x800 else top - 0xd800)
+  ensures legal: let p = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
+      65536, 131072, 262144, 524288, 1048576, 2097152][width] in
+    result.has(0) and not result.has(p) and (p > 0xd800 implies not result.has(0xd800) and not result.has(0xdfff))
+  ensures documented: (width == 7 implies result.size == 128) and (width == 21 implies result.size == 1112064)
+
+# (char.min, char.max).
+fn char_bounds() -> (string, string)
+  ensures bounds: result == ("\0", "\u{10ffff}")
+
+# char.range(start, stop): the code points of [ord(start), ord(stop)) without surrogates; the
+# bounds must be encodable (char.range("a", "ab") raises ValueError).
+fn char_range(start: string, stop: string) -> CodecSet
+  partition start
+    one = len(start) == 1
+    other = len(start) != 1
+  partition stop
+    one = len(stop) == 1
+    other = len(stop) != 1
+  raises ValueError when len(start) != 1 or len(stop) != 1
+  ensures interval: let lo = codepoints(start)[0] in let hi = codepoints(stop)[0] in
+    let surrogates = (if hi <= 0xd800 or lo >= 0xe000 then 0
+                      else (if hi < 0xe000 then hi else 0xe000) - (if lo > 0xd800 then lo else 0xd800)) in
+    result.size == (if hi > lo then hi - lo - surrogates else 0) and
+    (hi > lo implies result.has(lo) and not result.has(hi) and (lo > 0 implies not result.has(lo - 1)))
+  ensures documented: start == "\u{d7ff}" and stop == "\u{e001}" implies
+    result.size == 2 and result.has(0xd7ff) and result.has(0xe000)
+
+# char.category(name): a general category or major class; any other name raises ValueError
+# (names are case-sensitive: "lu" and "Xx" raise).
+fn char_category(name: string) -> CodecSet
+  raises ValueError when not (name in ["Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Me", "Nd", "Nl", "No", "Pc",
+    "Pd", "Ps", "Pe", "Pi", "Pf", "Po", "Sm", "Sc", "Sk", "So", "Zs", "Zl", "Zp", "Cc", "Cf", "Cs", "Co",
+    "Cn", "L", "M", "N", "P", "S", "Z", "C"])
+  ensures surrogates: name == "Cs" implies result.size == 0
+  ensures codec: result.codec == "char"
+
+# (char.category(major) >= char.category(minor), char.category(minor).size): a major class holds
+# its own categories and no other; only Cs is empty.
+fn char_category_pair(major: Major, minor: Category) -> (bool, int)
+  ensures size: (minor == "Cs") == (result.1 == 0)
+  ensures contains: result.0 == (minor == "Cs" or codepoints(minor)[0] == codepoints(major)[0])
+
+# "".join(char.category(name) & char.range("\0", "\x80")): its ASCII members, ascending.
+fn char_category_ascii(name: Category) -> string
+  ensures ascii: all(c in codepoints(result): c < 128) and is_sorted(codepoints(result)) and distinct(codepoints(result))
+  ensures documented: name == "Sm" implies result == "+<=>|~"
+
+# ---------------------------------------------------------------------------
+# 3.7 IP
+
+type Family = "ipv4" | "ipv6"
+
+# encode(int): the int itself, ValueError outside [0, 2**width).
+fn ip_encode_int(family: Family, v: int) -> int
+  raises ValueError when v < 0 or v >= (if family == "ipv4" then 0x100000000 else 0x100000000000000000000000000000000)
+  ensures value: result == v
+
+# encode of the family's own address class gives int(address).
+fn ip_encode_address(family: Family, v: int) -> int
+  requires v >= 0 and v < (if family == "ipv4" then 0x100000000 else 0x100000000000000000000000000000000)
+  ensures value: result == v
+
+# encode of any string: malformed text raises ValueError (judged in full by the next two).
+fn ip_encode_text(family: Family, text: string) -> int
+  may_raise ValueError
+
+# ipv4.encode(".".join(str(o) for o in octets)).
+fn ip_encode_dotted(octets: list<u8>) -> int
+  partition octets
+    four = len(octets) == 4
+    other = len(octets) != 4
+  raises ValueError when len(octets) != 4
+  ensures value: result == sum(i in range(0, 4): octets[i] * [0x1000000, 0x10000, 0x100, 0x1][i])
+
+# ipv6.encode(":".join(f"{g:x}" for g in groups)).
+fn ip_encode_groups(groups: list<u16>) -> int
+  partition groups
+    eight = len(groups) == 8
+    other = len(groups) != 8
+  raises ValueError when len(groups) != 8
+  ensures value: result == sum(i in range(0, 8): groups[i] * [0x10000000000000000000000000000,
+    0x1000000000000000000000000, 0x100000000000000000000, 0x10000000000000000, 0x1000000000000,
+    0x100000000, 0x10000, 0x1][i])
+
+# Floats, bytes and the other family's addresses raise TypeError; strings with a / and interface
+# objects carrying a prefix raise ValueError (the binding passes 1.0, a packed address,
+# IPv6Address(1) or IPv4Address(1), "10.0.0.1/8" or "::1/64", and IPv4Interface("10.0.0.1/8") or
+# IPv6Interface("::1/64")).
+fn ip_encode_bad(family: Family, bad: "float" | "bytes" | "other_family" | "slash" | "interface") -> int
+  raises TypeError when bad == "float" or bad == "bytes" or bad == "other_family"
+  raises ValueError when bad == "slash" or bad == "interface"
+
+# (type(a).__name__, str(a)) for a = decode(b): IndexError outside [0, 2**width); ipv6.decode(1) is
+# IPv6Address('::1'), never an IPv4 address.
+fn ip_decode(family: Family, b: int) -> (string, string)
+  raises IndexError when b < 0 or b >= (if family == "ipv4" then 0x100000000 else 0x100000000000000000000000000000000)
+  ensures type: result.0 == (if family == "ipv4" then "IPv4Address" else "IPv6Address")
+  ensures documented: family == "ipv6" and b == 1 implies result.1 == "::1"
+  relates roundtrip: ip_encode_text(family, result.1) == b
+
+# (str(min), str(max)).
+fn ip_bounds(family: Family) -> (string, string)
+  ensures bounds: result == (if family == "ipv4" then ("0.0.0.0", "255.255.255.255")
+    else ("::", "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"))
+
+# range(start, stop) with int bounds: both bounds are encoded, so one outside the universe
+# raises ValueError.
+fn ip_range(family: Family, start: option<int>, stop: option<int>) -> CodecSet
+  raises ValueError when let full = (if family == "ipv4" then 0x100000000 else 0x100000000000000000000000000000000) in
+    (is_some(start) and (unwrap(start) < 0 or unwrap(start) >= full)) or
+    (is_some(stop) and (unwrap(stop) < 0 or unwrap(stop) >= full))
+  ensures interval: let full = (if family == "ipv4" then 0x100000000 else 0x100000000000000000000000000000000) in
+    let lo = (if is_some(start) then unwrap(start) else 0) in
+    let hi = (if is_some(stop) then unwrap(stop) else full) in
+    result.size == (if hi > lo then hi - lo else 0) and
+    (hi > lo implies result.has(lo) and result.has(hi - 1) and (lo > 0 implies not result.has(lo - 1)) and
+      (hi < full implies not result.has(hi)))
+  ensures codec: result.codec == family
+
+# ipv4.cidr("a.b.c.d/prefix") (or the bare address): every address of the block, host bits
+# ignored; a bare address is a single-address block; a bad prefix or address raises ValueError.
+fn ip_cidr(octets: list<u8>, prefix: option<u8>) -> CodecSet
+  partition octets
+    four = len(octets) == 4
+    other = len(octets) != 4
+  raises ValueError when len(octets) != 4 or (is_some(prefix) and unwrap(prefix) > 32)
+  ensures block:
+    let v = sum(i in range(0, 4): octets[i] * [0x1000000, 0x10000, 0x100, 0x1][i]) in
+    let p = (if is_some(prefix) then unwrap(prefix) else 32) in
+    let size = [0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000,
+      0x4000, 0x8000, 0x10000, 0x20000, 0x40000, 0x80000, 0x100000, 0x200000, 0x400000, 0x800000,
+      0x1000000, 0x2000000, 0x4000000, 0x8000000, 0x10000000, 0x20000000, 0x40000000, 0x80000000,
+      0x100000000][32 - p] in
+    let base = v - v % size in
+    result.size == size and result.has(base) and result.has(base + size - 1) and
+    (base > 0 implies not result.has(base - 1)) and (base + size < 0x100000000 implies not result.has(base + size))
+
+# ipv4.networks(ipv4.range(start, start + span)) as (network address, prefix length): the fewest
+# CIDR networks that exactly cover the source, ascending. They are aligned and contiguous, and
+# none could double its size in place, which makes them the fewest.
+fn ip_networks(start: u32, span: u16) -> list<(int, int)>
+  requires start + span <= 0xffffffff
+  ensures prefixes: all(n in result: n.1 >= 0 and n.1 <= 32)
+  ensures cover: let size = [0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000,
+      0x4000, 0x8000, 0x10000, 0x20000, 0x40000, 0x80000, 0x100000, 0x200000, 0x400000, 0x800000,
+      0x1000000, 0x2000000, 0x4000000, 0x8000000, 0x10000000, 0x20000000, 0x40000000, 0x80000000,
+      0x100000000] in
+    all(n in result: n.1 >= 0 and n.1 <= 32) implies
+    (span == 0 implies len(result) == 0) and
+    (span > 0 implies len(result) > 0 and result[0].0 == start and
+      result[len(result) - 1].0 + size[32 - result[len(result) - 1].1] == start + span and
+      all(i in range(1, len(result)): result[i].0 == result[i - 1].0 + size[32 - result[i - 1].1]))
+  ensures fewest: let size = [0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000,
+      0x4000, 0x8000, 0x10000, 0x20000, 0x40000, 0x80000, 0x100000, 0x200000, 0x400000, 0x800000,
+      0x1000000, 0x2000000, 0x4000000, 0x8000000, 0x10000000, 0x20000000, 0x40000000, 0x80000000,
+      0x100000000] in
+    all(n in result: n.1 >= 0 and n.1 <= 32) implies all(n in result:
+      n.0 % size[32 - n.1] == 0 and
+      (n.1 == 0 or not (n.0 % (2 * size[32 - n.1]) == 0 and n.0 + 2 * size[32 - n.1] <= start + span)))
+  ensures documented: start == 0x0a000001 and span == 8 implies
+    result == [(0x0a000001, 32), (0x0a000002, 31), (0x0a000004, 30), (0x0a000008, 32)]
+
+# list(c.networks(c.all)) is the one network of prefix length 0.
+fn ip_networks_all(family: Family) -> list<(int, int)>
+  ensures whole: result == [(0, 0)]
+
+# ipv4.networks(ipv6.all) raises TypeError, but only once iteration starts: the binding consumes
+# the generator when iterate holds and returns how many networks it listed.
+fn ip_networks_wrong(iterate: bool) -> int
+  raises TypeError when iterate
+  ensures lazy: result == 0
+
+# ---------------------------------------------------------------------------
+# 3.8 MAC
+#
+# A MAC text is well formed when it is 17 characters of hex digit pairs joined by one separator,
+# all ":" or all "-", or 14 characters of hex quartets joined by "."; digits may be either case.
+
+# mac.encode of the octets written in one of the three styles, in either case.
+fn mac_encode(octets: list<u8>, style: "colon" | "dash" | "dot", upper: bool) -> int
+  partition octets
+    six = len(octets) == 6
+    other = len(octets) != 6
+  raises ValueError when len(octets) != 6
+  ensures value: result == sum(i in range(0, 6): octets[i] * [0x10000000000, 0x100000000, 0x1000000, 0x10000, 0x100, 0x1][i])
+
+# mac.encode(text) for any string: ValueError unless well formed (mixed separators, bare hex and
+# surrounding whitespace raise); the value of the twelve hex digits otherwise.
+fn mac_encode_text(text: string) -> int
+  partition text
+    colon_length = len(text) == 17
+    dot_length = len(text) == 14
+    other = len(text) != 17 and len(text) != 14
+  raises ValueError when not (
+    let cp = codepoints(text) in
+    (len(cp) == 17 and (all(i in range(0, 17): if i % 3 == 2 then cp[i] == 58 else
+         (cp[i] >= 48 and cp[i] <= 57) or (cp[i] >= 65 and cp[i] <= 70) or (cp[i] >= 97 and cp[i] <= 102)) or
+       all(i in range(0, 17): if i % 3 == 2 then cp[i] == 45 else
+         (cp[i] >= 48 and cp[i] <= 57) or (cp[i] >= 65 and cp[i] <= 70) or (cp[i] >= 97 and cp[i] <= 102)))) or
+    (len(cp) == 14 and all(i in range(0, 14): if i % 5 == 4 then cp[i] == 46 else
+         (cp[i] >= 48 and cp[i] <= 57) or (cp[i] >= 65 and cp[i] <= 70) or (cp[i] >= 97 and cp[i] <= 102))))
+  ensures value: let d = filter(c in codepoints(text): (c >= 48 and c <= 57) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102)) in
+    len(d) == 12 and result == sum(i in range(0, 12):
+      (if d[i] <= 57 then d[i] - 48 else if d[i] <= 70 then d[i] - 55 else d[i] - 87) *
+      [0x100000000000, 0x10000000000, 0x1000000000, 0x100000000, 0x10000000, 0x1000000, 0x100000,
+       0x10000, 0x1000, 0x100, 0x10, 0x1][i])
+
+# Non-strings raise TypeError.
+fn mac_encode_bad(bad: "int" | "bytes" | "none") -> int
+  raises TypeError when true
+
+# mac.decode(b): lowercase and colon-separated, IndexError outside 48 bits.
+fn mac_decode(b: u64) -> string
+  partition b
+    inside = u64.range(0, 0x1000000000000)
+    beyond = u64.range(0x1000000000000, none)
+  raises IndexError when b >= 0x1000000000000
+  ensures form: let cp = codepoints(result) in len(cp) == 17 and
+    all(i in range(0, 17): if i % 3 == 2 then cp[i] == 58 else (cp[i] >= 48 and cp[i] <= 57) or (cp[i] >= 97 and cp[i] <= 102))
+  ensures value: let d = filter(c in codepoints(result): c != 58) in
+    len(d) == 12 and b == sum(i in range(0, 12):
+      (if d[i] <= 57 then d[i] - 48 else d[i] - 87) *
+      [0x100000000000, 0x10000000000, 0x1000000000, 0x100000000, 0x10000000, 0x1000000, 0x100000,
+       0x10000, 0x1000, 0x100, 0x10, 0x1][i])
+
+# (size, b in storage) of a named set: multicast and unicast set or clear the I/G bit (bit 0 of
+# the first octet), local and universal the U/L bit (bit 1), each 2**47 addresses; broadcast is
+# ff:ff:ff:ff:ff:ff, which is multicast and local.
+fn mac_named(name: "multicast" | "unicast" | "local" | "universal" | "broadcast", b: u64) -> (int, bool)
+  requires b < 0x1000000000000
+  partition b
+    inside = u64.range(0, 0x1000000000000)
+  ensures size: result.0 == (if name == "broadcast" then 1 else 0x800000000000)
+  ensures member: let ig = (b // 0x10000000000) % 2 in let ul = (b // 0x20000000000) % 2 in
+    result.1 == (if name == "multicast" then ig == 1 else if name == "unicast" then ig == 0
+                 else if name == "local" then ul == 1 else if name == "universal" then ul == 0
+                 else b == 0xffffffffffff)
+
+# mac.oui(prefix): the 2**24 addresses under a three-octet prefix written with ":" or "-".
+fn mac_oui(octets: list<u8>, sep: ":" | "-", upper: bool) -> CodecSet
+  partition octets
+    three = len(octets) == 3
+    other = len(octets) != 3
+  raises ValueError when len(octets) != 3
+  ensures block: let base = sum(i in range(0, 3): octets[i] * [0x10000000000, 0x100000000, 0x1000000][i]) in
+    result.size == 0x1000000 and result.has(base) and result.has(base + 0xffffff) and
+    (base > 0 implies not result.has(base - 1)) and (base + 0x1000000 < 0x1000000000000 implies not result.has(base + 0x1000000))
+
+# mac.oui(text) for any string: any other form raises ValueError ("001a.2b", "00:1a").
+fn mac_oui_text(text: string) -> CodecSet
+  partition text
+    eight = len(text) == 8
+    other = len(text) != 8
+  raises ValueError when not (let cp = codepoints(text) in len(cp) == 8 and
+    (all(i in range(0, 8): if i % 3 == 2 then cp[i] == 58 else
+       (cp[i] >= 48 and cp[i] <= 57) or (cp[i] >= 65 and cp[i] <= 70) or (cp[i] >= 97 and cp[i] <= 102)) or
+     all(i in range(0, 8): if i % 3 == 2 then cp[i] == 45 else
+       (cp[i] >= 48 and cp[i] <= 57) or (cp[i] >= 65 and cp[i] <= 70) or (cp[i] >= 97 and cp[i] <= 102))))
+  ensures size: result.size == 0x1000000
