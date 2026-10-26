@@ -59,7 +59,16 @@ def build() -> bool:
     )
     started = time.perf_counter()
     subprocess.run(
-        [str(mojo), "build", str(SOURCE), "--emit", "shared-lib", "-o", str(MODULE), *flags],
+        [
+            str(mojo),
+            "build",
+            str(SOURCE),
+            "--emit",
+            "shared-lib",
+            "-o",
+            str(MODULE),
+            *flags,
+        ],
         check=True,
         env=env,
         cwd=ROOT,

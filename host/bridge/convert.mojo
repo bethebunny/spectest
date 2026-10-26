@@ -92,7 +92,7 @@ def _int_value(obj: PyObjectPtr) raises -> Value:
             raise python_error()
         return Value.int(Int(n))
     var text = Owned(checked(PyNumber_ToBase(obj, 16)))
-    return Value.int(BigInt.parse(string_of(text.ptr)))
+    return Value.int(BigInt.parse(string_of(text)))
 
 
 def _u64(obj: PyObjectPtr) raises -> UInt64:
@@ -111,11 +111,31 @@ def _str(obj: PyObjectPtr) raises -> String:
     return text^
 
 
+def _str(obj: Owned) raises -> String:
+    return _str(obj.ptr)
+
+
+def _u64(obj: Owned) raises -> UInt64:
+    return _u64(obj.ptr)
+
+
 def _type_name(obj: PyObjectPtr) -> String:
     var qual = Owned(PyType_GetQualName(ob_type(obj)))
     if not qual.ptr:
         return "an object"
-    return string_of(qual.ptr)
+    return string_of(qual)
+
+
+def _items(obj: Owned) raises -> List[Owned]:
+    return _items(obj.ptr)
+
+
+def _pair(obj: Owned) raises -> List[Owned]:
+    return _pair(obj.ptr)
+
+
+def _from_py(obj: Owned, w: Pointer[Wire, MutUntrackedOrigin]) raises -> Value:
+    return _from_py(obj.ptr, w)
 
 
 def _items(obj: PyObjectPtr) raises -> List[Owned]:
@@ -174,45 +194,45 @@ def _from_py(obj: PyObjectPtr, w: Pointer[Wire, MutUntrackedOrigin]) raises -> V
     if t == w[].float_cls:
         var fmt = attr(obj, w[].n_fmt)
         var bits = attr(obj, w[].n_bits)
-        return Value.float(format_by_name(_str(fmt.ptr)), _u64(bits.ptr))
+        return Value.float(format_by_name(_str(fmt)), _u64(bits))
     if t == w[].map_cls:
         var pairs = attr(obj, w[].n_pairs)
         var keys = List[Value]()
         var values = List[Value]()
-        for p in _items(pairs.ptr):
-            var kv = _pair(p.ptr)
-            keys.append(_from_py(kv[0].ptr, w))
-            values.append(_from_py(kv[1].ptr, w))
+        for p in _items(pairs):
+            var kv = _pair(p)
+            keys.append(_from_py(kv[0], w))
+            values.append(_from_py(kv[1], w))
         return Value.map(keys^, values^)
     if t == w[].record_cls:
         var type = attr(obj, w[].n_type)
         var fields = attr(obj, w[].n_fields)
         var names = List[String]()
         var values = List[Value]()
-        for p in _items(fields.ptr):
-            var kv = _pair(p.ptr)
-            names.append(_str(kv[0].ptr))
-            values.append(_from_py(kv[1].ptr, w))
-        return Value.record(_str(type.ptr), names, values^)
+        for p in _items(fields):
+            var kv = _pair(p)
+            names.append(_str(kv[0]))
+            values.append(_from_py(kv[1], w))
+        return Value.record(_str(type), names, values^)
     if t == w[].enum_cls:
         var type = attr(obj, w[].n_type)
         var member = attr(obj, w[].n_member)
-        return Value.enum(_str(type.ptr), _str(member.ptr))
+        return Value.enum(_str(type), _str(member))
     if t == w[].handle_cls:
         var id = attr(obj, w[].n_id)
         var cls = attr(obj, w[].n_cls)
-        return Value.handle(_u64(id.ptr), _str(cls.ptr))
+        return Value.handle(_u64(id), _str(cls))
     if t == w[].error_cls:
         var cls = attr(obj, w[].n_cls)
         var bases = attr(obj, w[].n_bases)
         var message = attr(obj, w[].n_message)
         var names = List[String]()
-        for b in _items(bases.ptr):
-            names.append(_str(b.ptr))
-        return Value.error(_str(cls.ptr), names, _str(message.ptr))
+        for b in _items(bases):
+            names.append(_str(b))
+        return Value.error(_str(cls), names, _str(message))
     if t == w[].converted_cls:
         var inner = attr(obj, w[].n_value)
-        return _from_py(inner.ptr, w)
+        return _from_py(inner, w)
     raise Error("TypeError: not a wire object: " + _type_name(obj))
 
 

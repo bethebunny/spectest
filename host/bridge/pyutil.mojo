@@ -56,6 +56,10 @@ def string_of(o: PyObjectPtr) -> String:
     return String(unsafe_from_utf8=Span(bytes))
 
 
+def string_of(o: Owned) -> String:
+    return string_of(o.ptr)
+
+
 def python_error() -> Error:
     """Takes Python's current exception and describes it as `Type: message`."""
     var kind = PyObjectPtr()

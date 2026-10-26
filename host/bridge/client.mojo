@@ -38,13 +38,13 @@ struct DriverClient(Movable):
         Py_DecRef(self.driver)
 
     def _invoke(
-        self, method: PyObjectPtr, label: StaticString, args: List[PyObjectPtr]
+        self, method: PyObjectPtr, label: StaticString, args: List[Owned]
     ) raises -> Owned:
-        """Calls `driver.method(*args)`; `args` are borrowed."""
+        """Calls `driver.method(*args)`."""
         var all = List[PyObjectPtr](capacity=len(args) + 1)
         all.append(self.driver)
-        for a in args:
-            all.append(a)
+        for i in range(len(args)):
+            all.append(args[i].ptr)
         var result = PyObject_VectorcallMethod(method, Int(all.unsafe_ptr()), len(all))
         _ = len(all)  # keeps the vector alive through the call
         if not result:
@@ -56,9 +56,10 @@ struct DriverClient(Movable):
         """The target id of a qualified name. Raises with the message of the `Error`
         the driver returns for a name that doesn't resolve."""
         var w = wire()
-        var arg = Owned(checked(PyUnicode_FromStringAndSize(name)))
-        var args: List[PyObjectPtr] = [arg.ptr]
-        var result = from_python(self._invoke(w[].m_resolve, "resolve", args).ptr)
+        var send = List[Owned]()
+        send.append(Owned(checked(PyUnicode_FromStringAndSize(name))))
+        var reply = self._invoke(w[].m_resolve, "resolve", send)
+        var result = from_python(reply.ptr)
         if result.is_(ERROR):
             raise Error(result.text())
         var id = result.small_int()
@@ -69,30 +70,34 @@ struct DriverClient(Movable):
     def call(self, target: Int, args: List[Value]) raises -> Value:
         """Calls a target. An exception the call raised comes back as an ERROR Value."""
         var w = wire()
-        var id = Owned(checked(PyLong_FromLongLong(Int64(target))))
-        var list = _list_of(args)
-        var kwargs = Owned(checked(PyDict_New()))
-        var send: List[PyObjectPtr] = [id.ptr, list.ptr, kwargs.ptr]
-        return from_python(self._invoke(w[].m_call, "call", send).ptr)
+        var send = List[Owned]()
+        send.append(Owned(checked(PyLong_FromLongLong(Int64(target)))))
+        send.append(_list_of(args))
+        send.append(Owned(checked(PyDict_New())))
+        var reply = self._invoke(w[].m_call, "call", send)
+        return from_python(reply.ptr)
 
     def get(self, target: Int) raises -> Value:
         var w = wire()
-        var id = Owned(checked(PyLong_FromLongLong(Int64(target))))
-        var send: List[PyObjectPtr] = [id.ptr]
-        return from_python(self._invoke(w[].m_get, "get", send).ptr)
+        var send = List[Owned]()
+        send.append(Owned(checked(PyLong_FromLongLong(Int64(target)))))
+        var reply = self._invoke(w[].m_get, "get", send)
+        return from_python(reply.ptr)
 
     def observe(
         self, obj: Value, name: String, args: Optional[List[Value]]
     ) raises -> Value:
         """Reads attribute `name` of `obj`, calling it with `args` when given."""
         var w = wire()
-        var target = Owned(to_python(obj))
-        var attribute = Owned(checked(PyUnicode_FromStringAndSize(name)))
-        var arguments = Owned(Py_NewRef(w[].none))
+        var send = List[Owned]()
+        send.append(Owned(to_python(obj)))
+        send.append(Owned(checked(PyUnicode_FromStringAndSize(name))))
         if args:
-            arguments = _list_of(args.value())
-        var send: List[PyObjectPtr] = [target.ptr, attribute.ptr, arguments.ptr]
-        return from_python(self._invoke(w[].m_observe, "observe", send).ptr)
+            send.append(_list_of(args.value()))
+        else:
+            send.append(Owned(Py_NewRef(w[].none)))
+        var reply = self._invoke(w[].m_observe, "observe", send)
+        return from_python(reply.ptr)
 
     def release(self, ids: List[UInt64]) raises:
         var w = wire()
@@ -102,7 +107,8 @@ struct DriverClient(Movable):
             if not n:
                 raise python_error()
             _ = PyList_SetItem(list.ptr, i, n)
-        var send: List[PyObjectPtr] = [list.ptr]
+        var send = List[Owned]()
+        send.append(list^)
         _ = self._invoke(w[].m_release, "release", send)
 
 
