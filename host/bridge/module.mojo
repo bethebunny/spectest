@@ -52,7 +52,7 @@ from bridge.pyutil import Owned, checked, python_error, string_of, wire
 from run.items import items_of
 from run.load import Loaded, load as load_spec
 from run.pyapi import parse_options, result_to_python
-from run.runner import run as run_declaration
+from run.stateful import run_declaration
 
 comptime VERSION = "0.1.0.dev0"
 

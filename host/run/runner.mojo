@@ -29,6 +29,7 @@ from gen.models import (
     draw_args,
     draw_model,
     is_default,
+    is_not_drawn,
 )
 from gen.value import draw_value
 from mcheck.property import FAILED, PASSED, SKIPPED, Outcome, Property
@@ -103,7 +104,7 @@ struct Detail(Copyable, Movable):
         self.cx = Counterexample()
 
 
-struct Prop(Property):
+struct Prop(Property, Movable):
     var loaded: Pointer[Loaded, MutUntrackedOrigin]
     var host: RunHost
     var f: Int
@@ -150,6 +151,21 @@ struct Prop(Property):
     var focus: Int
     var details: List[Detail]
     var seed: Int
+    # Stateful runs (run/stateful.mojo): the callable is a constructor or method of an
+    # interface, judged against the objects live at the step.
+    var stateful: Bool
+    var live: List[Value]
+    var live_names: List[String]
+    var live_text: List[String]
+    var self_name: String
+    var last_ran: Bool
+    """Whether the last `examine` made the call."""
+    var last_reply: Value
+    var last_result: Value
+    var last_ok: Bool
+    """The last call returned a value that reads as the declared result type."""
+    var iface: Int
+    """The handle type of the interface, in a stateful run."""
 
     def __init__(
         out self,
@@ -157,7 +173,18 @@ struct Prop(Property):
         mut client: DriverClient,
         f: Int,
         options: RunOptions,
+        stateful: Bool = False,
     ) raises:
+        self.stateful = stateful
+        self.live = List[Value]()
+        self.live_names = List[String]()
+        self.live_text = List[String]()
+        self.self_name = String()
+        self.last_ran = False
+        self.last_reply = Value.none()
+        self.last_result = Value.none()
+        self.last_ok = False
+        self.iface = loaded.spec.models[loaded.spec.fns[f].owner].type if stateful else 0
         self.loaded = Pointer[Loaded, MutUntrackedOrigin](
             unsafe_from_address=Int(Pointer(to=loaded))
         )
@@ -267,7 +294,7 @@ struct Prop(Property):
                         listed = True
                 if not listed:
                     self.checked.append(i)
-        var handle_params = False
+        var handle_params = self.stateful and func.receiver
         for i in range(len(func.params)):
             ref t = spec.types.info(self.ptypes[i])
             if t.kind == ty.MODEL and not t.signed:
@@ -276,6 +303,8 @@ struct Prop(Property):
             var names = String()
             for i in self.checked:
                 names += (", " if names else "") + func.params[i].name
+            if self.stateful:
+                names = String("every live object")
             self.infos.append(PropInfo(K_FRAME, -1, decl + "#frame", String("built-in: ", func.name, " leaves ", names, " unchanged (no modifies clause)"), "frame", -1))
         # Invariants of the models the function returns or modifies.
         var models = List[String]()
@@ -286,7 +315,7 @@ struct Prop(Property):
                     collect_models(spec.types, self.ptypes[i], models)
         for name in models:
             var m = spec.model_named(name)
-            if not m:
+            if not m or self.stateful:
                 continue
             for c in spec.models[m.value()].clauses:
                 ref cl = spec.clauses[c]
@@ -373,11 +402,27 @@ struct Prop(Property):
             self._steer(src, p, args)
         return args^
 
+    def draw_stateful(mut self, mut src: Source) raises -> List[Value]:
+        """The arguments of a constructor or method of an interface; a receiver is left
+        as `not_drawn_marker` for the caller."""
+        var args = draw_args(
+            src,
+            self.loaded[].spec,
+            self.f,
+            self.loaded[].sizes,
+            self.host,
+            self.tenv,
+            True,
+        )
+        for p in range(len(self.loaded[].spec.fns[self.f].partitions)):
+            self._steer(src, p, args)
+        return args^
+
     def _steer(mut self, mut src: Source, p: Int, mut args: List[Value]) raises:
         ref spec = self.loaded[].spec
         ref part = spec.fns[self.f].partitions[p]
         var i = part.param
-        if is_default(args[i]):
+        if is_default(args[i]) or is_not_drawn(args[i]):
             return
         var t = self.ptypes[i]
         var n = len(part.classes)
@@ -599,6 +644,28 @@ struct Prop(Property):
             except e:
                 digest_error = String(e)
                 before.append(Value.none())
+        # The objects live in a stateful run, which the call may change only if it
+        # modifies its receiver, and then only the receiver.
+        var live_checked = List[Int]()
+        var live_before = List[Value]()
+        var own = False
+        if self.stateful:
+            self.live_text.clear()
+            for q in self.modified:
+                if q == "self":
+                    own = True
+            for k in range(len(self.live)):
+                if own and len(args) > 0 and args[0].kind == HANDLE and self.live[k].handle_id() == args[0].handle_id():
+                    continue
+                live_checked.append(k)
+                try:
+                    live_before.append(self.digest(self.live[k].copy(), self.iface))
+                except e:
+                    digest_error = String(e)
+                    live_before.append(Value.none())
+            if explaining:
+                for k in range(len(self.live)):
+                    self.live_text.append(self.show(self.live[k].copy(), self.iface))
         var conds = List[Int]()
         var cond_msg = List[String]()
         for c in self.cond_clauses:
@@ -615,6 +682,10 @@ struct Prop(Property):
         # The call.
         var reply = self.host.call(self.f, args)
         var raised = reply.kind == ERROR
+        self.last_ran = True
+        self.last_reply = reply.copy()
+        self.last_result = Value.none()
+        self.last_ok = False
         var type_error = String()
         var has_type_error = False
         var result = Value.none()
@@ -627,6 +698,8 @@ struct Prop(Property):
                 if self.result_has_model:
                     self.host.track(result)
                 env.set_result(result.copy())
+                self.last_result = result.copy()
+                self.last_ok = True
             except e:
                 type_error = String(e)
                 has_type_error = True
@@ -686,6 +759,15 @@ struct Prop(Property):
                                     changed_names.append(func.params[pi].name.copy())
                             except e:
                                 changed = String("!") + String(e)
+                    if not digest_error:
+                        for q in range(len(live_checked)):
+                            var lk = live_checked[q]
+                            try:
+                                var after = self.digest(self.live[lk].copy(), self.iface)
+                                if after != live_before[q]:
+                                    changed_names.append(self.live_names[lk].copy())
+                            except e:
+                                changed = String("!") + String(e)
                     if len(changed_names) > 0 and not changed:
                         for q in changed_names:
                             changed += (", " if changed else "") + q
@@ -695,6 +777,8 @@ struct Prop(Property):
                     var allowed = String()
                     for q in self.modified:
                         allowed += (", " if allowed else "") + q
+                    if self.stateful:
+                        allowed = String("self (", self.self_name, ")") if own else String()
                     self.vkind[i] = V_FAIL
                     self.vnote[i] = String("the call changed ", changed, ", but it may modify only ", allowed if allowed else String("nothing"))
             elif k == K_INVARIANT:
@@ -999,7 +1083,13 @@ struct Prop(Property):
             for line in lines:
                 if line.startswith("note: "):
                     obs += "\n" + String(line)
-        if len(changed_names) > 0 and (self.infos[i].kind == K_MODIFIES or self.infos[i].kind == K_FRAME):
+        if self.stateful and len(changed_names) > 0 and (self.infos[i].kind == K_MODIFIES or self.infos[i].kind == K_FRAME):
+            for nm in changed_names:
+                for k in range(len(self.live)):
+                    if self.live_names[k] == nm and k < len(self.live_text):
+                        obs += String("\n", nm, " before = ", self.live_text[k])
+                        obs += String("\n", nm, " after  = ", self.show(self.live[k].copy(), self.iface))
+        elif len(changed_names) > 0 and (self.infos[i].kind == K_MODIFIES or self.infos[i].kind == K_FRAME):
             for q in range(len(self.checked)):
                 var pi = self.checked[q]
                 for nm in changed_names:

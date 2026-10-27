@@ -1,6 +1,7 @@
 """The items a spec has: one per clause a run judges, and the built-in clauses."""
 
 from check import types as ty
+from check.spec import Spec
 from eval.text import source_text
 from syntax import ast
 from wire.value import Value
@@ -28,6 +29,73 @@ def _item(
     return o^.build()
 
 
+def _interface_items(spec: Spec, f: Int, mut out: List[Value]) raises:
+    """The items of a constructor or method of an interface, which a run of the
+    interface covers (`decl` is the interface's name), and after its last member the
+    interface's invariants."""
+    ref func = spec.fns[f]
+    if func.owner < 0:
+        return
+    ref model = spec.models[func.owner]
+    var line = spec.ast.nodes[func.node].span.line
+    var has_modifies = False
+    for c in func.clauses:
+        ref cl = spec.clauses[c]
+        var k = cl.kind
+        if k == ast.ENSURES or k == ast.RELATES or k == ast.RAISES or k == ast.MODIFIES:
+            out.append(
+                _item(model.name, cl.id, String(ast.op_name(k)), source_text(spec, cl.node), spec.ast.nodes[cl.node].span.line, model.tparams)
+            )
+        if k == ast.MODIFIES:
+            has_modifies = True
+    out.append(
+        _item(
+            model.name,
+            func.decl_id + "#type",
+            "type",
+            String("built-in: the result of ", func.name, " reads as ", spec.types.text(func.result)),
+            line,
+            model.tparams,
+        )
+    )
+    out.append(
+        _item(
+            model.name,
+            func.decl_id + "#raises",
+            "raises",
+            String("built-in: ", func.name, " raises only what a raises or may_raise admits"),
+            line,
+            model.tparams,
+        )
+    )
+    if func.receiver and not has_modifies:
+        out.append(
+            _item(
+                model.name,
+                func.decl_id + "#frame",
+                "frame",
+                String("built-in: ", func.name, " leaves every live object unchanged (no modifies clause)"),
+                line,
+                model.tparams,
+            )
+        )
+    var last = len(model.ctors) + len(model.methods) - 1
+    var position = -1
+    for k in range(len(model.ctors)):
+        if model.ctors[k] == f:
+            position = k
+    for k in range(len(model.methods)):
+        if model.methods[k] == f:
+            position = len(model.ctors) + k
+    if position == last:
+        for c in model.clauses:
+            ref cl = spec.clauses[c]
+            if cl.kind == ast.INVARIANT:
+                out.append(
+                    _item(model.name, cl.id, "invariant", source_text(spec, cl.node), spec.ast.nodes[cl.node].span.line, model.tparams)
+                )
+
+
 def items_of(loaded: Loaded) raises -> List[Value]:
     """The items of every function of the spec, in source order. A `requires` clause
     and the freedoms are not items."""
@@ -36,6 +104,7 @@ def items_of(loaded: Loaded) raises -> List[Value]:
     for f in range(len(spec.fns)):
         ref func = spec.fns[f]
         if func.kind != ast.FN:
+            _interface_items(spec, f, out)
             continue
         var has_modifies = False
         for c in func.clauses:

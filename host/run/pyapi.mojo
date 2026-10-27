@@ -78,6 +78,10 @@ def parse_options(o: PyObjectPtr) raises -> RunOptions:
             opts.strength = _text(value, "strength")
         elif name == "aggregate_samples":
             opts.aggregate_samples = _int(value, "aggregate_samples")
+        elif name == "steps":
+            opts.steps = _int(value, "steps")
+        elif name == "max_handles":
+            opts.max_handles = _int(value, "max_handles")
         elif name == "instantiation":
             if not none:
                 if not _is_dict(value):

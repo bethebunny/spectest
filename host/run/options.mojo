@@ -16,6 +16,10 @@ struct RunOptions(Copyable, Movable):
     wire value."""
     var strength: String
     var aggregate_samples: Int
+    var steps: Int
+    """Calls per step sequence of an interface."""
+    var max_handles: Int
+    """Objects live at once in a step sequence."""
 
     def __init__(out self):
         self.seed = 0
@@ -27,6 +31,8 @@ struct RunOptions(Copyable, Movable):
         self.examples = List[Value]()
         self.strength = String("dev")
         self.aggregate_samples = 10000
+        self.steps = 30
+        self.max_handles = 2
 
     def shrink_steps(self) -> Int:
         return 20000 if self.strength == "full" else 5000
