@@ -65,8 +65,6 @@ def test_infinities() raises:
         _ = inf.floor()
     with assert_raises():
         _ = ninf.ceil()
-    with assert_raises():
-        _ = inf.trunc()
 
 
 def test_order() raises:
@@ -88,13 +86,10 @@ def test_order() raises:
 def test_integer_rounding() raises:
     assert_equal(frac(7, 2).floor(), BigInt(3))
     assert_equal(frac(7, 2).ceil(), BigInt(4))
-    assert_equal(frac(7, 2).trunc(), BigInt(3))
     assert_equal(frac(-7, 2).floor(), BigInt(-4))
     assert_equal(frac(-7, 2).ceil(), BigInt(-3))
-    assert_equal(frac(-7, 2).trunc(), BigInt(-3))
     assert_equal(frac(4, 1).floor(), BigInt(4))
     assert_equal(frac(-4, 1).ceil(), BigInt(-4))
-    assert_equal(Real().trunc(), BigInt(0))
     assert_true(frac(4, 1).is_integer())
     assert_false(frac(4, 3).is_integer())
     assert_false(Real.infinity().is_integer())

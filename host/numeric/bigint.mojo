@@ -8,6 +8,8 @@ from std.hash import Hasher
 
 from bigint import BigUInt
 
+from numeric.digits import digit_value, hex_digits, magnitude_of_digits
+
 
 comptime _TEN19 = UInt64(10_000_000_000_000_000_000)
 
@@ -53,17 +55,13 @@ struct BigInt(Comparable, Copyable, Defaultable, Hashable, Movable, Writable):
         return -1 if self.negative else 1
 
     def int64_or_none(self) -> Optional[Int64]:
-        var m = self.magnitude.uint64_or_none()
-        if not m:
+        var magnitude = self.magnitude.uint64_or_none()
+        if magnitude is None:
             return None
-        var u = m.value()
+        var u = magnitude.value()
         if self.negative:
-            if u > (UInt64(1) << 63):
-                return None
-            return Int64(0) - Int64(u - 1) - 1
-        if u >= (UInt64(1) << 63):
-            return None
-        return Int64(u)
+            return Int64(0) - Int64(u - 1) - 1 if u <= UInt64(1) << 63 else None
+        return Int64(u) if u < UInt64(1) << 63 else None
 
     def bit_length(self) -> Int:
         """Bits of the magnitude, as Python's `int.bit_length`."""
@@ -138,39 +136,14 @@ struct BigInt(Comparable, Copyable, Defaultable, Hashable, Movable, Writable):
     def parse(text: StringSlice) raises -> Self:
         """Decimal digits with an optional leading `-`; `_` may separate digits.
         `0x` introduces hexadecimal digits."""
-        var bytes = text.as_bytes()
-        var i = 0
-        var negative = False
-        if i < len(bytes) and Int(bytes[i]) == ord("-"):
-            negative = True
-            i += 1
-        var base = UInt64(10)
-        if i + 1 < len(bytes) and Int(bytes[i]) == ord("0") and (
-            Int(bytes[i + 1]) == ord("x") or Int(bytes[i + 1]) == ord("X")
-        ):
-            base = 16
-            i += 2
-        var magnitude = BigUInt()
-        var digits = 0
-        var big_base = BigUInt(base)
-        while i < len(bytes):
-            var c = Int(bytes[i])
-            i += 1
-            if c == ord("_"):
-                continue
-            var d: Int
-            if ord("0") <= c <= ord("9"):
-                d = c - ord("0")
-            elif base == 16 and ord("a") <= c <= ord("f"):
-                d = c - ord("a") + 10
-            elif base == 16 and ord("A") <= c <= ord("F"):
-                d = c - ord("A") + 10
-            else:
-                raise Error("not an integer: " + String(text))
-            magnitude = magnitude * big_base + BigUInt(UInt64(d))
-            digits += 1
-        if digits == 0:
-            raise Error("not an integer: " + String(text))
+        var negative = text.startswith("-")
+        var unsigned = text[byte=1:] if negative else text
+        var hex = unsigned.startswith("0x") or unsigned.startswith("0X")
+        var body = String(unsigned[byte=2:] if hex else unsigned).replace("_", "")
+        var digits = [digit_value(Int(c), hex=hex) for c in body.as_bytes()]
+        if len(digits) == 0 or -1 in digits:
+            raise Error(t"not an integer: {text}")
+        var magnitude = magnitude_of_digits(digits, base=16 if hex else 10)
         return Self(negative=negative, magnitude=magnitude^)
 
     def write_to(self, mut writer: Some[Writer]):
@@ -179,7 +152,7 @@ struct BigInt(Comparable, Copyable, Defaultable, Hashable, Movable, Writable):
             writer.write("0")
             return
         # Base 10**19 chunks, least significant first.
-        var chunks = List[UInt64]()
+        var chunks: List[UInt64] = []
         var rest = self.magnitude.copy()
         var ten19 = BigUInt(_TEN19)
         while rest:
@@ -187,26 +160,16 @@ struct BigInt(Comparable, Copyable, Defaultable, Hashable, Movable, Writable):
             rest = rest // ten19
         if self.negative:
             writer.write("-")
-        writer.write(chunks[len(chunks) - 1])
-        for k in range(len(chunks) - 2, -1, -1):
-            var digits = String(chunks[k])
-            for _ in range(19 - digits.byte_length()):
-                writer.write("0")
-            writer.write(digits)
+        writer.write(chunks.pop())
+        for chunk in reversed(chunks):
+            var digits = String(chunk)
+            writer.write("0" * (19 - digits.byte_length()), digits)
 
     def hex(self) -> String:
         """`0x`-prefixed lowercase hexadecimal, `-0x...` when negative."""
-        var out = String("-0x" if self.negative else "0x")
-        var n = len(self.magnitude.limbs)
-        if n == 0:
-            return out + "0"
-        comptime DIGITS = "0123456789abcdef"
-        var started = False
-        for k in range(n - 1, -1, -1):
-            var limb = self.magnitude.limb(k)
-            for shift in range(60, -4, -4):
-                var d = Int((limb >> UInt64(shift)) & 15)
-                if d or started:
-                    started = True
-                    out += String(DIGITS[byte=d])
-        return out
+        var digits = String()
+        for k in range(len(self.magnitude.limbs) - 1, -1, -1):
+            digits += hex_digits(self.magnitude.limb(k), width=16)
+        var trimmed = digits.lstrip("0")
+        var unsigned = String(trimmed) if trimmed.byte_length() > 0 else "0"
+        return String("-" if self.negative else "", "0x", unsigned)

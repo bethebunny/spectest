@@ -8,23 +8,17 @@ from std.bit import count_trailing_zeros
 from bigint import BigUInt
 
 from numeric.bigint import BigInt
+from numeric.decimal import rounded_quotient
 from numeric.formats import FloatFormat
 from numeric.real import Real
 
 
-# Classification
-
-
 def is_nan(format: FloatFormat, bits: UInt64) -> Bool:
-    return (bits & format.exponent_mask()) == format.exponent_mask() and (
-        bits & format.fraction_mask()
-    ) != 0
+    return not is_finite(format, bits) and (bits & format.fraction_mask()) != 0
 
 
 def is_inf(format: FloatFormat, bits: UInt64) -> Bool:
-    return (bits & format.exponent_mask()) == format.exponent_mask() and (
-        bits & format.fraction_mask()
-    ) == 0
+    return not is_finite(format, bits) and (bits & format.fraction_mask()) == 0
 
 
 def is_zero(format: FloatFormat, bits: UInt64) -> Bool:
@@ -36,8 +30,8 @@ def is_subnormal(format: FloatFormat, bits: UInt64) -> Bool:
 
 
 def is_normal(format: FloatFormat, bits: UInt64) -> Bool:
-    var e = bits & format.exponent_mask()
-    return e != 0 and e != format.exponent_mask()
+    var exponent = bits & format.exponent_mask()
+    return exponent != 0 and exponent != format.exponent_mask()
 
 
 def is_finite(format: FloatFormat, bits: UInt64) -> Bool:
@@ -48,7 +42,19 @@ def signbit(format: FloatFormat, bits: UInt64) -> Bool:
     return (bits & format.sign_mask()) != 0
 
 
-# Pattern to real
+def significand_and_exponent(format: FloatFormat, bits: UInt64) -> Tuple[UInt64, Int]:
+    """(m, q) with |x| = m * 2**q, for a finite pattern."""
+    var field = Int((bits & format.exponent_mask()) >> UInt64(format.fraction_bits))
+    var fraction = bits & format.fraction_mask()
+    var q = max(field, 1) - format.bias() - format.fraction_bits
+    return (fraction | UInt64(1) << UInt64(format.fraction_bits) if field != 0 else fraction, q)
+
+
+def ratio_of_power_of_two(m: UInt64, q: Int) -> Tuple[BigUInt, BigUInt]:
+    """`m * 2**q` as (numerator, denominator)."""
+    if q >= 0:
+        return (BigUInt(m) << q, BigUInt(UInt64(1)))
+    return (BigUInt(m), BigUInt(UInt64(1)) << -q)
 
 
 def to_real(format: FloatFormat, bits: UInt64) raises -> Real:
@@ -58,31 +64,15 @@ def to_real(format: FloatFormat, bits: UInt64) raises -> Real:
     var negative = signbit(format, bits)
     if is_inf(format, bits):
         return Real.infinity(negative)
-    var fraction = bits & format.fraction_mask()
-    var field = Int((bits & format.exponent_mask()) >> UInt64(format.fraction_bits))
-    var m: UInt64
-    var q: Int
-    if field == 0:
-        m = fraction
-        q = 1 - format.bias() - format.fraction_bits
-    else:
-        m = fraction | (UInt64(1) << UInt64(format.fraction_bits))
-        q = field - format.bias() - format.fraction_bits
-    if m == 0:
+    var parts = significand_and_exponent(format, bits)
+    if parts[0] == 0:
         return Real()
-    # Make m odd, so the ratio is in lowest terms.
-    var tz = Int(count_trailing_zeros(m))
-    m >>= UInt64(tz)
-    q += tz
-    var numerator = BigUInt(m)
-    var denominator = BigUInt(UInt64(1))
-    if q >= 0:
-        numerator = numerator << q
-    else:
-        denominator = denominator << (-q)
+    # An odd significand puts the ratio in lowest terms.
+    var trailing_zeros = Int(count_trailing_zeros(parts[0]))
+    var ratio = ratio_of_power_of_two(parts[0] >> UInt64(trailing_zeros), parts[1] + trailing_zeros)
     return Real(
-        lowest_numerator=BigInt(negative=negative, magnitude=numerator^),
-        lowest_denominator=BigInt(negative=False, magnitude=denominator^),
+        lowest_numerator=BigInt(negative=negative, magnitude=ratio[0].copy()),
+        lowest_denominator=BigInt(negative=False, magnitude=ratio[1].copy()),
     )
 
 
@@ -92,71 +82,43 @@ def to_real(format: FloatFormat, bits: UInt64) raises -> Real:
 def _floor_log2(n: BigUInt, d: BigUInt) -> Int:
     """`floor(log2(n / d))` for positive n and d."""
     var e = n.bits() - d.bits()
-    var ge: Bool
-    if e >= 0:
-        ge = d << e <= n
-    else:
-        ge = d <= n << (-e)
-    return e if ge else e - 1
+    var at_least = d << e <= n if e >= 0 else d <= n << -e
+    return e if at_least else e - 1
 
 
-def _encode(format: FloatFormat, negative: Bool, m_in: UInt64, q_in: Int) -> UInt64:
+def _encode(format: FloatFormat, negative: Bool, var m: UInt64, var q: Int) -> UInt64:
     """The pattern of `±m * 2**q`, where m fits the significand at quantum q."""
     var sign_bits = format.sign_mask() if negative else UInt64(0)
-    var m = m_in
-    var q = q_in
     if m == 0:
         return sign_bits
     if (m >> UInt64(format.fraction_bits + 1)) != 0:
         m >>= 1
         q += 1
-    if (m >> UInt64(format.fraction_bits)) != 0:
-        var exp = q + format.fraction_bits + format.bias()
-        if exp >= (1 << format.exponent_bits) - 1:
-            return sign_bits | format.exponent_mask()
-        return sign_bits | (UInt64(exp) << UInt64(format.fraction_bits)) | (
-            m & format.fraction_mask()
-        )
-    return sign_bits | m
+    if (m >> UInt64(format.fraction_bits)) == 0:
+        return sign_bits | m
+    var exponent = q + format.fraction_bits + format.bias()
+    if exponent >= (1 << format.exponent_bits) - 1:
+        return sign_bits | format.exponent_mask()
+    return sign_bits | UInt64(exponent) << UInt64(format.fraction_bits) | m & format.fraction_mask()
 
 
-def round_ratio(
-    format: FloatFormat, negative: Bool, n: BigUInt, d: BigUInt
-) -> UInt64:
-    """Round `±n / d` (d positive; need not be in lowest terms) to the format:
-    nearest, ties to even, overflow to the infinity, gradual underflow. A zero
-    result takes the sign."""
+def round_ratio(format: FloatFormat, negative: Bool, n: BigUInt, d: BigUInt) -> UInt64:
+    """Rounds `±n / d` (d positive) to nearest, ties to even, overflowing to the
+    infinity and underflowing gradually. A zero result keeps the sign."""
     if not n:
         return format.sign_mask() if negative else UInt64(0)
-    var emin = 1 - format.bias()
     var e = _floor_log2(n, d)
-    var q = (e if e > emin else emin) - format.fraction_bits
-    var num = n.copy()
-    var den = d.copy()
-    if q >= 0:
-        den = den << q
-    else:
-        num = num << (-q)
-    var quotient = num // den
-    var twice = (num % den) << 1
-    if den < twice or (twice == den and quotient.bit(0)):
-        quotient = quotient.plus(1)
-    return _encode(format, negative, quotient.limb(0), q)
+    var q = max(e, 1 - format.bias()) - format.fraction_bits
+    var num = n.copy() << -q if q < 0 else n.copy()
+    var den = d.copy() << q if q >= 0 else d.copy()
+    return _encode(format, negative, rounded_quotient(num, den).limb(0), q)
 
 
 def round_to(format: FloatFormat, r: Real) -> UInt64:
-    """Correct rounding of an extended real: half to even, overflow to the signed
-    infinity, gradual underflow, a zero result keeping the sign of `r` (+0 for 0)."""
+    """Rounds an extended real (see `round_ratio`); a zero result keeps the sign of `r`."""
     if r.is_inf():
-        return format.exponent_mask() | (
-            format.sign_mask() if r.numerator.negative else UInt64(0)
-        )
-    return round_ratio(
-        format,
-        r.numerator.negative,
-        r.numerator.magnitude,
-        r.denominator.magnitude,
-    )
+        return format.exponent_mask() | (format.sign_mask() if r.numerator.negative else UInt64(0))
+    return round_ratio(format, r.numerator.negative, r.numerator.magnitude, r.denominator.magnitude)
 
 
 def exactly(format: FloatFormat, r: Real) -> Optional[UInt64]:

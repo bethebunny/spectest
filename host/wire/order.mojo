@@ -6,101 +6,42 @@ point, which is the byte order of their UTF-8; bytes by unsigned byte. Tuples an
 lists compare lexicographically, a proper prefix first. Every other kind raises.
 """
 
-from numeric.bigint import BigInt
-from wire.value import (
-    Value,
-    BOOL,
-    INT,
-    STRING,
-    BYTES,
-    LIST,
-    TUPLE,
-    REAL,
-)
+from wire import value as wv
+from wire.value import Value
 
 
 def is_ord(value: Value) -> Bool:
-    var kind = value.kind
-    if kind == BOOL or kind == INT or kind == REAL or kind == STRING or kind == BYTES:
+    if value.kind in [wv.BOOL, wv.INT, wv.REAL, wv.STRING, wv.BYTES]:
         return True
-    if kind == LIST or kind == TUPLE:
-        for i in range(value.item_count()):
-            if not is_ord(value.item(i)):
-                return False
-        return True
-    return False
+    return value.kind in [wv.LIST, wv.TUPLE] and all([is_ord(item) for item in value.items()])
 
 
-def _sign(x: Int, y: Int) -> Int:
-    if x < y:
-        return -1
-    if x > y:
-        return 1
-    return 0
-
-
-def _compare_big(a: BigInt, b: BigInt) -> Int:
-    if a < b:
-        return -1
-    if b < a:
-        return 1
-    return 0
-
-
-def _is_number(value: Value) -> Bool:
-    return value.kind == INT or value.kind == REAL
-
-
-def _numerator(value: Value) -> BigInt:
-    return value.as_bigint() if value.kind == INT else value.item(0).as_bigint()
-
-
-def _denominator(value: Value) -> BigInt:
-    return BigInt(1) if value.kind == INT else value.item(1).as_bigint()
-
-
-def _compare_numbers(a: Value, b: Value) -> Int:
-    var na = _numerator(a)
-    var da = _denominator(a)
-    var nb = _numerator(b)
-    var db = _denominator(b)
-    # An infinity has denominator 0. Rank -inf, finite, +inf as -1, 0, 1.
-    var ra = na.sign() if da.is_zero() else 0
-    var rb = nb.sign() if db.is_zero() else 0
-    if ra != rb:
-        return _sign(ra, rb)
-    if ra != 0:
-        return 0
-    return _compare_big(na * db, nb * da)
+def _compare[T: Comparable](a: T, b: T) -> Int:
+    return -1 if a < b else (1 if b < a else 0)
 
 
 def _compare_bytes(a: Span[UInt8, _], b: Span[UInt8, _]) -> Int:
-    var n = min(len(a), len(b))
-    for i in range(n):
-        if a[i] != b[i]:
-            return -1 if a[i] < b[i] else 1
-    return _sign(len(a), len(b))
+    for x, y in zip(a, b):
+        if x != y:
+            return _compare(x, y)
+    return _compare(len(a), len(b))
 
 
 def compare(a: Value, b: Value) raises -> Int:
-    if _is_number(a) and _is_number(b):
-        return _compare_numbers(a, b)
+    if a.kind in [wv.INT, wv.REAL] and b.kind in [wv.INT, wv.REAL]:
+        return _compare(a.as_real(), b.as_real())
     if a.kind != b.kind:
-        raise Error(
-            "cannot order a " + String(a.kind) + " against a " + String(b.kind)
-        )
-    var kind = a.kind
-    if kind == BOOL:
-        return _sign(Int(a.as_bool()), Int(b.as_bool()))
-    if kind == STRING:
+        raise Error(t"cannot order a {a.kind} against a {b.kind}")
+    if a.kind == wv.BOOL:
+        return _compare(Int(a.as_bool()), Int(b.as_bool()))
+    if a.kind == wv.STRING:
         return _compare_bytes(a.text().as_bytes(), b.text().as_bytes())
-    if kind == BYTES:
+    if a.kind == wv.BYTES:
         return _compare_bytes(Span(a.data()), Span(b.data()))
-    if kind == LIST or kind == TUPLE:
-        var n = min(a.count(), b.count())
-        for i in range(n):
-            var c = compare(a.item(i), b.item(i))
+    if a.kind in [wv.LIST, wv.TUPLE]:
+        for x, y in zip(a.items(), b.items()):
+            var c = compare(x, y)
             if c != 0:
                 return c
-        return _sign(a.count(), b.count())
-    raise Error("a " + String(kind) + " has no order")
+        return _compare(a.count(), b.count())
+    raise Error(t"a {a.kind} has no order")

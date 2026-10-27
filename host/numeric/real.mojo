@@ -65,8 +65,6 @@ struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
             lowest_denominator=BigInt(),
         )
 
-    # Queries
-
     def is_inf(self) -> Bool:
         return self.denominator.is_zero()
 
@@ -95,22 +93,17 @@ struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
             lowest_denominator=self.denominator,
         )
 
-    # Order
-
     def _rank(self) -> Int:
+        """-1 for -inf, 1 for +inf, 0 for finite."""
         return self.sign() if self.is_inf() else 0
 
     def __eq__(self, rhs: Self) -> Bool:
         return self.numerator == rhs.numerator and self.denominator == rhs.denominator
 
     def __lt__(self, rhs: Self) -> Bool:
-        var a = self._rank()
-        var b = rhs._rank()
-        if a != 0 or b != 0:
-            return a < b
+        if self._rank() != 0 or rhs._rank() != 0:
+            return self._rank() < rhs._rank()
         return self.numerator * rhs.denominator < rhs.numerator * self.denominator
-
-    # Arithmetic
 
     def __add__(self, rhs: Self) raises -> Self:
         if self.is_inf() or rhs.is_inf():
@@ -151,8 +144,6 @@ struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
             n.negative != d.negative, n.magnitude.copy(), d.magnitude.copy()
         )
 
-    # Rounding to integers
-
     def floor(self) raises -> BigInt:
         if self.is_inf():
             raise Error("floor of an infinity")
@@ -162,11 +153,6 @@ struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
         if self.is_inf():
             raise Error("ceil of an infinity")
         return -((-self.numerator) // self.denominator)
-
-    def trunc(self) raises -> BigInt:
-        if self.numerator.negative:
-            return self.ceil()
-        return self.floor()
 
     def write_to(self, mut writer: Some[Writer]):
         if self.is_inf():

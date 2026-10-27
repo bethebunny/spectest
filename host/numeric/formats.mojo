@@ -33,15 +33,17 @@ struct FloatFormat(Equatable, TrivialRegisterPassable, Writable):
         return (UInt64(1) << UInt64(self.fraction_bits)) - 1
 
     def name(self) -> StaticString:
-        if self.id == 1:
-            return "f16"
-        if self.id == 2:
-            return "bf16"
-        if self.id == 3:
-            return "f32"
-        if self.id == 4:
-            return "f64"
-        return "none"
+        match Int(self.id):
+            case 1:
+                return "f16"
+            case 2:
+                return "bf16"
+            case 3:
+                return "f32"
+            case 4:
+                return "f64"
+            case _:
+                return "none"
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(self.name())
@@ -54,24 +56,28 @@ comptime F64 = FloatFormat(4, 11, 52)
 
 
 def format_by_id(id: UInt8) raises -> FloatFormat:
-    if id == 1:
-        return F16
-    if id == 2:
-        return BF16
-    if id == 3:
-        return F32
-    if id == 4:
-        return F64
-    raise Error("no float format with id " + String(id))
+    match Int(id):
+        case 1:
+            return F16
+        case 2:
+            return BF16
+        case 3:
+            return F32
+        case 4:
+            return F64
+        case _:
+            raise Error(t"no float format with id {id}")
 
 
 def format_by_name(name: StringSlice) raises -> FloatFormat:
-    if name == "f16":
-        return F16
-    if name == "bf16":
-        return BF16
-    if name == "f32":
-        return F32
-    if name == "f64":
-        return F64
-    raise Error("no float format named " + String(name))
+    match name:
+        case "f16":
+            return F16
+        case "bf16":
+            return BF16
+        case "f32":
+            return F32
+        case "f64":
+            return F64
+        case _:
+            raise Error(t"no float format named {name}")

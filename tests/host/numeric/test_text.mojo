@@ -3,7 +3,7 @@ from std.testing import assert_equal, TestSuite
 from numeric.bigint import BigInt
 from numeric.literal import parse_number
 from numeric.real import Real
-from numeric.text import float_text, real_text
+from numeric.text import approximate_decimal, exact_decimal, float_text
 
 
 def q(n: String, d: String = "1") raises -> Real:
@@ -61,6 +61,18 @@ def test_unknown_format() raises:
     except:
         failed = True
     assert_equal(failed, True)
+
+
+def real_text(r: Real) -> String:
+    if r.is_inf():
+        return "-inf" if r.numerator.negative else "inf"
+    if r.is_zero():
+        return "0"
+    var sign = "-" if r.numerator.negative else ""
+    var exact = exact_decimal(abs(r), limit=25)
+    if exact is not None:
+        return sign + exact.value()
+    return "~" + sign + approximate_decimal(abs(r), digits=20)
 
 
 def test_real_text() raises:

@@ -44,6 +44,7 @@ from std.memory import ArcPointer, bitcast
 
 from numeric.bigint import BigInt
 from numeric.formats import FloatFormat
+from numeric.real import Real
 
 
 @fieldwise_init
@@ -61,11 +62,9 @@ struct Kind(Equatable, Hashable, TrivialRegisterPassable, Writable):
             "invalid bool int float string bytes list tuple map option record enum"
             " handle error real qerr"
         )
-        var k = 0
-        for name in NAMES.split(" "):
+        for k, name in enumerate(NAMES.split(" ")):
             if k == Int(self.id):
                 return name
-            k += 1
         return "invalid"
 
     def write_to(self, mut writer: Some[Writer]):
@@ -146,9 +145,7 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
         self.kind = kind
         self.sub = 0
         self.word = word
-        var shared = List[ArcPointer[Value]](capacity=len(items))
-        for ref item in items:
-            shared.append(ArcPointer(item.copy()))
+        var shared = [ArcPointer(item.copy()) for item in items]
         self.heap = ArcPointer(Payload(name^, text^, data^, big^, shared^))
 
     # Constructors
@@ -193,23 +190,21 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
         """Pairs in the order given. Keys must be distinct by structural identity."""
         if len(keys) != len(values):
             raise Error("map: keys and values differ in length")
-        var items = List[Value](capacity=2 * len(keys))
-        for i in range(len(keys)):
-            for j in range(i):
-                if keys[i] == keys[j]:
-                    raise Error("map: duplicate key")
-            items.append(keys[i].copy())
-            items.append(values[i].copy())
+        var items: List[Value] = []
+        for i, (key, value) in enumerate(zip(keys, values)):
+            if key in keys[:i]:
+                raise Error("map: duplicate key")
+            items.append(key.copy())
+            items.append(value.copy())
         return Self(MAP, items=items^)
 
     @staticmethod
     def none() -> Self:
-        return Self(OPTION, items=List[Value]())
+        return Self(OPTION)
 
     @staticmethod
     def some(var value: Value) -> Self:
-        var items = List[Value]()
-        items.append(value^)
+        var items: List[Value] = [value^]
         return Self(OPTION, items=items^)
 
     @staticmethod
@@ -218,10 +213,10 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
     ) raises -> Self:
         if len(fields) != len(values):
             raise Error("record: fields and values differ in length")
-        var items = List[Value](capacity=2 * len(fields))
-        for i in range(len(fields)):
-            items.append(Value.string(fields[i]))
-            items.append(values[i].copy())
+        var items: List[Value] = []
+        for field, value in zip(fields, values):
+            items.append(Value.string(field))
+            items.append(value.copy())
         return Self(RECORD, name=type_name^, items=items^)
 
     @staticmethod
@@ -236,25 +231,19 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
     def error(
         var class_name: String, bases: List[String], var message: String
     ) -> Self:
-        var items = List[Value](capacity=len(bases))
-        for b in bases:
-            items.append(Value.string(b))
+        var items = [Value.string(base) for base in bases]
         return Self(ERROR, name=class_name^, text=message^, items=items^)
 
     @staticmethod
     def real(var numerator: BigInt, var denominator: BigInt) -> Self:
         """The caller keeps the form canonical: lowest terms, positive denominator,
         or a denominator of 0 with a numerator of 1 or -1 for the infinities."""
-        var items = List[Value](capacity=2)
-        items.append(Value.int(numerator^))
-        items.append(Value.int(denominator^))
+        var items: List[Value] = [Value.int(numerator^), Value.int(denominator^)]
         return Self(REAL, items=items^)
 
     @staticmethod
     def qerr(var steps: BigInt, var nans: BigInt) -> Self:
-        var items = List[Value](capacity=2)
-        items.append(Value.int(steps^))
-        items.append(Value.int(nans^))
+        var items: List[Value] = [Value.int(steps^), Value.int(nans^)]
         return Self(QERR, items=items^)
 
     # Accessors. Each one expects the kinds it names.
@@ -276,6 +265,15 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
         if self.heap:
             return self.heap.value()[].big.copy()
         return BigInt(Int(bitcast[DType.int64](self.word)))
+
+    def as_real(self) -> Real:
+        """INT or REAL: the value as a `Real`."""
+        if self.kind == INT:
+            return Real(self.as_bigint())
+        return Real(
+            lowest_numerator=self.item(0).as_bigint(),
+            lowest_denominator=self.item(1).as_bigint(),
+        )
 
     def float_bits(self) -> UInt64:
         return self.word
@@ -299,52 +297,74 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
         return self.heap.value()[].data
 
     def item(self, i: Int) -> Value:
-        """Item `i` of the heap's items, in the layout of the table above: for MAP and
-        RECORD, keys or field names at even positions and values at odd ones. A copy,
-        which costs no more than a reference count."""
+        """Item `i` in the layout of the table above (a MAP or RECORD has keys or field
+        names at even positions and values at odd ones). A copy costs a reference count."""
         return self.heap.value()[].items[i][].copy()
+
+    def items(self) -> List[Value]:
+        """Every heap item, counting MAP and RECORD pairs as two each."""
+        return [item[].copy() for item in self.heap.value()[].items] if self.heap else []
+
+    def pairs(self) -> List[Tuple[Value, Value]]:
+        """MAP: (key, value) pairs. RECORD: (field name, value) pairs."""
+        var items = self.items()
+        return [(items[i].copy(), items[i + 1].copy()) for i in range(0, len(items), 2)]
 
     def item_count(self) -> Int:
         """How many heap items, counting MAP and RECORD pairs as two each."""
-        if not self.heap:
-            return 0
-        return len(self.heap.value()[].items)
+        return len(self.heap.value()[].items) if self.heap else 0
 
     def count(self) -> Int:
-        """How many items: elements, pairs for MAP and fields for RECORD."""
-        if not self.heap:
-            return 0
-        var n = len(self.heap.value()[].items)
-        if self.kind == MAP or self.kind == RECORD:
-            return n // 2
-        return n
+        """How many elements, or pairs for MAP and fields for RECORD."""
+        var paired = self.kind == MAP or self.kind == RECORD
+        return self.item_count() // 2 if paired else self.item_count()
 
     # Structural identity
 
-    def __eq__(self, other: Self) -> Bool:
+    def has_equal_parts(self, other: Self) -> Bool:
+        """Same kind, bits, name, text, data, big number and item count (the items
+        themselves are not compared)."""
         if self.kind != other.kind or self.sub != other.sub or self.word != other.word:
             return False
-        if Bool(self.heap) != Bool(other.heap):
-            return False
-        if not self.heap:
-            return True
+        if self.heap is None or other.heap is None:
+            return self.heap is None and other.heap is None
         ref a = self.heap.value()[]
         ref b = other.heap.value()[]
-        if (
-            a.name != b.name
-            or a.text != b.text
-            or a.data != b.data
-            or a.big != b.big
-            or len(a.items) != len(b.items)
-        ):
+        return (
+            a.name == b.name
+            and a.text == b.text
+            and a.data == b.data
+            and a.big == b.big
+            and len(a.items) == len(b.items)
+        )
+
+    def hash_parts(self, mut hasher: Some[Hasher]):
+        """Hashes what `has_equal_parts` compares, except the item count."""
+        self.kind.__hash__(hasher)
+        self.sub.__hash__(hasher)
+        self.word.__hash__(hasher)
+        if self.heap is not None:
+            ref p = self.heap.value()[]
+            p.name.__hash__(hasher)
+            p.text.__hash__(hasher)
+            for b in p.data:
+                b.__hash__(hasher)
+            p.big.__hash__(hasher)
+
+    def __eq__(self, other: Self) -> Bool:
+        if not self.has_equal_parts(other):
             return False
-        for i in range(len(a.items)):
-            if a.items[i][] != b.items[i][]:
+        if self.heap is None:
+            return True
+        for a, b in zip(self.heap.value()[].items, other.heap.value()[].items):
+            if a[] != b[]:
                 return False
         return True
 
     def __hash__(self, mut hasher: Some[Hasher]):
-        _hash_value(self, hasher)
+        self.hash_parts(hasher)
+        for item in self.items():
+            item.__hash__(hasher)
 
     def write_to(self, mut writer: Some[Writer]):
         """A debugging form, `kind(...)`. Reports use the wire package's formatter."""
@@ -365,21 +385,6 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
                 writer.write(" name=", repr(p.name))
             if self.kind == BYTES:
                 writer.write(len(p.data), " bytes")
-            for i in range(len(p.items)):
-                writer.write(", " if i else "", p.items[i][])
+            for i, item in enumerate(p.items):
+                writer.write(", " if i else "", item[])
         writer.write(")")
-
-
-def _hash_value(value: Value, mut hasher: Some[Hasher]):
-    value.kind.__hash__(hasher)
-    value.sub.__hash__(hasher)
-    value.word.__hash__(hasher)
-    if value.heap:
-        ref p = value.heap.value()[]
-        p.name.__hash__(hasher)
-        p.text.__hash__(hasher)
-        for b in p.data:
-            b.__hash__(hasher)
-        p.big.__hash__(hasher)
-        for item in p.items:
-            _hash_value(item[], hasher)

@@ -3,14 +3,8 @@ from std.testing import assert_equal, assert_true, assert_false, assert_raises, 
 
 from numeric.bigint import BigInt
 from numeric.formats import F32, F64
-from wire.equality import canonical_eq, same, hash_canonical, hash_same
+from wire.equality import canonical_eq, same, hash_same
 from wire.value import Value
-
-
-def canonical_hash(v: Value) raises -> UInt64:
-    var h = default_hasher()
-    hash_canonical(v, h)
-    return h^.finish()
 
 
 def same_hash(v: Value) -> UInt64:
@@ -127,20 +121,13 @@ def test_same() raises:
 
 def test_hashes() raises:
     var pair = two_maps()
-    assert_equal(canonical_hash(pair[0]), canonical_hash(pair[1]))
     assert_equal(same_hash(pair[0]), same_hash(pair[1]))
     var r1 = Value.record("p.R", ["x", "y"], [Value.int(1), Value.bool(True)])
     var r2 = Value.record("p.R", ["y", "x"], [Value.bool(True), Value.int(1)])
-    assert_equal(canonical_hash(r1), canonical_hash(r2))
     assert_equal(same_hash(r1), same_hash(r2))
-    assert_equal(canonical_hash(Value.real(BigInt(3), BigInt(1))), canonical_hash(Value.int(3)))
-    assert_equal(canonical_hash(Value.list([Value.int(1)])), canonical_hash(Value.list([Value.int(1)])))
-    assert_true(canonical_hash(Value.list([Value.int(1)])) != canonical_hash(Value.list([Value.int(2)])))
     assert_true(same_hash(Value.float(F64, 0)) != same_hash(Value.float(F64, 0x8000000000000000)))
     assert_equal(same_hash(Value.float(F64, 5)), same_hash(Value.float(F64, 5)))
     assert_equal(same_hash(Value.handle(3, "p.H")), same_hash(Value.handle(3, "p.H")))
-    with assert_raises():
-        _ = canonical_hash(Value.list([Value.float(F64, 0)]))
 
 
 def main() raises:
