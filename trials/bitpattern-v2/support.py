@@ -869,3 +869,12 @@ def bddset_hash(codec, storage):
 
 def dtype_value(name):
     return bitpattern.dlpack.DType[name].value
+
+
+def floatfn_set(name):
+    codec = bitpattern.codecs.float8_e4m3fn
+    return codec.all if name == "all" else getattr(codec, name)
+
+
+def floatfn_range(start, stop):
+    return bitpattern.codecs.float8_e4m3fn.range(start, stop)

@@ -4,7 +4,7 @@
 # less the surrogates U+D800 to U+DFFF.
 fn limit(width: int) -> int = imin(2 ** width, 1114112)
 fn surrogates_within(lo: int, hi: int) -> int = imax(0, imin(hi, 57344) - imax(lo, 55296))
-fn char_size(width: int, lo: int, hi: int) -> int = imax(0, hi - lo) - surrogates_within(lo, hi)
+fn char_size(width: int, lo: int, hi: int) -> int = imax(0, imin(hi, limit(width)) - lo) - surrogates_within(lo, imin(hi, limit(width)))
 
 fn single(s: string) -> bool = len(s) == 1
 fn cp(s: string) -> int = codepoints(s)[0]
@@ -12,7 +12,9 @@ fn is_surrogate(c: int) -> bool = 55296 <= c and c <= 57343
 
 # General categories of the ASCII characters.
 fn ascii_category(c: int) -> string = if c < 32 or c == 127 then "Cc" else if c == 32 then "Zs" else if c >= 48 and c <= 57 then "Nd" else if c >= 65 and c <= 90 then "Lu" else if c >= 97 and c <= 122 then "Ll" else if c == 36 then "Sc" else if c == 43 or c == 60 or c == 61 or c == 62 or c == 124 or c == 126 then "Sm" else if c == 94 or c == 96 then "Sk" else if c == 95 then "Pc" else if c == 45 then "Pd" else if c == 40 or c == 91 or c == 123 then "Ps" else if c == 41 or c == 93 or c == 125 then "Pe" else "Po"
-fn in_category(name: string, c: int) -> bool = if len(name) == 1 then codepoints(ascii_category(c))[0] == codepoints(name)[0] else ascii_category(c) == name
+fn is_major(name: string) -> bool = name == "L" or name == "M" or name == "N" or name == "P" or name == "S" or name == "Z" or name == "C"
+fn major_code(name: string) -> int = if name == "L" then 76 else if name == "M" then 77 else if name == "N" then 78 else if name == "P" then 80 else if name == "S" then 83 else if name == "Z" then 90 else 67
+fn in_category(name: string, c: int) -> bool = if is_major(name) then codepoints(ascii_category(c))[0] == major_code(name) else ascii_category(c) == name
 
 fn unsigned_dtype(w: int) -> string = if w <= 8 then "UINT8" else if w <= 16 then "UINT16" else if w <= 32 then "UINT32" else if w <= 64 then "UINT64" else "UINT8"
 fn imax(a: int, b: int) -> int = if a > b then a else b

@@ -387,3 +387,17 @@ DATETIME_MODULES = {
 }
 
 test_datetimes = spectest.check("datetimes.spec", modules=DATETIME_MODULES)
+
+FLOATFN_MODULES = {
+    "FloatFN": "bitpattern.codecs.FloatFN",
+    "BDDSet": "bitpattern.codecs.BDDSet",
+    "variant.FloatFN_decode": "support.float_fn_decode",
+    "variant.FloatFN_set": "support.floatfn_set",
+    "variant.FloatFN_range": "support.floatfn_range",
+}
+
+test_floatfn = spectest.check(
+    "floatfn.spec",
+    modules=FLOATFN_MODULES,
+    examples={"variant.FloatFN_range": [{"start": 1.0, "stop": 2.0}, {"start": None, "stop": None}, {"start": float("nan"), "stop": None}]},
+)
