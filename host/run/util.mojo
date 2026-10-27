@@ -1,46 +1,27 @@
 """Small pure helpers of the runner: names of errors, skip causes, models inside types,
 instantiation types."""
 
+from std.builtin.sort import sort
+
 from check import types as ty
 from wire.value import HANDLE, LIST, MAP, OPTION, TUPLE, Value
 
 comptime N_CAUSES = 8
 
 
+def _cause_names() -> List[String]:
+    return ["requires", "raised", "raise due", "wrong type", "unrepresentable", "rejected", "planned call", "other"]
+
+
 def cause_index(cause: String) -> Int:
-    if cause == "requires":
-        return 0
-    if cause == "raised":
-        return 1
-    if cause == "raise due":
-        return 2
-    if cause == "wrong type":
-        return 3
-    if cause == "unrepresentable":
-        return 4
-    if cause == "rejected":
-        return 5
-    if cause == "planned call":
-        return 6
-    return 7
+    for i, name in enumerate(_cause_names()):
+        if name == cause:
+            return i
+    return N_CAUSES - 1
 
 
 def cause_name(i: Int) -> String:
-    if i == 0:
-        return "requires"
-    if i == 1:
-        return "raised"
-    if i == 2:
-        return "raise due"
-    if i == 3:
-        return "wrong type"
-    if i == 4:
-        return "unrepresentable"
-    if i == 5:
-        return "rejected"
-    if i == 6:
-        return "planned call"
-    return "other"
+    return _cause_names()[i] if i < N_CAUSES - 1 else "other"
 
 
 def norm_name(name: String) -> String:
@@ -49,27 +30,22 @@ def norm_name(name: String) -> String:
     return name.copy()
 
 
+def _has_parts(kind: UInt8) -> Bool:
+    return kind == ty.LIST or kind == ty.OPTION or kind == ty.TUPLE or kind == ty.MAP or kind == ty.RECORD
+
+
 def type_has_model(types: ty.Types, t: Int) -> Bool:
     ref info = types.info(t)
-    if info.kind == ty.MODEL:
-        return True
-    if info.kind == ty.LIST or info.kind == ty.OPTION or info.kind == ty.TUPLE or info.kind == ty.MAP or info.kind == ty.RECORD:
-        for a in info.args:
-            if type_has_model(types, a):
-                return True
-    return False
+    return info.kind == ty.MODEL or (_has_parts(info.kind) and any([type_has_model(types, a) for a in info.args]))
 
 
 def collect_models(types: ty.Types, t: Int, mut out: List[String]):
     ref info = types.info(t)
     if info.kind == ty.MODEL:
-        if not info.signed:
-            for n in out:
-                if n == info.name:
-                    return
+        if not info.signed and info.name not in out:
             out.append(info.name.copy())
         return
-    if info.kind == ty.LIST or info.kind == ty.OPTION or info.kind == ty.TUPLE or info.kind == ty.MAP or info.kind == ty.RECORD:
+    if _has_parts(info.kind):
         for a in info.args:
             collect_models(types, a, out)
 
@@ -96,9 +72,9 @@ def handles_of(types: ty.Types, v: Value, t: Int, model: String, mut out: List[V
 def parse_type(text: String, mut types: ty.Types) raises -> Int:
     """A type as an instantiation writes it: a scalar name, or `list<T>`, `option<T>`."""
     var s = String(text.strip())
-    var found = types.scalar(s)
-    if found:
-        return found.value()
+    var scalar = types.scalar(s)
+    if scalar is not None:
+        return scalar.value()
     if s.startswith("list<") and s.endswith(">"):
         return types.list_of(parse_type(String(s[byte = 5 : s.byte_length() - 1]), types))
     if s.startswith("option<") and s.endswith(">"):
@@ -107,32 +83,11 @@ def parse_type(text: String, mut types: ty.Types) raises -> Int:
 
 
 def contains_name(items: List[String], name: String) -> Bool:
-    for n in items:
-        if norm_name(n) == norm_name(name):
-            return True
-    return False
+    return any([norm_name(n) == norm_name(name) for n in items])
 
 
 def names_text(items: List[String]) -> String:
-    var sorted_names = List[String]()
-    for n in items:
-        var seen = False
-        for m in sorted_names:
-            if m == n:
-                seen = True
-        if not seen:
-            sorted_names.append(n)
-    # Insertion sort: there are few.
-    for a in range(1, len(sorted_names)):
-        var v = sorted_names[a]
-        var b = a - 1
-        while b >= 0 and sorted_names[b] > v:
-            sorted_names[b + 1] = sorted_names[b]
-            b -= 1
-        sorted_names[b + 1] = v
-    var out = String("{")
-    for k in range(len(sorted_names)):
-        out += (", " if k else "") + sorted_names[k]
-    return out + "}"
-
-
+    var names = items.copy()
+    sort(names)
+    var distinct = [n for i, n in enumerate(names) if i == 0 or n != names[i - 1]]
+    return String("{", ", ".join(distinct), "}")

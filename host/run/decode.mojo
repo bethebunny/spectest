@@ -10,6 +10,7 @@ from eval.coerce import int_max, int_min
 from numeric.bigint import BigInt
 from numeric.floats import exactly, is_nan, is_zero, round_to, signbit, to_real
 from numeric.formats import FloatFormat, format_by_id
+from .util import norm_name
 from wire.format import format_value
 from wire.value import (
     BOOL,
@@ -31,26 +32,17 @@ from wire.value import (
 
 def describe(v: Value) -> String:
     """A value for a mismatch message: its kind and, when short, its text."""
-    var text = String()
     try:
-        text = format_value(v)
+        var text = format_value(v)
+        return String(v.kind.name(), " ", text) if text.byte_length() <= 60 else String(v.kind.name())
     except:
         return String(v.kind.name())
-    if text.byte_length() > 60:
-        return String(v.kind.name())
-    return String(v.kind.name(), " ", text)
 
 
 def _mismatch(types: Types, t: Int, v: Value, path: String, extra: String = "") -> Error:
     var at = String(" at ", path) if path else String()
     var tail = String(" (", extra, ")") if extra else String()
-    return Error(String("expected ", types.text(t), ", got ", describe(v), tail, at))
-
-
-def _norm(name: String) -> String:
-    if name.startswith("builtins."):
-        return String(name[byte = 9 :])
-    return name.copy()
+    return Error("expected ", types.text(t), ", got ", describe(v), tail, at)
 
 
 def _float(
@@ -95,40 +87,21 @@ def _float(
 def _record(
     types: Types, v: Value, t: Int, path: String, info_names: List[String], info_args: List[Int]
 ) raises -> Value:
-    var values = List[Value]()
-    var found = List[Bool]()
-    for _ in range(len(info_names)):
-        values.append(Value.none())
-        found.append(False)
-    var given = v.count()
-    if v.kind == RECORD:
-        for i in range(given):
-            var name = v.item(2 * i).text().copy()
-            var at = -1
-            for j in range(len(info_names)):
-                if info_names[j] == name:
-                    at = j
-            if at < 0:
-                raise _mismatch(types, t, v, path, String("no field ", name))
-            values[at] = _decode(v.item(2 * i + 1), info_args[at], types, path + "." + name)
-            found[at] = True
-    else:
-        for i in range(given):
-            var key = v.item(2 * i)
-            if key.kind != STRING:
-                raise _mismatch(types, t, v, path, "a field name is not a string")
-            var name = key.text().copy()
-            var at = -1
-            for j in range(len(info_names)):
-                if info_names[j] == name:
-                    at = j
-            if at < 0:
-                raise _mismatch(types, t, v, path, String("no field ", name))
-            values[at] = _decode(v.item(2 * i + 1), info_args[at], types, path + "." + name)
-            found[at] = True
-    for j in range(len(info_names)):
+    var values = [Value.none() for _ in info_names]
+    var found = [False for _ in info_names]
+    for i in range(v.count()):
+        var key = v.item(2 * i)
+        if v.kind == MAP and key.kind != STRING:
+            raise _mismatch(types, t, v, path, "a field name is not a string")
+        var name = key.text().copy()
+        if name not in info_names:
+            raise _mismatch(types, t, v, path, String("no field ", name))
+        var at = info_names.index(name)
+        values[at] = _decode(v.item(2 * i + 1), info_args[at], types, path + "." + name)
+        found[at] = True
+    for j, name in enumerate(info_names):
         if not found[j]:
-            raise _mismatch(types, t, v, path, String("missing field ", info_names[j]))
+            raise _mismatch(types, t, v, path, String("missing field ", name))
     return Value.record(types.info(t).name.copy(), info_names, values^)
 
 
@@ -139,12 +112,9 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
         return v.copy()
     if k == ty.UNIT:
         return Value.none()
-    if k == ty.BOOL:
-        if v.kind != BOOL:
-            raise _mismatch(types, t, v, path)
-        return v.copy()
-    if k == ty.INT:
-        if v.kind != INT:
+    if k == ty.BOOL or k == ty.INT or k == ty.STRING or k == ty.BYTES:
+        var kind = BOOL if k == ty.BOOL else INT if k == ty.INT else STRING if k == ty.STRING else BYTES
+        if v.kind != kind:
             raise _mismatch(types, t, v, path)
         return v.copy()
     if k == ty.FIXED_INT:
@@ -165,14 +135,6 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
         return v.copy()
     if k == ty.FLOAT:
         return _float(types, v, t, format_by_id(UInt8(info.bits)), path)
-    if k == ty.STRING:
-        if v.kind != STRING:
-            raise _mismatch(types, t, v, path)
-        return v.copy()
-    if k == ty.BYTES:
-        if v.kind != BYTES:
-            raise _mismatch(types, t, v, path)
-        return v.copy()
     if k == ty.LIST:
         if v.kind != LIST and v.kind != TUPLE:
             raise _mismatch(types, t, v, path)
@@ -202,32 +164,19 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
                 return Value.none()
             return Value.some(_decode(v.item(0), info.args[0], types, path))
         return Value.some(_decode(v, info.args[0], types, path))
-    if k == ty.LITERAL:
-        var member = String()
-        if v.kind == STRING:
-            member = v.text().copy()
-        elif v.kind == ENUM:
-            member = v.text().copy()
-        else:
+    if k == ty.LITERAL or k == ty.ENUM:
+        if v.kind != STRING and v.kind != ENUM:
             raise _mismatch(types, t, v, path)
-        for n in info.names:
-            if n == member:
-                return Value.enum(String(), member^)
-        raise _mismatch(types, t, v, path, "not a member of the union")
-    if k == ty.ENUM:
-        var member = String()
-        if v.kind == STRING:
-            member = v.text().copy()
-        elif v.kind == ENUM:
-            if v.name() != "" and _norm(v.name()) != _norm(info.name):
-                raise _mismatch(types, t, v, path, String("an enum of ", v.name()))
-            member = v.text().copy()
-        else:
-            raise _mismatch(types, t, v, path)
-        for n in info.names:
-            if n == member:
-                return Value.enum(info.name.copy(), member^)
-        raise _mismatch(types, t, v, path, String(member, " is not a member"))
+        var member = v.text().copy()
+        if k == ty.LITERAL:
+            if member not in info.names:
+                raise _mismatch(types, t, v, path, "not a member of the union")
+            return Value.enum(String(), member^)
+        if v.kind == ENUM and v.name() != "" and norm_name(v.name()) != norm_name(info.name):
+            raise _mismatch(types, t, v, path, String("an enum of ", v.name()))
+        if member not in info.names:
+            raise _mismatch(types, t, v, path, String(member, " is not a member"))
+        return Value.enum(info.name.copy(), member^)
     if k == ty.RECORD:
         if v.kind != RECORD and v.kind != MAP:
             raise _mismatch(types, t, v, path)
@@ -236,8 +185,8 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
         if v.kind != HANDLE:
             raise _mismatch(types, t, v, path)
         # A qualified model names a Python class; a handle of another class is not one.
-        var cls = _norm(v.name())
-        if "." in info.name and cls != _norm(info.name):
+        var cls = norm_name(v.name())
+        if "." in info.name and cls != norm_name(info.name):
             raise _mismatch(types, t, v, path, String("a handle of class ", v.name()))
         return v.copy()
     raise Error(String("a result of type ", types.text(t), " cannot be read"))
@@ -260,8 +209,5 @@ def decode(value: Value, t: Int, types: Types) raises -> Value:
 
 
 def encode(value: Value, t: Int, types: Types) raises -> Value:
-    """`value` prepared as an argument of a parameter of type `t`. Options are
-    unwrapped on the way to Python by the bridge's conversion (a present option is its
-    value), and literal unions and enums cross as their members, so the Value itself
-    is already the wire form; this checks that it has the shape of its type."""
+    """`value` checked to have the shape of an argument of type `t` (the wire form is the value)."""
     return _decode(value, t, types, "")

@@ -20,12 +20,8 @@ def fnv(text: String, seed: UInt64 = 0xCBF29CE484222325) -> UInt64:
 
 
 def hex16(v: UInt64) -> String:
-    var digits = "0123456789abcdef"
-    var out = String()
-    for i in range(15, -1, -1):
-        var d = Int((v >> UInt64(4 * i)) & 15)
-        out += digits[byte=d : d + 1]
-    return out^
+    comptime DIGITS = "0123456789abcdef"
+    return "".join([String(DIGITS[byte=Int((v >> UInt64(4 * i)) & 15)]) for i in range(15, -1, -1)])
 
 
 struct Loaded(Movable):
@@ -33,7 +29,7 @@ struct Loaded(Movable):
 
     var path: String
     var hash: String
-    """A hash of the source text, in the keys of the failure store."""
+    """Of the source text; keys the failure store."""
     var spec: Spec
     var ctx: SetContext
     var sets: PartitionSets
@@ -56,23 +52,19 @@ struct Loaded(Movable):
 
 
 def load_source(source: String, path: String) raises -> Loaded:
-    """Check `source`, reading the files it names from the disk next to it, and compile
-    its partitions. Raises with the diagnostics, one `path:line:col: message` per
-    line."""
+    """Raises the diagnostics, one `path:line:col: message` per line."""
     return load_with(source, path, Files())
 
 
 def load_with(source: String, path: String, files: Files) raises -> Loaded:
-    """`load_source` reading the files the spec names through `files`. The hash covers
-    the text of every file read."""
+    """`load_source` reading the spec's files through `files` (the hash covers each)."""
     var spec = check_source_with(source, path, files)
     var ctx = SetContext()
     var sets = compile_partitions(ctx, spec)
     var text = spec.ast.source.copy()
-    var hash = hex16(fnv(text)) + hex16(fnv(text, 0x84222325CBF29CE4))
+    var hash = String(hex16(fnv(text)), hex16(fnv(text, 0x84222325CBF29CE4)))
     return Loaded(path, hash^, spec^, ctx^, sets^)
 
 
 def load(path: String) raises -> Loaded:
-    """Parse and check the spec file at `path` and compile its partitions."""
     return load_source(Path(path).read_text(), path)
