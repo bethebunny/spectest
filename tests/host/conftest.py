@@ -6,10 +6,11 @@ bitpattern core on the include path, so ``from wire.value import Value`` and ``f
 arena import Arena`` both work, and then run. A compile error or a failing test fails
 the item, with mojo's output as the report.
 
-Built tests are kept in ``.mojo-tests/``, keyed by a hash of the test file, every
-``.mojo`` file under ``host/`` and the compiler's version. A rerun with nothing
-changed runs the kept binary at once; a change under ``host/`` rebuilds each test
-the next time it runs (several seconds each).
+Built tests are kept in ``.mojo-tests/``, keyed by a hash of the test file, the
+compiler's version and every ``.mojo`` module the test imports, directly or through
+other modules. A rerun with nothing changed runs the kept binary at once; a change to
+a module rebuilds the tests that use it (several seconds each, more for tests of the
+checker).
 
 The test runs with ``SPECTEST_STRENGTH`` set to ``dev`` in the dev loop and ``full``
 under ``--ci`` or a non-dev Hypothesis profile, so a Mojo test can scale its own
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -40,19 +42,82 @@ BUILDS = ROOT / ".mojo-tests"
 TIMEOUT = 600
 
 
+# `from wire.value import Value`, `from .x import (a, b)`, `import check.types`.
+FROM_IMPORT = re.compile(r"^\s*from\s+([.\w]+)\s+import\s+(\([^)]*\)|[^\n]*)", re.MULTILINE)
+PLAIN_IMPORT = re.compile(r"^\s*import\s+([\w.]+)", re.MULTILINE)
+
+
+def module_files(dotted: str, base: Path | None) -> list[Path]:
+    """The files that importing a module loads: the module itself and the __init__.mojo
+    of each enclosing package. Relative names (`.x`) resolve from `base`'s directory."""
+    if dotted.startswith("."):
+        if base is None:
+            return []
+        up = len(dotted) - len(dotted.lstrip("."))
+        roots = [base.parents[up - 1]]
+        dotted = dotted.lstrip(".")
+    else:
+        roots = INCLUDES
+    parts = [p for p in dotted.split(".") if p]
+    for root in roots:
+        found = []
+        for k in range(1, len(parts) + 1):
+            init = root.joinpath(*parts[:k], "__init__.mojo")
+            if init.is_file():
+                found.append(init)
+        module = root.joinpath(*parts).with_suffix(".mojo") if parts else None
+        if module is not None and module.is_file():
+            return [*found, module]
+        if found and (root.joinpath(*parts).is_dir() or not parts):
+            return found
+    return []
+
+
+def imported_files(path: Path) -> set[Path]:
+    """The Mojo files that `path` imports directly, std left out."""
+    text = path.read_text()
+    files: set[Path] = set()
+    for match in FROM_IMPORT.finditer(text):
+        module = match.group(1)
+        if module.split(".")[0] == "std":
+            continue
+        files.update(module_files(module, path))
+        # `from syntax import ast` imports a submodule by name.
+        for name in re.findall(r"\w+", match.group(2).replace(" as ", " ")):
+            sub = module + name if module.endswith(".") else f"{module}.{name}"
+            files.update(f for f in module_files(sub, path) if f.stem == name)
+    for match in PLAIN_IMPORT.finditer(text):
+        if match.group(1).split(".")[0] != "std":
+            files.update(module_files(match.group(1), path))
+    return files
+
+
 @cache
-def host_digest() -> str:
-    """A hash of the compiler's version and every Mojo source under host/."""
+def closure(path: Path) -> frozenset[Path]:
+    """`path`'s imports, transitively."""
+    seen: set[Path] = set()
+    todo = list(imported_files(path))
+    while todo:
+        f = todo.pop()
+        if f not in seen:
+            seen.add(f)
+            todo.extend(imported_files(f) - seen)
+    return frozenset(seen)
+
+
+def test_digest(path: Path) -> str:
+    """A hash of the compiler's version, the test file and every module it builds on."""
     h = hashlib.sha256(version("mojo-compiler").encode())
-    for path in sorted(HOST.rglob("*.mojo")):
-        h.update(str(path.relative_to(HOST)).encode())
-        h.update(path.read_bytes())
+    h.update(path.read_bytes())
+    for f in sorted(closure(path)):
+        h.update(str(f.relative_to(ROOT)).encode())
+        h.update(f.read_bytes())
     return h.hexdigest()
 
 
 def build(path: Path) -> Path:
     """The built test, building it first unless a build of the same sources is kept."""
-    digest = hashlib.sha256((host_digest() + path.read_text()).encode()).hexdigest()[:16]
+    digest = test_digest(path)[:16]
     stem = "__".join(path.relative_to(ROOT).with_suffix("").parts)
     binary = BUILDS / f"{stem}-{digest}"
     if binary.exists():
