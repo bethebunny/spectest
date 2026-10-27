@@ -1,0 +1,11 @@
+# Helpers for macs.spec: the 48-bit address of six octets, and its text.
+
+fn octet(b: int, i: int) -> int = (b >> (8 * (5 - i))) % 256
+fn hexdigit(n: int) -> int = if n < 10 then 48 + n else 87 + n
+fn mac_value(octets: list<int>) -> int = sum(i in range(0, 6): octets[i] << (8 * (5 - i)))
+fn mac_text(b: int) -> string = from_codepoints(map(i in range(0, 17): if i % 3 == 2 then 58 else hexdigit((octet(b, i // 3) >> (if i % 3 == 0 then 4 else 0)) % 16)))
+
+# Encodings worth asking about: the I/G bit (bit 40), the U/L bit (bit 41), the ends.
+fn mac_sample() -> list<int> = [0, 1, 255, 2 ** 24, 2 ** 40 - 1, 2 ** 40, 2 ** 40 + 1, 2 ** 41, 2 ** 41 + 2 ** 40, 2 ** 42, 2 ** 47 - 1, 2 ** 47, 2 ** 47 + 2 ** 40, 2 ** 48 - 2, 2 ** 48 - 1, 112233445566, 29419786]
+fn mac_in(name: string, b: int) -> bool = if name == "all" then true else if name == "multicast" then (b >> 40) % 2 == 1 else if name == "unicast" then (b >> 40) % 2 == 0 else if name == "local" then (b >> 41) % 2 == 1 else if name == "universal" then (b >> 41) % 2 == 0 else b == 2 ** 48 - 1
+fn mac_size(name: string) -> int = if name == "all" then 2 ** 48 else if name == "broadcast" then 1 else 2 ** 47

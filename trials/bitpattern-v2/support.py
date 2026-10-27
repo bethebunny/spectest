@@ -357,3 +357,137 @@ def float_range(kind, start, stop):
 
 def float_getitem(kind, i):
     return _codec(kind).all[i]
+
+
+def char_codec():
+    return bitpattern.codecs.char
+
+
+# -- bitpattern.codecs: MAC, UUID, Date ---------------------------------------------
+
+
+def _hex_octets(octets, upper):
+    texts = ["%02x" % o for o in octets]
+    return [t.upper() for t in texts] if upper else texts
+
+
+def _mac_text(octets, form, upper):
+    parts = _hex_octets(octets, upper)
+    if form == "colon":
+        return ":".join(parts)
+    if form == "dash":
+        return "-".join(parts)
+    if form == "dot":
+        flat = "".join(parts)
+        return ".".join(flat[i : i + 4] for i in range(0, len(flat), 4))
+    if form == "mixed":
+        return "".join(p + (":" if i % 2 == 0 else "-") for i, p in enumerate(parts))[:-1]
+    if form == "bare":
+        return "".join(parts)
+    return " " + ":".join(parts) + "\n"
+
+
+def mac_codec():
+    return bitpattern.codecs.mac
+
+
+def mac_encode(octets, form, upper):
+    return bitpattern.codecs.mac.encode(_mac_text(octets, form, upper))
+
+
+def mac_decode(b):
+    return bitpattern.codecs.mac.decode(b)
+
+
+def mac_min():
+    return bitpattern.codecs.mac.min
+
+
+def mac_max():
+    return bitpattern.codecs.mac.max
+
+
+def mac_set(name):
+    codec = bitpattern.codecs.mac
+    return codec.all if name == "all" else getattr(codec, name)
+
+
+def mac_oui(octets, separator, upper):
+    return bitpattern.codecs.mac.oui(separator.join(_hex_octets(octets, upper)))
+
+
+def mac_oui_other_form(form):
+    return bitpattern.codecs.mac.oui("001a.2b" if form == "dotted" else "00:1a")
+
+
+def uuid_codec():
+    return bitpattern.codecs.uuid128
+
+
+def uuid_dtype():
+    return bitpattern.codecs.uuid128.dtype()
+
+
+def uuid_from_int(n):
+    """A UUID for any integer: n modulo 2 ** 128."""
+    import uuid
+
+    return uuid.UUID(int=n % 2**128)
+
+
+def uuid_encode_text(u, style):
+    text = {
+        "plain": str(u),
+        "hex": u.hex,
+        "braces": "{" + str(u) + "}",
+        "urn": "urn:uuid:" + str(u),
+    }[style]
+    return bitpattern.codecs.uuid128.encode(text)
+
+
+def uuid_rfc9562():
+    return bitpattern.codecs.uuid128.rfc9562
+
+
+def uuid_version(n):
+    return bitpattern.codecs.uuid128.version(n)
+
+
+def uuid_in_version(u, n):
+    return u in bitpattern.codecs.uuid128.version(n)
+
+
+def uuid4_in_version4():
+    import uuid
+
+    return uuid.uuid4() in bitpattern.codecs.uuid128.version(4)
+
+
+def date_from_ordinal(n):
+    """A date for any integer: ordinal 1 + n modulo the number of dates."""
+    import datetime
+
+    return datetime.date.fromordinal(1 + n % 3652059)
+
+
+def datetime_from_ordinal(n, seconds):
+    import datetime
+
+    day = datetime.date.fromordinal(1 + n % 3652059)
+    return datetime.datetime.combine(day, datetime.time()) + datetime.timedelta(seconds=seconds % 86400)
+
+
+def date_codec():
+    return bitpattern.codecs.dates
+
+
+def date_min():
+    return bitpattern.codecs.dates.min
+
+
+def date_max():
+    return bitpattern.codecs.dates.max
+
+
+def date_all():
+    return bitpattern.codecs.dates.all

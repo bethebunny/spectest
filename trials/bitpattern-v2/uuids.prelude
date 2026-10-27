@@ -1,0 +1,10 @@
+# Helpers for uuids.spec: UUIDs as 128-bit integers.
+
+fn uuid_version(b: int) -> int = (b >> 76) % 16
+fn uuid_variant_bits(b: int) -> int = (b >> 62) % 4
+fn rfc9562(b: int) -> bool = uuid_variant_bits(b) == 2
+
+# A member of version n of the RFC 9562 variant, and near misses.
+fn member_of(n: int, low: int) -> int = (n << 76) + (2 << 62) + low
+fn wrong_variant(n: int) -> int = (n << 76) + (3 << 62)
+fn wrong_version(n: int) -> int = ((n % 8 + 1) << 76) + (2 << 62)

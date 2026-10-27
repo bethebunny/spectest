@@ -225,3 +225,61 @@ FLOAT_EXAMPLES = {
 
 test_bitpattern = spectest.check("bitpattern.spec", modules=MODULES, examples=EXAMPLES)
 test_floats = spectest.check("floats.spec", modules=FLOAT_MODULES, examples=FLOAT_EXAMPLES)
+
+CHAR_MODULES = {
+    "Char": "bitpattern.codecs.Char",
+    "BDDSet": "bitpattern.codecs.BDDSet",
+    "variant.Char_new": "bitpattern.codecs.Char",
+    "variant.Char_char": "support.char_codec",
+    "variant.Char_encode_int": "bitpattern.codecs.Char.encode",
+}
+
+test_chars = spectest.check("chars.spec", modules=CHAR_MODULES)
+
+MAC_MODULES = {
+    "MAC": "bitpattern.codecs.MAC",
+    "BDDSet": "bitpattern.codecs.BDDSet",
+    "variant.MAC_codec": "support.mac_codec",
+    "variant.MAC_encode": "support.mac_encode",
+    "variant.MAC_encode_int": "bitpattern.codecs.mac.encode",
+    "variant.MAC_decode": "support.mac_decode",
+    "variant.MAC_min": "support.mac_min",
+    "variant.MAC_max": "support.mac_max",
+    "variant.MAC_set": "support.mac_set",
+    "variant.MAC_oui": "support.mac_oui",
+    "variant.MAC_oui_other_form": "support.mac_oui_other_form",
+}
+
+UUID_MODULES = {
+    "UUIDCodec": "bitpattern.codecs.UUIDCodec",
+    "BDDSet": "bitpattern.codecs.BDDSet",
+    "variant.UUID_codec": "support.uuid_codec",
+    "variant.UUID_dtype": "support.uuid_dtype",
+    "variant.UUID_encode": "bitpattern.codecs.uuid128.encode",
+    "variant.UUID_encode_text": "support.uuid_encode_text",
+    "variant.UUID_encode_garbage": "bitpattern.codecs.uuid128.encode",
+    "variant.UUID_encode_int": "bitpattern.codecs.uuid128.encode",
+    "variant.UUID_decode": "bitpattern.codecs.uuid128.decode",
+    "variant.UUID_rfc9562": "support.uuid_rfc9562",
+    "variant.UUID_version": "support.uuid_version",
+    "variant.UUID_in_version": "support.uuid_in_version",
+    "variant.UUID_uuid4_in_version4": "support.uuid4_in_version4",
+}
+
+DATE_MODULES = {
+    "Date": "bitpattern.codecs.Date",
+    "BDDSet": "bitpattern.codecs.BDDSet",
+    "variant.Date_codec": "support.date_codec",
+    "variant.Date_encode": "bitpattern.codecs.dates.encode",
+    "variant.Date_encode_datetime": "bitpattern.codecs.dates.encode",
+    "variant.Date_encode_int": "bitpattern.codecs.dates.encode",
+    "variant.Date_decode": "bitpattern.codecs.dates.decode",
+    "variant.Date_min": "support.date_min",
+    "variant.Date_max": "support.date_max",
+    "variant.Date_all": "support.date_all",
+    "variant.Date_range": "bitpattern.codecs.dates.range",
+}
+
+test_macs = spectest.check("macs.spec", modules=MAC_MODULES)
+test_uuids = spectest.check("uuids.spec", modules=UUID_MODULES)
+test_dates = spectest.check("dates.spec", modules=DATE_MODULES)

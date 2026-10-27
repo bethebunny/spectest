@@ -1,0 +1,5 @@
+# Helpers for dates.spec.
+
+fn imax(a: int, b: int) -> int = if a > b then a else b
+fn imin(a: int, b: int) -> int = if a < b then a else b
+fn max_ordinal() -> int = 3652059
