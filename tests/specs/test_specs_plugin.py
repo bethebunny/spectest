@@ -400,19 +400,26 @@ def test_an_xdist_run_runs_each_declaration_once(
         sys.modules["spectest._host"] = FakeHost()
         """
     )
+    # without groups, the workers take math.cos's two items one each
     make_test(
         project,
         """
+        test_math = spectest.check("demo.spec")
         test_g = spectest.check(
             "generic.spec", instantiations={"sort": [{"T": "i64"}, {"T": "string"}]}
         )
         """,
     )
     result = project.runpytest_subprocess("-n", "2", "--spectest-report=r.md", *ARGS)
-    result.assert_outcomes(passed=5)
-    assert "ordered" in (project.path / "r.md").read_text()
+    result.assert_outcomes(passed=8)
+    report = (project.path / "r.md").read_text()
+    assert "ordered" in report
+    # item IDs as a serial run names them, without xdist's "@group"
+    assert "`test_demo.py::test_math::math.cos.accurate`" in report
     assert sorted(log.read_text().splitlines()) == [
         "first []",
+        "math.cos []",
+        "math.sqrt []",
         "sort [('T', 'i64')]",
         "sort [('T', 'string')]",
     ]

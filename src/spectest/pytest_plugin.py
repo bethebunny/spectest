@@ -28,7 +28,7 @@ import re
 import sys
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import pytest
 
@@ -234,6 +234,8 @@ def profile_name(config: pytest.Config) -> str:
 
 
 STATE = pytest.StashKey[_State]()
+# the workerinput key that carries the controller's --dist loadgroup to its workers
+LOADGROUP = "spectest_loadgroup"
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -241,8 +243,24 @@ def pytest_configure(config: pytest.Config) -> None:
     if getattr(config.option, "dist", None) == "load":
         # a v2 declaration's items share one run, so they go to one worker
         config.option.dist = "loadgroup"
+    if hasattr(config, "workerinput") and config.workerinput.get(LOADGROUP):
+        # a worker parses its own command line, where -n alone means plain load
+        config.option.loadgroup = True
     state = config.stash[STATE] = _State(config)
     config.pluginmanager.register(state, "spectest-state")
+
+
+class _WorkerNode(Protocol):
+    """The parts of a pytest-xdist worker controller that the plugin reads."""
+
+    config: pytest.Config
+    workerinput: dict[str, Any]
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node: _WorkerNode) -> None:
+    """Tells a worker whether its controller schedules items by group."""
+    node.workerinput[LOADGROUP] = node.config.option.dist == "loadgroup"
 
 
 def is_worker(config: pytest.Config) -> bool:
@@ -830,7 +848,8 @@ class _SpecCollector(pytest.Collector):
             decl, clause_id = entry["decl"], entry["clause_id"]
             for inst in self.instantiations(entry):
                 name = spec_clause_name(clause_id, decl, inst or {})
-                item = SpecClauseItem.from_parent(
+                run = spec_clause_name(decl, decl, inst or {})
+                yield SpecClauseItem.from_parent(
                     self,
                     name=name,
                     entry=entry,
@@ -838,10 +857,9 @@ class _SpecCollector(pytest.Collector):
                     owner=self,
                     expected_fail=clause_id in self.options.expect_fail
                     or name in self.options.expect_fail,
+                    # xdist ignores a group whose name has a "]", taking it for a parameter id
+                    group=f"{self.nodeid}::{run.replace('[', '(').replace(']', ')')}",
                 )
-                group = f"{self.nodeid}::{spec_clause_name(decl, decl, inst or {})}"
-                item.add_marker(pytest.mark.xdist_group(name=group))
-                yield item
 
     def instantiations(self, entry: dict[str, Any]) -> list[dict[str, str] | None]:
         """The instantiations to run; None stands for a generic declaration given none."""
@@ -886,10 +904,12 @@ class SpecClauseItem(pytest.Item):
         instantiation: dict[str, str] | None,
         owner: _SpecCollector,
         expected_fail: bool,
+        group: str,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.entry = entry
+        self.group = group
         self.instantiation = instantiation
         self.owner = owner
         self.expected_fail = expected_fail
@@ -899,17 +919,25 @@ class SpecClauseItem(pytest.Item):
         self.chosen: frozenset[str] | None = None
         self.done = False
         self.add_marker("spectest")
+        # a declaration's items share one run, so pytest-xdist sends them to one worker
+        self.add_marker(pytest.mark.xdist_group(name=group))
+
+    @property
+    def plain_nodeid(self) -> str:
+        """The node ID without the "@group" that pytest-xdist appends to it."""
+        return self.nodeid.removesuffix(f"@{self.group}")
 
     def clause_names(self) -> dict[str, str]:
         return {self.entry["clause_id"]: self.name}
 
     def reproduce(self) -> str:
-        return f"uv run pytest '{self.nodeid}' --spectest-seed={self.config.stash[STATE].seed}"
+        seed = self.config.stash[STATE].seed
+        return f"uv run pytest '{self.plain_nodeid}' --spectest-seed={seed}"
 
     def payload(self) -> dict[str, Any]:
         spec = self.owner.spec_path
         return {
-            "nodeid": self.nodeid,
+            "nodeid": self.plain_nodeid,
             "index": self.spectest_index,
             "conformance": self.parent.nodeid if self.parent is not None else "",
             "outcome": "skipped"
@@ -1001,7 +1029,7 @@ class SpecClauseItem(pytest.Item):
                 "decl": self.entry["decl"],
             }
         )
-        data["item_id"] = self.nodeid
+        data["item_id"] = self.plain_nodeid
         data["instantiation"] = dict(self.instantiation or {})
         data["expected_fail"] = self.expected_fail
         data["label_decl"] = self.entry["decl"]
