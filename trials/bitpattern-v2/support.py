@@ -57,6 +57,10 @@ def getslice(s, start, stop, step):
     return s[slice(start, stop, step)]
 
 
+def intset_slice(s, start, stop):
+    return s[start:stop]
+
+
 def exported(s):
     """numpy.from_dlpack(s) as (dtype name, shape, items), an ndarray being opaque."""
     array = numpy.from_dlpack(s)
@@ -170,8 +174,8 @@ def bddset_getitem(codec, storage, i):
     return _set(codec, storage)[i]
 
 
-def bddset_slice(codec, storage, start, stop, step):
-    return _set(codec, storage)[slice(start, stop, step)]
+def bddset_slice(codec, storage, start, stop):
+    return _set(codec, storage)[start:stop]
 
 
 def bddset_index(codec, storage, v, start, stop):

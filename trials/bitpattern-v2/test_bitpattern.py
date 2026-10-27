@@ -90,7 +90,7 @@ MODULES = {
     "bitpattern.strategies.from_set": "support.strategy_examples",
     "variant.from_set_minimal": "support.strategy_minimal",
     # Objects that cannot cross as values.
-    "variant.IntSet_slice": "support.getslice",
+    "variant.IntSet_slice": "support.intset_slice",
     "variant.IntSet_choice_seeded": "support.choice_seeded",
     # Operators, applied as Python applies them (reflected operands, NotImplemented).
     "variant.IntSet_contains_float": "operator.contains",

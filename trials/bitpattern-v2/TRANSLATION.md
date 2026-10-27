@@ -113,3 +113,8 @@ host-only); **[tool]** a limit of the v2 host, driver or plugin; **[lang]** a ga
 The helper definitions of the preludes (decimal text, dotted bits, slice positions, the Pattern syntax
 rules, float layout, decoding and rounding, the named sets, ASCII categories, MAC text, flag unions)
 were run against independent Python references; the spec's own test items have not been run.
+
+## Changes after translation
+
+IntSet slices with a step are out of scope by the library author's decision, so the step was removed from `IntSet_slice` and `BDDSet_slice`.
+Bitpattern 0.3.0 still accepts a step, and `s[::2]` on a set of 2^24 members takes about 9 s, which stalled the first run.

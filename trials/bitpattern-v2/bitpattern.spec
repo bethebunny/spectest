@@ -128,12 +128,10 @@ fn bitpattern.intset.IntSet.__getitem__(self, i: int) -> int
 fn variant.IntSet_getitem_float(s: bitpattern.intset.IntSet, i: f64) -> int
   raises TypeError when true
 
-# s[a:b:c] is the set of members at positions range(size)[a:b:c]; a negative step does
-# not reverse it.
-fn variant.IntSet_slice(s: bitpattern.intset.IntSet, start: option<int>, stop: option<int>, step: option<int>) -> bitpattern.intset.IntSet
-  may_raise ValueError when is_some(step) and unwrap(step) == 0
-  ensures members: small(s) and (is_none(step) or unwrap(step) != 0) implies same_members(elems(result), map(i in slice_positions(start, stop, if is_none(step) then 1 else unwrap(step), s.size): elems(s)[i]))
-  ensures unit_step: is_none(step) implies result.size == imax(0, slice_hi(stop, s.size, 1) - slice_lo(start, s.size, 1))
+# s[a:b] is the set of members at positions range(size)[a:b].
+fn variant.IntSet_slice(s: bitpattern.intset.IntSet, start: option<int>, stop: option<int>) -> bitpattern.intset.IntSet
+  ensures members: small(s) implies same_members(elems(result), map(i in slice_positions(start, stop, 1, s.size): elems(s)[i]))
+  ensures size: result.size == imax(0, slice_hi(stop, s.size, 1) - slice_lo(start, s.size, 1))
   ensures width: result.width == s.width
   ensures subset: bitpattern.intset.IntSet.__le__(result, s)
 
@@ -970,11 +968,10 @@ fn bitpattern.codecs.BDDSet.__getitem__(codec: Int, storage: bitpattern.intset.I
   ensures decoded: result == int_decode(codec, bitpattern.intset.IntSet.__getitem__(storage, i))
   ensures encodes_back: bitpattern.codecs.Int.encode(codec, result) == bitpattern.intset.IntSet.__getitem__(storage, i)
 
-fn variant.BDDSet_slice(codec: Int, storage: bitpattern.intset.IntSet, start: option<int>, stop: option<int>, step: option<int>) -> BDDSet
+fn variant.BDDSet_slice(codec: Int, storage: bitpattern.intset.IntSet, start: option<int>, stop: option<int>) -> BDDSet
   requires codec.width >= 1 and storage.width <= codec.width
-  may_raise ValueError when is_some(step) and unwrap(step) == 0
   ensures codec: result.codec == codec
-  ensures storage_slice: bitpattern.intset.IntSet.__eq__(result.storage, variant.IntSet_slice(storage, start, stop, step))
+  ensures storage_slice: bitpattern.intset.IntSet.__eq__(result.storage, variant.IntSet_slice(storage, start, stop))
 
 fn bitpattern.codecs.BDDSet.index(codec: Int, storage: bitpattern.intset.IntSet, v: int, start: int = 0, stop: option<int> = none) -> int
   requires codec.width >= 1 and storage.width <= codec.width
