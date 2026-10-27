@@ -8,6 +8,8 @@ import enum
 import importlib
 import struct
 import sys
+from collections.abc import Callable
+from functools import cache
 from typing import Any
 
 from spectest.driver import convert
@@ -32,6 +34,8 @@ _WIDTH = {"f16": 16, "bf16": 16, "f32": 32, "f64": 64}
 # (exponent bits, mantissa bits) of each format
 _LAYOUT = {"f16": (5, 10), "bf16": (8, 7), "f32": (8, 23), "f64": (11, 52)}
 
+_MISSING = object()
+
 
 class _Failure(Exception):
     """A failure of the driver itself, reported as an Error under ``spectest.``."""
@@ -41,6 +45,21 @@ class _Failure(Exception):
         self.cls = cls
         self.message = message
 
+    def error(self) -> Error:
+        return Error(self.cls, (), self.message)
+
+
+class _TooLarge(Exception):
+    pass
+
+
+def _convert_failure(message: str) -> _Failure:
+    return _Failure("spectest.ConvertError", message)
+
+
+def _resolve_failure(message: str) -> _Failure:
+    return _Failure("spectest.ResolveError", message)
+
 
 def _error(exc: BaseException) -> Error:
     t = type(exc)
@@ -48,8 +67,8 @@ def _error(exc: BaseException) -> Error:
     return Error(convert.qualified_name(t), bases, str(exc))
 
 
-def _failure_error(f: _Failure) -> Error:
-    return Error(f.cls, (), f.message)
+def _reinterpret(value: int, *, as_fmt: str, from_fmt: str) -> float:
+    return struct.unpack(as_fmt, struct.pack(from_fmt, value))[0]
 
 
 def float_to_python(f: Float) -> float:
@@ -57,22 +76,22 @@ def float_to_python(f: Float) -> float:
     can hold it."""
     fmt, bits = f.fmt, f.bits
     if fmt not in FLOAT_FORMATS:
-        raise _Failure("spectest.ConvertError", f"unknown float format {fmt!r}")
+        raise _convert_failure(f"unknown float format {fmt!r}")
     width = _WIDTH[fmt]
     if not 0 <= bits < (1 << width):
-        raise _Failure("spectest.ConvertError", f"{bits} does not fit {fmt}")
+        raise _convert_failure(f"{bits} does not fit {fmt}")
     if fmt == "f64":
-        return struct.unpack("<d", struct.pack("<Q", bits))[0]
+        return _reinterpret(bits, as_fmt="<d", from_fmt="<Q")
     ebits, mbits = _LAYOUT[fmt]
     exp = (bits >> mbits) & ((1 << ebits) - 1)
     mant = bits & ((1 << mbits) - 1)
     if exp == (1 << ebits) - 1 and mant:
         sign = bits >> (width - 1)
         wide = (sign << 63) | (0x7FF << 52) | (mant << (52 - mbits))
-        return struct.unpack("<d", struct.pack("<Q", wide))[0]
+        return _reinterpret(wide, as_fmt="<d", from_fmt="<Q")
     if fmt == "bf16":
-        return struct.unpack("<f", struct.pack("<I", bits << 16))[0]
-    return struct.unpack(_PACK[fmt], struct.pack(_UINT[fmt], bits))[0]
+        return _reinterpret(bits << 16, as_fmt="<f", from_fmt="<I")
+    return _reinterpret(bits, as_fmt=_PACK[fmt], from_fmt=_UINT[fmt])
 
 
 def float_from_python(x: float) -> Float:
@@ -80,37 +99,41 @@ def float_from_python(x: float) -> Float:
 
 
 class Driver:
-    def __init__(self, max_elements: int = 2**17, module_map: dict[str, str] | None = None):
+    def __init__(
+        self, max_elements: int = 2**17, module_map: dict[str, str] | None = None
+    ):
         self.max_elements = max_elements
-        # qualified-name prefix -> replacement, e.g. {"math": "examples.libm.buggy"}
+        # qualified-name prefix -> replacement, eg. {"math": "examples.libm.buggy"}
         self.module_map = dict(module_map or {})
-        self._targets: dict[int, Any] = {}  # id -> the resolved object
-        self._fns: dict[int, Any] = {}  # id -> what `call` invokes
+        self._targets: dict[int, Any] = {}  # target id -> the resolved object
+        self._fns: dict[int, Any] = {}  # target id -> what `call` invokes
         self._by_name: dict[str, int] = {}
-        self._next_target = 1
         self._objects: dict[int, Any] = {}  # handle id -> object
-        self._ids: dict[int, int] = {}  # id(object) -> handle id
+        # id(object) -> handle id. Python has no identity map for arbitrary objects. Each
+        # object stays in _objects while its id is here, so the id can't be reused.
+        self._ids: dict[int, int] = {}
+        self._next_target = 1
         self._next_handle = 1
 
     # -- protocol methods ---------------------------------------------------
 
     def resolve(self, name: str) -> int | Error:
-        tid = self._by_name.get(name)
-        if tid is not None:
+        if (tid := self._by_name.get(name)) is not None:
             return tid
         try:
             obj = self._lookup(name)
         except _Failure as f:
-            return _failure_error(f)
+            return f.error()
         fn = obj
-        if isinstance(obj, property):
-            fn = obj.fget
-            if fn is None:
+        match obj:
+            case property(fget=None):
                 return Error(
                     "spectest.ResolveError", (), f"property {name} has no getter"
                 )
-        elif type(obj).__name__ in ("member_descriptor", "getset_descriptor"):
-            fn = obj.__get__
+            case property(fget=getter):
+                fn = getter
+            case _ if type(obj).__name__ in ("member_descriptor", "getset_descriptor"):
+                fn = obj.__get__
         tid = self._next_target
         self._next_target += 1
         self._targets[tid] = obj
@@ -119,54 +142,45 @@ class Driver:
         return tid
 
     def call(self, target: int, args: Any, kwargs: Any = None) -> Any:
-        fn = self._fns.get(target)
-        if fn is None:
+        if (fn := self._fns.get(target)) is None:
             return Error("spectest.ResolveError", (), f"unknown target {target}")
         try:
             pargs = [a if type(a) in _SIMPLE else self._to_python(a) for a in args]
-            if kwargs:
-                pkw = (
-                    self._to_python(kwargs)
-                    if isinstance(kwargs, Map)
-                    else {k: self._to_python(v) for k, v in dict(kwargs).items()}
-                )
-            else:
-                pkw = None
+            pkwargs = self._kwargs_to_python(kwargs) if kwargs else None
         except _Failure as f:
-            return _failure_error(f)
+            return f.error()
         except Exception as exc:
             return Error("spectest.ConvertError", (), f"{type(exc).__name__}: {exc}")
         try:
-            result = fn(*pargs, **pkw) if pkw else fn(*pargs)
+            result = fn(*pargs, **pkwargs) if pkwargs else fn(*pargs)
         except Exception as exc:
             return _error(exc)
-        if type(result) in _SIMPLE:
-            return result
-        return self._result(result)
+        return result if type(result) in _SIMPLE else self._result(result)
+
+    def _kwargs_to_python(self, kwargs: Any) -> dict[str, Any]:
+        if type(kwargs) is Map:
+            return self._to_python(kwargs)
+        return {k: self._to_python(v) for k, v in dict(kwargs).items()}
 
     def get(self, target: int) -> Any:
-        obj = self._targets.get(target, _MISSING)
-        if obj is _MISSING:
+        if (obj := self._targets.get(target, _MISSING)) is _MISSING:
             return Error("spectest.ResolveError", (), f"unknown target {target}")
         return self._result(obj)
 
     def observe(self, obj: Any, name: str, args: Any = None) -> Any:
         try:
-            subject = self._to_python(obj)
-            attr = getattr(subject, name)
+            attr = getattr(self._to_python(obj), name)
             if args is not None:
-                pargs = [self._to_python(a) for a in args]
-                attr = attr(*pargs)
+                attr = attr(*[self._to_python(a) for a in args])
         except _Failure as f:
-            return _failure_error(f)
+            return f.error()
         except Exception as exc:
             return _error(exc)
         return self._result(attr)
 
     def release(self, ids: Any) -> None:
         for i in ids:
-            obj = self._objects.pop(i, _MISSING)
-            if obj is not _MISSING:
+            if (obj := self._objects.pop(i, _MISSING)) is not _MISSING:
                 self._ids.pop(id(obj), None)
 
     def converters(self) -> dict[str, str]:
@@ -178,8 +192,7 @@ class Driver:
         """The name with its longest mapped prefix (whole dotted parts) replaced."""
         parts = name.split(".")
         for n in range(len(parts), 0, -1):
-            replacement = self.module_map.get(".".join(parts[:n]))
-            if replacement is not None:
+            if (replacement := self.module_map.get(".".join(parts[:n]))) is not None:
                 return ".".join([replacement, *parts[n:]])
         return name
 
@@ -188,49 +201,37 @@ class Driver:
             name = self._mapped(name)
         parts = name.split(".")
         if not name or "" in parts:
-            raise _Failure("spectest.ResolveError", f"bad name {name!r}")
-        module = None
-        used = 0
-        for n in range(len(parts), 0, -1):
-            prefix = ".".join(parts[:n])
+            raise _resolve_failure(f"bad name {name!r}")
+        for used in range(len(parts), 0, -1):
+            prefix = ".".join(parts[:used])
             try:
-                module = importlib.import_module(prefix)
-            except ImportError as exc:
-                missing = getattr(exc, "name", None)
-                if (
-                    isinstance(exc, ModuleNotFoundError)
-                    and missing
-                    and (prefix == missing or prefix.startswith(missing + "."))
+                obj = importlib.import_module(prefix)
+            except ModuleNotFoundError as exc:
+                if exc.name and (
+                    prefix == exc.name or prefix.startswith(f"{exc.name}.")
                 ):
                     continue
-                raise _Failure(
-                    "spectest.ResolveError", f"importing {prefix} failed: {exc}"
-                ) from None
+                raise _resolve_failure(f"importing {prefix} failed: {exc}") from None
+            except ImportError as exc:
+                raise _resolve_failure(f"importing {prefix} failed: {exc}") from None
             except Exception as exc:
-                raise _Failure(
-                    "spectest.ResolveError", f"importing {prefix} failed: {exc!r}"
-                ) from None
-            used = n
+                raise _resolve_failure(f"importing {prefix} failed: {exc!r}") from None
             break
-        if module is None:
-            raise _Failure("spectest.ResolveError", f"no module for {name}")
-        obj: Any = module
-        for i in range(used, len(parts)):
+        else:
+            raise _resolve_failure(f"no module for {name}")
+        for i, part in enumerate(parts[used:], used):
             try:
-                obj = getattr(obj, parts[i])
+                obj = getattr(obj, part)
             except AttributeError:
-                raise _Failure(
-                    "spectest.ResolveError",
-                    f"{'.'.join(parts[:i])} has no attribute {parts[i]}",
+                raise _resolve_failure(
+                    f"{'.'.join(parts[:i])} has no attribute {part}"
                 ) from None
         return obj
 
     def _class_named(self, name: str) -> Any:
         tid = self.resolve(name)
-        if isinstance(tid, Error):
-            raise _Failure(
-                "spectest.ConvertError", f"unknown class {name}: {tid.message}"
-            )
+        if type(tid) is Error:
+            raise _convert_failure(f"unknown class {name}: {tid.message}")
         return self._targets[tid]
 
     # -- python to wire -----------------------------------------------------
@@ -245,18 +246,9 @@ class Driver:
                 f"result has more than {self.max_elements} values",
             )
         except _Failure as f:
-            return _failure_error(f)
+            return f.error()
         except Exception as exc:
             return _error(exc)
-
-    def _handle(self, obj: Any) -> Handle:
-        hid = self._ids.get(id(obj))
-        if hid is None:
-            hid = self._next_handle
-            self._next_handle += 1
-            self._ids[id(obj)] = hid
-            self._objects[hid] = obj
-        return Handle(hid, convert.qualified_name(type(obj)))
 
     def _to_wire(self, o: Any, budget: list[int]) -> Any:
         budget[0] -= 1
@@ -266,72 +258,72 @@ class Driver:
         if t in _SIMPLE:
             return o
         if t is float:
-            return Float("f64", struct.unpack("<Q", struct.pack("<d", o))[0])
-        if t.__module__ == "numpy":
-            r = self._numpy(o, t)
-            if r is not _MISSING:
-                return r
-        if isinstance(o, _BYTES_LIKE):
-            return bytes(o)
-        reg = convert.find(t)
-        if reg is not None:
+            return float_from_python(o)
+        if t.__module__ == "numpy" and (wire := self._numpy(o, t)) is not _MISSING:
+            return wire
+        converter = _wire_converter(t)
+        # bytes-like values are never converted by a registration
+        if converter is not Driver._bytes and (reg := convert.find(t)) is not None:
             return Converted(reg.name, self._to_wire(reg.to_wire(o), budget))
-        if isinstance(o, enum.Enum):
-            return Enum(convert.qualified_name(t), o.name)
-        if isinstance(o, tuple) and hasattr(t, "_fields"):
-            return Record(
-                convert.qualified_name(t),
-                tuple((f, self._to_wire(v, budget)) for f, v in zip(t._fields, o)),
+        return converter(self, o, budget)
+
+    def _bytes(self, o: Any, budget: list[int]) -> bytes:
+        return bytes(o)
+
+    def _enum(self, o: Any, budget: list[int]) -> Enum:
+        return Enum(convert.qualified_name(type(o)), o.name)
+
+    def _named_tuple(self, o: Any, budget: list[int]) -> Record:
+        t = type(o)
+        fields = tuple((f, self._to_wire(v, budget)) for f, v in zip(t._fields, o))
+        return Record(convert.qualified_name(t), fields)
+
+    def _dataclass(self, o: Any, budget: list[int]) -> Record:
+        fields = tuple(
+            (f.name, self._to_wire(getattr(o, f.name), budget))
+            for f in dataclasses.fields(o)
+        )
+        return Record(convert.qualified_name(type(o)), fields)
+
+    def _bool(self, o: Any, budget: list[int]) -> bool:
+        return bool(o)
+
+    def _int(self, o: Any, budget: list[int]) -> int:
+        return int(o)
+
+    def _str(self, o: Any, budget: list[int]) -> str:
+        return str(o)
+
+    def _float(self, o: Any, budget: list[int]) -> Float:
+        return float_from_python(float(o))
+
+    def _tuple(self, o: Any, budget: list[int]) -> tuple:
+        return tuple([self._to_wire(v, budget) for v in o])
+
+    def _list(self, o: Any, budget: list[int]) -> list:
+        return [self._to_wire(v, budget) for v in o]
+
+    def _dict(self, o: Any, budget: list[int]) -> Map:
+        return Map(
+            tuple(
+                (self._to_wire(k, budget), self._to_wire(v, budget))
+                for k, v in o.items()
             )
-        if dataclasses.is_dataclass(o) and not isinstance(o, type):
-            return Record(
-                convert.qualified_name(t),
-                tuple(
-                    (f.name, self._to_wire(getattr(o, f.name), budget))
-                    for f in dataclasses.fields(o)
-                ),
-            )
-        if isinstance(o, tuple):
-            if t is tuple:
-                return tuple([self._to_wire(v, budget) for v in o])
-        elif t is list:
-            return [self._to_wire(v, budget) for v in o]
-        elif t is dict:
-            return Map(
-                tuple(
-                    (self._to_wire(k, budget), self._to_wire(v, budget))
-                    for k, v in o.items()
-                )
-            )
-        # subclasses of the plain kinds
-        if isinstance(o, bool):
-            return bool(o)
-        if isinstance(o, int):
-            return int(o)
-        if isinstance(o, str):
-            return str(o)
-        if isinstance(o, float):
-            return float_from_python(float(o))
-        if isinstance(o, tuple):
-            return tuple([self._to_wire(v, budget) for v in o])
-        if isinstance(o, list):
-            return [self._to_wire(v, budget) for v in o]
-        if isinstance(o, dict):
-            return Map(
-                tuple(
-                    (self._to_wire(k, budget), self._to_wire(v, budget))
-                    for k, v in o.items()
-                )
-            )
-        return self._handle(o)
+        )
+
+    def _handle(self, o: Any, budget: list[int]) -> Handle:
+        if (hid := self._ids.get(id(o))) is None:
+            hid = self._next_handle
+            self._next_handle += 1
+            self._ids[id(o)] = hid
+            self._objects[hid] = o
+        return Handle(hid, convert.qualified_name(type(o)))
 
     def _numpy(self, o: Any, t: type) -> Any:
-        np = sys.modules.get("numpy")
-        if np is None:
+        if (np := sys.modules.get("numpy")) is None:
             return _MISSING
         if isinstance(o, np.floating):
-            fmt = _NUMPY_FLOAT_FORMATS.get(t.__name__)
-            if fmt is None:
+            if (fmt := _NUMPY_FLOAT_FORMATS.get(t.__name__)) is None:
                 return _MISSING
             uint = {"f16": np.uint16, "f32": np.uint32, "f64": np.uint64}[fmt]
             return Float(fmt, int(o.view(uint)))
@@ -345,63 +337,93 @@ class Driver:
 
     def _to_python(self, w: Any) -> Any:
         t = type(w)
-        if t in _SIMPLE or t is bytes:
+        if t in _SIMPLE:
             return w
-        if t is Float:
-            return float_to_python(w)
-        if t is list:
-            return [a if type(a) in _SIMPLE else self._to_python(a) for a in w]
-        if t is tuple:
-            return tuple([self._to_python(a) for a in w])
-        if t is Handle:
-            try:
-                return self._objects[w.id]
-            except (KeyError, TypeError):
-                raise _Failure(
-                    "spectest.ConvertError", f"unknown handle {w.id}"
-                ) from None
-        if t is Map:
-            try:
-                return {self._to_python(k): self._to_python(v) for k, v in w.pairs}
-            except TypeError as exc:
-                raise _Failure(
-                    "spectest.ConvertError", f"unhashable map key: {exc}"
-                ) from None
-        if t is Record:
-            cls = self._class_named(w.type)
-            kwargs = {k: self._to_python(v) for k, v in w.fields}
-            try:
-                return cls(**kwargs)
-            except Exception as exc:
-                raise _Failure(
-                    "spectest.ConvertError",
-                    f"cannot build {w.type} from its fields: {exc}",
-                ) from None
-        if t is Enum:
-            if w.type == "":
-                return w.member
-            cls = self._class_named(w.type)
-            try:
-                return getattr(cls, w.member)
-            except AttributeError:
-                raise _Failure(
-                    "spectest.ConvertError", f"{w.type} has no member {w.member}"
-                ) from None
-        if t is Converted:
-            reg = convert.by_name(w.cls)
-            if reg is None or reg.from_wire is None:
-                raise _Failure(
-                    "spectest.ConvertError",
-                    f"no inverse converter registered for {w.cls}",
-                )
-            return reg.from_wire(self._to_python(w.value))
-        if isinstance(w, bytearray | memoryview):
-            return bytes(w)
-        raise _Failure("spectest.ConvertError", f"{t.__name__} is not a wire object")
+        if (converter := _PYTHON_CONVERTERS.get(t)) is None:
+            raise _convert_failure(f"{t.__name__} is not a wire object")
+        return converter(self, w)
+
+    def _from_list(self, w: list) -> list:
+        return [a if type(a) in _SIMPLE else self._to_python(a) for a in w]
+
+    def _from_tuple(self, w: tuple) -> tuple:
+        return tuple([self._to_python(a) for a in w])
+
+    def _from_handle(self, w: Handle) -> Any:
+        try:
+            return self._objects[w.id]
+        except (KeyError, TypeError):
+            raise _convert_failure(f"unknown handle {w.id}") from None
+
+    def _from_map(self, w: Map) -> dict:
+        try:
+            return {self._to_python(k): self._to_python(v) for k, v in w.pairs}
+        except TypeError as exc:
+            raise _convert_failure(f"unhashable map key: {exc}") from None
+
+    def _from_record(self, w: Record) -> Any:
+        cls = self._class_named(w.type)
+        fields = {k: self._to_python(v) for k, v in w.fields}
+        try:
+            return cls(**fields)
+        except Exception as exc:
+            raise _convert_failure(
+                f"cannot build {w.type} from its fields: {exc}"
+            ) from None
+
+    def _from_enum(self, w: Enum) -> Any:
+        if w.type == "":
+            return w.member
+        try:
+            return getattr(self._class_named(w.type), w.member)
+        except AttributeError:
+            raise _convert_failure(f"{w.type} has no member {w.member}") from None
+
+    def _from_converted(self, w: Converted) -> Any:
+        reg = convert.by_name(w.cls)
+        if reg is None or reg.from_wire is None:
+            raise _convert_failure(f"no inverse converter registered for {w.cls}")
+        return reg.from_wire(self._to_python(w.value))
 
 
-class _TooLarge(Exception):
-    pass
+_Converter = Callable[[Driver, Any, list[int]], Any]
+
+# In priority order: a type uses the first entry whose base is among its bases.
+_PLAIN_CONVERTERS: tuple[tuple[type, _Converter], ...] = (
+    (bool, Driver._bool),
+    (int, Driver._int),
+    (str, Driver._str),
+    (float, Driver._float),
+    (tuple, Driver._tuple),
+    (list, Driver._list),
+    (dict, Driver._dict),
+)
+
+_PYTHON_CONVERTERS: dict[type, Callable[[Driver, Any], Any]] = {
+    bytes: lambda driver, w: w,
+    bytearray: lambda driver, w: bytes(w),
+    memoryview: lambda driver, w: bytes(w),
+    Float: lambda driver, w: float_to_python(w),
+    list: Driver._from_list,
+    tuple: Driver._from_tuple,
+    Handle: Driver._from_handle,
+    Map: Driver._from_map,
+    Record: Driver._from_record,
+    Enum: Driver._from_enum,
+    Converted: Driver._from_converted,
+}
 
 
-_MISSING = object()
+@cache
+def _wire_converter(t: type) -> _Converter:
+    if issubclass(t, _BYTES_LIKE):
+        return Driver._bytes
+    if issubclass(t, enum.Enum):
+        return Driver._enum
+    if issubclass(t, tuple) and hasattr(t, "_fields"):
+        return Driver._named_tuple
+    if dataclasses.is_dataclass(t):
+        return Driver._dataclass
+    return next(
+        (c for base, c in _PLAIN_CONVERTERS if base in t.__mro__), Driver._handle
+    )

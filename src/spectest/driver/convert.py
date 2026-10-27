@@ -49,16 +49,13 @@ def _kind_of(fn: Callable[..., Any]) -> str:
         hints = typing.get_type_hints(fn)
     except Exception:
         hints = getattr(fn, "__annotations__", {})
-    ret = hints.get("return")
-    if ret is None:
+    if (ret := hints.get("return")) is None:
         return "any"
-    if isinstance(ret, str):
+    if type(ret) is str:
         name = ret.split("[", 1)[0].strip()
         return {"str": "string", "dict": "map"}.get(name, name)
     origin = typing.get_origin(ret) or ret
-    if origin in _KINDS:
-        return _KINDS[origin]
-    return getattr(origin, "__name__", str(origin))
+    return _KINDS.get(origin) or getattr(origin, "__name__", str(origin))
 
 
 def marshal(cls: type) -> Callable[[Callable[[Any], Any]], Callable[[Any], Any]]:
@@ -82,18 +79,11 @@ def marshal(cls: type) -> Callable[[Callable[[Any], Any]], Callable[[Any], Any]]
 
 def find(cls: type) -> Registration | None:
     """The registration for ``cls`` or its nearest registered base."""
-    try:
-        return _lookup_cache[cls]
-    except KeyError:
-        pass
-    found = None
-    if _by_class:
-        for base in cls.__mro__:
-            found = _by_class.get(base)
-            if found is not None:
-                break
-    _lookup_cache[cls] = found
-    return found
+    if cls not in _lookup_cache:
+        _lookup_cache[cls] = next(
+            (r for base in cls.__mro__ if (r := _by_class.get(base))), None
+        )
+    return _lookup_cache[cls]
 
 
 def by_name(name: str) -> Registration | None:
