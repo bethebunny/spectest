@@ -57,6 +57,7 @@ from wire.value import (
 )
 
 from .coerce import (
+    bits_of_value,
     coerce_arg,
     fit,
     float_max,
@@ -386,6 +387,9 @@ def ev_binary[
         return Value.bool(want_bool(ev(spec, n.kids[1], env, run, host), "the right operand of or"))
     if tkind(spec, e) == ty.SET:
         raise Error(String(ast.op_name(op)) + " combines partition sets: it has no value in a clause")
+    if op == ast.IN and tkind(spec, n.kids[1]) == ty.SET:
+        var x = ev(spec, n.kids[0], env, run, host)
+        return Value.bool(set_contains(spec, n.kids[1], x))
     var a = ev(spec, n.kids[0], env, run, host)
     var b = ev(spec, n.kids[1], env, run, host)
     if op == ast.EQ or op == ast.NE:
@@ -431,6 +435,16 @@ def set_members(spec: Spec, iterable: Int) raises -> List[Value]:
     for b in bits:
         out.append(value_from_bits(spec.types, elem, b))
     return out^
+
+
+def set_contains(spec: Spec, set_node: Int, x: Value) raises -> Bool:
+    """Is the fixed-width value `x` a member of the partition set at `set_node`?"""
+    var elem = spec.types.info(spec.node_types[set_node]).args[0]
+    var ctx = SetContext()
+    var s = compile_set_aliased(
+        ctx, spec.ast, spec.types, elem, set_node, Dict[String, BitSet](), spec.aliases
+    )
+    return ctx.contains(s, bits_of_value(spec.types, elem, x))
 
 
 def ev_comprehension[

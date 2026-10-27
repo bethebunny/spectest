@@ -2,6 +2,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 
 from check.spec import Spec
 from eval.api import class_holds
+from eval.core import set_contains
 from eval.testkit import *
 from numeric.formats import F16
 from wire.value import Value
@@ -84,6 +85,18 @@ def test_a_node_that_is_not_a_class_is_an_error() raises:
         assert_true(False, "expected an error")
     except e:
         has(String(e), "is not a partition class")
+
+
+def test_membership_in_a_set_expression() raises:
+    var spec = spec_of("fn f(x: u8) -> u8\n  aggregate total: sum(v in u8.range(1, 4) | {9}: v) <= 20\n")
+    var clause = spec.clauses[clause_pos(spec, "f.total")].expr
+    var set_node = spec.ast.kid(spec.ast.kid(clause, 0), 0)
+    for x in [1, 2, 3, 9]:
+        assert_true(set_contains(spec, set_node, Value.int(x)))
+    for x in [0, 4, 8, 10, 255]:
+        assert_true(not set_contains(spec, set_node, Value.int(x)))
+    var host = Mock()
+    assert_true(judge_clause(spec, "f.total", Env(), host).is_true())
 
 
 def test_aggregates_over_integer_sets() raises:
