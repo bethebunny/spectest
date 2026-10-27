@@ -161,13 +161,16 @@ preference when shrinking."""
 
 
 def draw_float_bits(mut src: Source, format: FloatFormat) raises -> UInt64:
+    """A float pattern: a class uniformly, then a member of it. Every class draws the
+    same four choices (class, sign, a, b), so shrinking can move between classes."""
     var cls = Int(src.draw_below(UInt64(FLOAT_CLASSES)))
     var fb = format.fraction_bits
     var bias = format.bias()
-    var sign = UInt64(0)
-    if cls != 2:
-        sign = format.sign_mask() if src.draw_bool() else UInt64(0)
+    var negative = src.draw_bool()
+    var sign = format.sign_mask() if negative else UInt64(0)
     if cls == 0:
+        _ = src.draw_below(1)
+        _ = src.draw_below(1)
         return sign
     if cls == 1:
         var e = min(20, bias // 2)
@@ -175,19 +178,21 @@ def draw_float_bits(mut src: Source, format: FloatFormat) raises -> UInt64:
         var frac = src.draw_bits(fb)
         return sign | (UInt64(bias + off) << UInt64(fb)) | frac
     if cls == 2:
-        var i = Int(src.draw_below(30))
-        var x = _simple_magnitude(i // 2)
-        if i % 2 == 1:
-            x = -x
-        return float64_bits_in(format, x)
+        var x = _simple_magnitude(Int(src.draw_below(15)))
+        _ = src.draw_below(1)
+        return float64_bits_in(format, -x if negative else x)
     if cls == 3:
         var off = src.draw_int(1 - bias, bias)
         var frac = src.draw_bits(fb)
         return sign | (UInt64(bias + off) << UInt64(fb)) | frac
     if cls == 4:
+        _ = src.draw_below(1)
         return sign | (src.draw_below(format.fraction_mask()) + 1)
     if cls == 5:
+        _ = src.draw_below(1)
+        _ = src.draw_below(1)
         return sign | format.exponent_mask()
+    _ = src.draw_below(1)
     return sign | format.exponent_mask() | (src.draw_below(format.fraction_mask()) + 1)
 
 
