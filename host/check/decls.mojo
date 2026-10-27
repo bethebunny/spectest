@@ -784,6 +784,19 @@ def check_model(mut c: Checker, d: Int):
         for f in c.spec.models[pos].methods:
             member_names.append(c.spec.fns[f].name.copy())
             member_kinds.append("method")
+    # Qualified functions named under the model are its methods and statics.
+    var prefix = name + "."
+    for f in range(len(c.spec.fns)):
+        if c.spec.fns[f].kind != ast.FN or not c.spec.fns[f].name.startswith(prefix):
+            continue
+        var rest = String(c.spec.fns[f].name[byte = prefix.byte_length() :])
+        var dotted = False
+        for b in rest.as_bytes():
+            if Int(b) == ord("."):
+                dotted = True
+        if not dotted:
+            member_names.append(rest^)
+            member_kinds.append("method" if c.spec.fns[f].receiver else "function")
     var clauses = List[Int]()
     for m in c.kids_of(d):
         if c.kind_of(m) == ast.CLAUSE:

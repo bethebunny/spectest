@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from check.types import Types, ANY_TYPE, LIST, FIXED_INT
-from check.spec import Spec, Resolution, R_PARAM
+from check.spec import Spec, Resolution, R_PARAM, R_QERR_PART, R_EXTERN
 from prelude.names import prelude_id, prelude_name, prelude_count
 from syntax.ast import Ast
 
@@ -36,6 +36,11 @@ def test_spec_tables() raises:
     spec.resolutions[0] = Resolution(R_PARAM, 2, -1, "x")
     assert_equal(spec.resolution(0).value().index, 2)
     assert_false(spec.resolution(5))
+
+
+def test_resolution_kinds_are_distinct() raises:
+    assert_equal(Int(R_QERR_PART), 17)
+    assert_equal(Int(R_EXTERN), 18)
 
 
 def test_prelude_names() raises:

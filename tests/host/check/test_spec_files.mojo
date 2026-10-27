@@ -1,7 +1,8 @@
 from std.pathlib import Path
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
+from std.time import perf_counter_ns
 
-from check.checker import check_source
+from check.checker import check, check_source
 from check.spec import (
     R_CONST,
     R_DEF,
@@ -21,6 +22,7 @@ from check.testkit import (
     type_text,
 )
 from syntax import ast
+from syntax.parser import parse_spec
 
 
 def sample() raises -> Spec:
@@ -270,6 +272,26 @@ def test_a_choice_argument_is_one_of_its_constants() raises:
     )
 
 
+def test_build_parameters_are_typed() raises:
+    fails_at(
+        "model M\n  build M.make(x: Nope)\n", "t.spec:3:19: unknown type Nope"
+    )
+    var spec = ok("model M\n  build M.make(x: u8, ys: list<f64> = [])\n")
+    assert_equal(spec.types.text(spec.models[0].builds[0].params[1].type), "list<f64>")
+
+
+def test_labels_cannot_take_a_qualified_member_id() raises:
+    fails(
+        "model m.S\n  observe n: int\n  invariant __len__: n >= 0\nfn m.S.__len__(self) -> int\n",
+        "clause label __len__ gives the ID m.S.__len__, which already names the method"
+        " m.S.__len__",
+    )
+    fails(
+        "model m.S\n  observe n: int\n  invariant range: n >= 0\nfn m.S.range() -> int\n",
+        "which already names the function m.S.range",
+    )
+
+
 def test_observer_expressions_have_the_declared_type() raises:
     fails_at(
         "model M\n  observe n: int = 1.5\n",
@@ -333,6 +355,91 @@ def test_other_files_are_not_supported_yet() raises:
     fails_at(
         'prelude "x.prelude"\n',
         "t.spec:2:1: prelude is not supported yet: only one file is checked for now",
+    )
+
+
+def check_file(path: String) raises -> Spec:
+    return check(parse_spec(Path(path).read_text(), path))
+
+
+def test_the_examples_check() raises:
+    var files = [
+        "examples/binary/binary.spec",
+        "examples/deque/deque.spec",
+        "examples/frames/frames.spec",
+        "examples/libm/explore.spec",
+        "examples/libm/libm.spec",
+        "examples/sorting/sorting.spec",
+    ]
+    for path in files:
+        var spec = check_file(String(path))
+        assert_true(len(spec.fns) > 0, String(path))
+        assert_true(len(spec.clauses) > 0, String(path))
+
+
+def test_libm_clauses() raises:
+    var spec = check_file("examples/libm/libm.spec")
+    var cos = spec.fn_named("cos").value()
+    assert_equal(len(spec.fns[cos].partitions), 1)
+    assert_true(Bool(spec.clause_named("cos.accurate")))
+    assert_equal(spec.types.text(spec.fns[cos].result), "f64")
+
+
+def test_deque_interface() raises:
+    var spec = check_file("examples/deque/deque.spec")
+    var deque = spec.model_named("Deque").value()
+    assert_true(spec.models[deque].is_interface)
+    assert_true(len(spec.models[deque].methods) >= 2)
+
+
+def test_bitpattern_checks_fast() raises:
+    var source = Path("trials/bitpattern/bitpattern.spec").read_text()
+    var ast = parse_spec(source, "trials/bitpattern/bitpattern.spec")
+    var start = perf_counter_ns()
+    var spec = check(ast^)
+    var elapsed = perf_counter_ns() - start
+    print("bitpattern.spec checked in", Float64(elapsed) / 1.0e6, "ms")
+    assert_equal(len(spec.fns), 236)
+    assert_true(elapsed < 50_000_000, "checking bitpattern.spec took 50 ms or more")
+
+
+def test_aggregate_shapes() raises:
+    var base = "fn g(x: f16) -> f16\n"
+    _ = ok(base + "fn f()\n  aggregate a: sum(v in f16.finite: qe(g(v), v).steps) <= 3\n")
+    _ = ok(base + "fn f()\n  aggregate a: sum(v in f16.all: qe(g(v), v).steps) == 0\n")
+    _ = ok(base + "fn f()\n  aggregate a: max(v in f16.all: qe(g(v), v).steps) < 2 * 4\n")
+    _ = ok(base + "fn f()\n  aggregate a: all(v in f16.all: is_finite(g(v)) or is_nan(v))\n")
+    fails(
+        base + "fn f()\n  aggregate a: sum(v in f16.all: 1) > 3\n",
+        "an aggregate clause has one of the shapes",
+    )
+    fails(
+        base + "fn f()\n  aggregate a: sum(v in f16.all: 1) == 2\n",
+        "sum(...) == c is an aggregate shape only for c = 0",
+    )
+    fails(
+        base + "fn f(n: int)\n  aggregate a: sum(v in f16.all: 1) <= n\n",
+        "an aggregate clause cannot use the parameter n of f",
+    )
+    fails(
+        base + "fn f(n: int)\n  aggregate a: sum(v in f16.all: n) <= 3\n",
+        "an aggregate clause cannot use the parameter n of f",
+    )
+    fails(
+        base + "fn f()\n  aggregate a: sum(v in [1, 2]: 1) <= len([1])\n",
+        "the bound of an aggregate clause must be a constant",
+    )
+    fails(
+        base + "fn f() -> int\n  aggregate a: sum(v in f16.all: result) <= 3\n",
+        "an aggregate clause is evaluated once over a set of inputs",
+    )
+    fails(
+        "interface Q\n  observe n: int\n  new e() -> Q\n    aggregate a: all(v in [1]: true)\n",
+        "aggregate clauses belong to functions (fn), not to a constructor",
+    )
+    fails(
+        "fn f(xs: list<f16>)\n  ensures all(v in f16.all: true)\n",
+        "ranges over a set such as f16.all only as the top comprehension of an aggregate",
     )
 
 
