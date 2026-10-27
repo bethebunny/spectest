@@ -3,7 +3,7 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from check.spec import Spec
 from partitions.check import PartitionSets, compile_partitions
 from partitions.requires import admitted
-from partitions.testing import build_spec
+from partitions_testing import build_spec
 from sets import SetContext
 
 

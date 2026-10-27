@@ -5,7 +5,7 @@ from bigint import BigUInt
 from check.types import Types
 from numeric.formats import BF16, F16, F32, F64, FloatFormat
 from partitions.compile import compile_set, compile_set_aliased
-from partitions.testing import parse_set_expr, set_expr_node
+from partitions_testing import parse_set_expr, set_expr_node
 from sets import BitSet, SetContext
 
 comptime NEG_ZERO = UInt64(1) << 63
