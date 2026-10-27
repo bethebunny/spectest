@@ -36,8 +36,10 @@ fn path_matches(p: string, x: int) -> bool = all(i in range(0, len(p)): codepoin
 fn is_big_pow2(n: int) -> bool = n >= 1024 and n & (n - 1) == 0
 fn count_repr_text(n: int) -> string = if is_big_pow2(n) then "2**" + dec(bit_length(n) - 1) else dec(n)
 
+fn sdec(n: int) -> string = if n < 0 then "-" + dec(-n) else dec(n)
+
 # Integers joined by ", " (up to ten).
-fn join_ints(xs: list<int>) -> string = if len(xs) == 0 then "" else if len(xs) == 1 then dec(xs[0]) else if len(xs) == 2 then dec(xs[0]) + ", " + dec(xs[1]) else if len(xs) == 3 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) else if len(xs) == 4 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) else if len(xs) == 5 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) else if len(xs) == 6 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) else if len(xs) == 7 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) + ", " + dec(xs[6]) else if len(xs) == 8 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) + ", " + dec(xs[6]) + ", " + dec(xs[7]) else if len(xs) == 9 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) + ", " + dec(xs[6]) + ", " + dec(xs[7]) + ", " + dec(xs[8]) else if len(xs) == 10 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) + ", " + dec(xs[6]) + ", " + dec(xs[7]) + ", " + dec(xs[8]) + ", " + dec(xs[9]) else ""
+fn join_ints(xs: list<int>) -> string = if len(xs) == 0 then "" else if len(xs) == 1 then sdec(xs[0]) else if len(xs) == 2 then sdec(xs[0]) + ", " + sdec(xs[1]) else if len(xs) == 3 then sdec(xs[0]) + ", " + sdec(xs[1]) + ", " + sdec(xs[2]) else if len(xs) == 4 then sdec(xs[0]) + ", " + sdec(xs[1]) + ", " + sdec(xs[2]) + ", " + sdec(xs[3]) else if len(xs) == 5 then sdec(xs[0]) + ", " + sdec(xs[1]) + ", " + sdec(xs[2]) + ", " + sdec(xs[3]) + ", " + sdec(xs[4]) else if len(xs) == 6 then sdec(xs[0]) + ", " + sdec(xs[1]) + ", " + sdec(xs[2]) + ", " + sdec(xs[3]) + ", " + sdec(xs[4]) + ", " + sdec(xs[5]) else if len(xs) == 7 then sdec(xs[0]) + ", " + sdec(xs[1]) + ", " + sdec(xs[2]) + ", " + sdec(xs[3]) + ", " + sdec(xs[4]) + ", " + sdec(xs[5]) + ", " + sdec(xs[6]) else if len(xs) == 8 then sdec(xs[0]) + ", " + sdec(xs[1]) + ", " + sdec(xs[2]) + ", " + sdec(xs[3]) + ", " + sdec(xs[4]) + ", " + sdec(xs[5]) + ", " + sdec(xs[6]) + ", " + sdec(xs[7]) else if len(xs) == 9 then sdec(xs[0]) + ", " + sdec(xs[1]) + ", " + sdec(xs[2]) + ", " + sdec(xs[3]) + ", " + sdec(xs[4]) + ", " + sdec(xs[5]) + ", " + sdec(xs[6]) + ", " + sdec(xs[7]) + ", " + sdec(xs[8]) else if len(xs) == 10 then sdec(xs[0]) + ", " + sdec(xs[1]) + ", " + sdec(xs[2]) + ", " + sdec(xs[3]) + ", " + sdec(xs[4]) + ", " + sdec(xs[5]) + ", " + sdec(xs[6]) + ", " + sdec(xs[7]) + ", " + sdec(xs[8]) + ", " + sdec(xs[9]) else ""
 
 # Pattern text: the dotted form of a bit string, and back.
 fn undot(s: string) -> string = from_codepoints(filter(c in codepoints(s): c != 46))
@@ -60,3 +62,13 @@ fn pat_width(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> int = sum(k in range
 fn pat_free(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> int = sum(k in range(0, pat_count(t)): count(c in pat_quartet(t, k): c == "?") + (if pat_stars(pat_quartet(t, k)) == 1 then 5 - len(pat_quartet(t, k)) else 0))
 fn pat_has_star(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> bool = exists(c in t: c == "*")
 fn pat_bits(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> string = from_codepoints(map(c in filter(c in t: c != "."): if c == "0" then 48 else if c == "1" then 49 else 63))
+
+# The Int codec: two's complement, width bits.
+fn int_min(c: Int) -> int = if c.signed then -(2 ** (c.width - 1)) else 0
+fn int_max(c: Int) -> int = if c.signed then 2 ** (c.width - 1) - 1 else 2 ** c.width - 1
+fn int_decode(c: Int, b: int) -> int = if b > int_max(c) then b - 2 ** c.width else b
+fn int_encodable(c: Int, v: int) -> bool = int_min(c) <= v and v <= int_max(c)
+
+# The narrowest unsigned dtype for a width; the narrowest signed one up to 64 bits.
+fn unsigned_dtype(w: int) -> string = if w <= 8 then "UINT8" else if w <= 16 then "UINT16" else if w <= 32 then "UINT32" else if w <= 64 then "UINT64" else "UINT8"
+fn int_dtype(c: Int) -> string = if c.signed and c.width <= 8 then "INT8" else if c.signed and c.width <= 16 then "INT16" else if c.signed and c.width <= 32 then "INT32" else if c.signed and c.width <= 64 then "INT64" else unsigned_dtype(c.width)

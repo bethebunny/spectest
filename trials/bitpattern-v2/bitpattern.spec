@@ -740,3 +740,272 @@ fn variant.Pattern_hash(p: bitpattern.pattern.Pattern) -> int
 
 fn variant.IntSet_index_float(s: bitpattern.intset.IntSet, value: f64, start: i8 = 0) -> int
   raises ValueError when true
+
+# -- 3. Codecs: Codec and Int ------------------------------------------------------
+#
+# A frozen dataclass crosses as a record of its fields, and a record cannot hold an object
+# the host builds, so a BDDSet is the record (codec, storage) and a function of a set takes
+# the codec and the storage IntSet separately, with the storage widened to the codec's
+# width (support.py). Record names are unqualified; test_bitpattern.py maps them to the
+# classes. One spec file can hold the BDDSet of one codec class, so Int is here and the
+# other codecs are in their own files.
+
+record Codec { width: u8, name: string }
+record Int { width: u8, name: string, signed: bool }
+record BDDSet { codec: Int, storage: bitpattern.intset.IntSet }
+
+const bitpattern.codecs.int8: Int
+const bitpattern.codecs.int16: Int
+const bitpattern.codecs.int32: Int
+const bitpattern.codecs.int64: Int
+const bitpattern.codecs.int128: Int
+const bitpattern.codecs.uint8: Int
+const bitpattern.codecs.uint16: Int
+const bitpattern.codecs.uint32: Int
+const bitpattern.codecs.uint64: Int
+const bitpattern.codecs.uint128: Int
+
+fn variant.Int_new(width: u8, name: string, signed: bool) -> Int
+  ensures fields: result.width == width and result.name == name and result.signed == signed
+
+# repr(codec) is its name.
+fn variant.Codec_repr(c: Int) -> string
+  ensures name: result == c.name
+
+# Codecs compare and hash by class and field values.
+fn variant.Int_eq(a: Int, b: Int) -> bool
+  ensures by_fields: result == (a.width == b.width and a.name == b.name and a.signed == b.signed)
+
+fn variant.Int_hash(c: Int) -> int
+  relates equal_codecs: variant.Int_hash(variant.Int_new(c.width, c.name, c.signed)) == result
+
+# Assigning a field of a frozen dataclass raises FrozenInstanceError.
+fn variant.Int_setattr(c: Int, name: "width" | "name" | "signed", value: i8)
+  raises dataclasses.FrozenInstanceError when true
+
+fn bitpattern.codecs.Codec.encode(c: Codec, value: int) -> int
+  raises NotImplementedError when true
+
+fn bitpattern.codecs.Codec.dtype(c: Codec) -> "UINT8" | "UINT16" | "UINT32" | "UINT64"
+  ensures narrowest_unsigned: result == unsigned_dtype(c.width)
+
+fn bitpattern.codecs.Int.encode(codec: Int, value: int) -> int
+  requires codec.width >= 1
+  raises ValueError when not int_encodable(codec, value)
+  ensures twos_complement: result == value % 2 ** codec.width
+  ensures in_universe: 0 <= result and result < 2 ** codec.width
+
+fn variant.Int_encode_float(codec: Int, value: f64) -> int
+  requires codec.width >= 1
+  raises TypeError when true
+
+fn variant.Int_encode_string(codec: Int, value: string) -> int
+  requires codec.width >= 1
+  raises TypeError when true
+
+fn bitpattern.codecs.Int.decode(codec: Int, b: int) -> int
+  requires codec.width >= 1 and 0 <= b and b < 2 ** codec.width
+  ensures wraps: result == int_decode(codec, b)
+  ensures roundtrip: bitpattern.codecs.Int.encode(codec, result) == b
+  ensures encodable: int_encodable(codec, result)
+
+fn bitpattern.codecs.Int.min(codec: Int) -> int
+  requires codec.width >= 1
+  ensures smallest: result == int_min(codec)
+
+fn bitpattern.codecs.Int.max(codec: Int) -> int
+  requires codec.width >= 1
+  ensures largest: result == int_max(codec)
+
+fn bitpattern.codecs.Int.dtype(codec: Int) -> "INT8" | "INT16" | "INT32" | "INT64" | "UINT8" | "UINT16" | "UINT32" | "UINT64"
+  requires codec.width >= 1
+  ensures narrowest: result == int_dtype(codec)
+
+# The sets a codec makes. A BDDSet holds the storage of its codec's width.
+fn bitpattern.codecs.Int.all(codec: Int) -> BDDSet
+  requires codec.width >= 1
+  ensures universe: result.storage.size == 2 ** codec.width and result.storage.width == codec.width
+  ensures codec: result.codec == codec
+
+fn bitpattern.codecs.Int.none(codec: Int) -> BDDSet
+  requires codec.width >= 1
+  ensures empty: result.storage.size == 0 and result.storage.width == codec.width
+
+fn bitpattern.codecs.Int.set(codec: Int, values: list<int>) -> BDDSet
+  requires codec.width >= 1
+  raises ValueError when exists(v in values: not int_encodable(codec, v))
+  ensures codec: result.codec == codec
+  ensures width: result.storage.width == codec.width
+  ensures encodings: codec.width <= 9 and result.storage.size <= 512 implies same_members(elems(result.storage), map(v in values: v % 2 ** codec.width))
+  ensures members: codec.width <= 9 implies all(v in values: result.storage.has(v % 2 ** codec.width))
+
+# Bounds are clamped to [min, max + 1] rather than encoded.
+fn bitpattern.codecs.Int.range(codec: Int, start: option<int>, stop: option<int>) -> BDDSet
+  requires codec.width >= 1
+  ensures codec: result.codec == codec
+  ensures width: result.storage.width == codec.width
+  ensures size: result.storage.size == imax(0, imin(if is_none(stop) then int_max(codec) + 1 else unwrap(stop), int_max(codec) + 1) - imax(if is_none(start) then int_min(codec) else unwrap(start), int_min(codec)))
+  ensures encodings: codec.width <= 9 implies same_members(elems(result.storage), map(v in range(imax(if is_none(start) then int_min(codec) else unwrap(start), int_min(codec)), imin(if is_none(stop) then int_max(codec) + 1 else unwrap(stop), int_max(codec) + 1)): v % 2 ** codec.width))
+  ensures all_when_unbounded: is_none(start) and is_none(stop) implies result.storage.size == 2 ** codec.width
+
+fn variant.Int_range_floats(codec: Int, start: f64, stop: f64) -> BDDSet
+  requires codec.width >= 1
+  raises TypeError when true
+
+# pattern(text) is the values whose encodings match the pattern: ValueError unless it is
+# valid and as wide as the codec.
+fn variant.Int_pattern(codec: Int, tokens: list<"0" | "1" | "?" | "*" | "." | "|">) -> BDDSet
+  requires codec.width >= 1
+  raises ValueError when pat_invalid(tokens) or (not pat_ambiguous(tokens) and pat_width(tokens) != codec.width)
+  may_raise ValueError when pat_ambiguous(tokens)
+  ensures width: result.storage.width == codec.width
+  ensures size: result.storage.size == 2 ** pat_free(tokens)
+  ensures members: not pat_has_star(tokens) and codec.width <= 9 implies elems(result.storage) == filter(x in range(0, 2 ** codec.width): path_matches(pat_bits(tokens), x))
+
+# -- 3. BDDSet over Int ------------------------------------------------------------
+
+fn bitpattern.codecs.BDDSet.size(codec: Int, storage: bitpattern.intset.IntSet) -> int
+  requires codec.width >= 1 and storage.width <= codec.width
+  ensures storage_size: result == storage.size
+
+fn bitpattern.codecs.BDDSet.__contains__(codec: Int, storage: bitpattern.intset.IntSet, v: int) -> bool
+  requires codec.width >= 1 and storage.width <= codec.width
+  ensures encoded_and_stored: result == (int_encodable(codec, v) and storage.has(v % 2 ** codec.width))
+
+fn variant.BDDSet_contains_float(codec: Int, storage: bitpattern.intset.IntSet, v: f64) -> bool
+  requires codec.width >= 1 and storage.width <= codec.width
+  ensures never: not result
+
+fn bitpattern.codecs.BDDSet.__getitem__(codec: Int, storage: bitpattern.intset.IntSet, i: int) -> int
+  requires codec.width >= 1 and storage.width <= codec.width
+  raises IndexError when i < -storage.size or i >= storage.size
+  ensures decoded: result == int_decode(codec, bitpattern.intset.IntSet.__getitem__(storage, i))
+  ensures encodes_back: bitpattern.codecs.Int.encode(codec, result) == bitpattern.intset.IntSet.__getitem__(storage, i)
+
+fn variant.BDDSet_slice(codec: Int, storage: bitpattern.intset.IntSet, start: option<int>, stop: option<int>, step: option<int>) -> BDDSet
+  requires codec.width >= 1 and storage.width <= codec.width
+  may_raise ValueError when is_some(step) and unwrap(step) == 0
+  ensures codec: result.codec == codec
+  ensures storage_slice: bitpattern.intset.IntSet.__eq__(result.storage, variant.IntSet_slice(storage, start, stop, step))
+
+fn bitpattern.codecs.BDDSet.index(codec: Int, storage: bitpattern.intset.IntSet, v: int, start: int = 0, stop: option<int> = none) -> int
+  requires codec.width >= 1 and storage.width <= codec.width
+  raises ValueError when not int_encodable(codec, v) or not storage.has(v % 2 ** codec.width) or storage.rank(v % 2 ** codec.width) < slice_lo(some(start), storage.size, 1) or storage.rank(v % 2 ** codec.width) >= slice_hi(stop, storage.size, 1)
+  ensures position: result == bitpattern.intset.IntSet.index(storage, v % 2 ** codec.width, start, stop)
+
+fn bitpattern.codecs.BDDSet.count(codec: Int, storage: bitpattern.intset.IntSet, v: int) -> int
+  requires codec.width >= 1 and storage.width <= codec.width
+  ensures zero_or_one: result == (if int_encodable(codec, v) and storage.has(v % 2 ** codec.width) then 1 else 0)
+
+# ~s == s.codec.all - s.
+fn bitpattern.codecs.BDDSet.__invert__(codec: Int, storage: bitpattern.intset.IntSet) -> BDDSet
+  requires codec.width >= 1 and storage.width <= codec.width
+  ensures codec: result.codec == codec
+  ensures complement: bitpattern.intset.IntSet.__eq__(result.storage, bitpattern.intset.IntSet.__invert__(bitpattern.intset.IntSet.widened(storage, codec.width)))
+  ensures size: result.storage.size == 2 ** codec.width - storage.size
+
+fn bitpattern.codecs.BDDSet.__or__(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> BDDSet
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures codec: result.codec == codec
+  ensures union: bitpattern.intset.IntSet.__eq__(result.storage, bitpattern.intset.IntSet.__or__(a, b))
+
+fn bitpattern.codecs.BDDSet.__and__(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> BDDSet
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures codec: result.codec == codec
+  ensures intersection: bitpattern.intset.IntSet.__eq__(result.storage, bitpattern.intset.IntSet.__and__(a, b))
+
+fn bitpattern.codecs.BDDSet.__sub__(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> BDDSet
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures codec: result.codec == codec
+  ensures difference: bitpattern.intset.IntSet.__eq__(result.storage, bitpattern.intset.IntSet.__sub__(a, b))
+
+fn bitpattern.codecs.BDDSet.__xor__(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> BDDSet
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures codec: result.codec == codec
+  ensures symmetric_difference: bitpattern.intset.IntSet.__eq__(result.storage, bitpattern.intset.IntSet.__xor__(a, b))
+
+fn bitpattern.codecs.BDDSet.__le__(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> bool
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures subset: result == bitpattern.intset.IntSet.__le__(a, b)
+
+fn bitpattern.codecs.BDDSet.__lt__(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> bool
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures proper_subset: result == bitpattern.intset.IntSet.__lt__(a, b)
+
+fn bitpattern.codecs.BDDSet.__ge__(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> bool
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures superset: result == bitpattern.intset.IntSet.__ge__(a, b)
+
+fn bitpattern.codecs.BDDSet.__gt__(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> bool
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures proper_superset: result == bitpattern.intset.IntSet.__gt__(a, b)
+
+fn bitpattern.codecs.BDDSet.isdisjoint(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> bool
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures disjoint: result == (bitpattern.intset.IntSet.__and__(a, b).size == 0)
+
+# Equal iff both are BDDSets with equal codecs and the same encodings.
+fn bitpattern.codecs.BDDSet.__eq__(codec: Int, a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet) -> bool
+  requires codec.width >= 1 and a.width <= codec.width and b.width <= codec.width
+  ensures same_encodings: result == bitpattern.intset.IntSet.__eq__(a, b)
+
+# Only sets of an equal codec combine: another codec, a built-in set, a list or an IntSet
+# raise TypeError; == never raises.
+fn variant.BDDSet_or_other_codec(codec: Int, a: bitpattern.intset.IntSet, other_codec: Int, b: bitpattern.intset.IntSet) -> BDDSet
+  requires codec.width >= 1 and other_codec.width >= 1 and a.width <= codec.width and b.width <= other_codec.width
+  raises TypeError when codec.width != other_codec.width or codec.name != other_codec.name or codec.signed != other_codec.signed
+
+fn variant.BDDSet_or_list(codec: Int, a: bitpattern.intset.IntSet, other: list<u8>) -> BDDSet
+  requires codec.width >= 1 and a.width <= codec.width
+  raises TypeError when true
+
+fn variant.BDDSet_or_intset(codec: Int, a: bitpattern.intset.IntSet, other: bitpattern.intset.IntSet) -> BDDSet
+  requires codec.width >= 1 and a.width <= codec.width
+  raises TypeError when true
+
+fn variant.BDDSet_le_intset(codec: Int, a: bitpattern.intset.IntSet, other: bitpattern.intset.IntSet) -> bool
+  requires codec.width >= 1 and a.width <= codec.width
+  raises TypeError when true
+
+fn variant.BDDSet_isdisjoint_list(codec: Int, a: bitpattern.intset.IntSet, other: list<u8>) -> bool
+  requires codec.width >= 1 and a.width <= codec.width
+  raises TypeError when true
+
+fn variant.BDDSet_eq_intset(codec: Int, a: bitpattern.intset.IntSet, other: bitpattern.intset.IntSet) -> bool
+  requires codec.width >= 1 and a.width <= codec.width
+  ensures never: not result
+
+fn variant.BDDSet_eq_list(codec: Int, a: bitpattern.intset.IntSet, other: list<u8>) -> bool
+  requires codec.width >= 1 and a.width <= codec.width
+  ensures never: not result
+
+fn bitpattern.codecs.BDDSet.choice(codec: Int, storage: bitpattern.intset.IntSet, rng: random.Random) -> int
+  requires codec.width >= 1 and storage.width <= codec.width
+  raises IndexError when storage.size == 0
+  ensures member: bitpattern.codecs.BDDSet.__contains__(codec, storage, result)
+
+# repr: BDDSet(<codec name>, [v1, v2, ...]) with at most ten values, else the first four and
+# the last two in encoding order and the size.
+fn variant.BDDSet_repr(codec: Int, storage: bitpattern.intset.IntSet) -> string
+  requires codec.width >= 1 and storage.width <= codec.width
+  ensures listed: storage.size <= 10 implies result == "BDDSet(" + codec.name + ", [" + join_ints(map(b in storage.head(10): int_decode(codec, b))) + "])"
+  ensures abbreviated: storage.size > 10 implies result == "BDDSet(" + codec.name + ", [" + join_ints(map(b in storage.head(4): int_decode(codec, b))) + ", ..., " + sdec(int_decode(codec, storage.last(2)[1])) + ", " + sdec(int_decode(codec, storage.last(2)[0])) + "], size=" + count_repr_text(storage.size) + ")"
+
+# DLPack export of a BDDSet is in encoding order, with the codec's dtype.
+fn variant.BDDSet_exported(codec: Int, storage: bitpattern.intset.IntSet) -> (string, list<int>, list<int>)
+  requires codec.width >= 1 and codec.width <= 64 and storage.width <= codec.width and storage.size <= 512
+  ensures dtype: storage.size > 0 implies result.0 == (if int_dtype(codec) == "INT8" then "int8" else if int_dtype(codec) == "INT16" then "int16" else if int_dtype(codec) == "INT32" then "int32" else if int_dtype(codec) == "INT64" then "int64" else if int_dtype(codec) == "UINT8" then "uint8" else if int_dtype(codec) == "UINT16" then "uint16" else if int_dtype(codec) == "UINT32" then "uint32" else "uint64")
+  ensures values: storage.size > 0 implies result.2 == map(b in storage.head(storage.size): int_decode(codec, b))
+
+# -- 5. strategies -----------------------------------------------------------------
+
+# from_set(source) generates members only, and every member is reachable; its minimal
+# example is the first member. The strategy cannot cross, so support.py draws examples.
+fn bitpattern.strategies.from_set(source: bitpattern.intset.IntSet) -> list<int>
+  ensures members: all(x in result: bitpattern.intset.IntSet.__contains__(source, x))
+  ensures nothing_from_empty: source.size == 0 implies len(result) == 0
+  ensures something_from_nonempty: source.size > 0 implies len(result) > 0
+
+fn variant.from_set_minimal(source: bitpattern.intset.IntSet) -> int
+  requires source.size > 0
+  ensures first_member: result == source.head(1)[0]
