@@ -22,15 +22,15 @@ def _is_hex(bytes: Span[Byte, _]) -> Bool:
     return len(bytes) >= 2 and Int(bytes[0]) == ord("0") and _is_letter(bytes, 1, "x")
 
 
-def _scan_digits(bytes: Span[Byte, _], start: Int, *, hex: Bool, mut out: List[Int]) -> Int:
-    """Appends digits with single underscores between them to `out`. Returns the index
-    after them, or `start` when there is no digit there."""
+def _scan_digits(bytes: Span[Byte, _], start: Int, *, hex: Bool, mut digits: List[Int]) -> Int:
+    """Appends digits with single underscores between them to `digits`. Returns the
+    index after them, or `start` when there is no digit there."""
     var i = start
     while i < len(bytes):
         var digit = digit_value(Int(bytes[i]), hex=hex)
         var separator = i > start and Int(bytes[i]) == ord("_") and i + 1 < len(bytes)
         if digit >= 0:
-            out.append(digit)
+            digits.append(digit)
         elif not (separator and digit_value(Int(bytes[i + 1]), hex=hex) >= 0):
             break
         i += 1
@@ -69,13 +69,13 @@ def parse_number(text: StringSlice) raises -> Real:
     var hex = _is_hex(bytes)
     var start = 2 if hex else 0
     var digits: List[Int] = []
-    var i = _scan_digits(bytes, start, hex=hex, out=digits)
+    var i = _scan_digits(bytes, start, hex=hex, digits=digits)
     if i == start:
         raise Error(t"not a number: {text}")
     var fraction_digits = 0
     if i < len(bytes) and Int(bytes[i]) == ord("."):
         var whole_digits = len(digits)
-        var end = _scan_digits(bytes, i + 1, hex=hex, out=digits)
+        var end = _scan_digits(bytes, i + 1, hex=hex, digits=digits)
         if end == i + 1 and not hex:
             raise Error(t"not a number: {text}")
         fraction_digits = len(digits) - whole_digits

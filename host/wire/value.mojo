@@ -289,8 +289,7 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
 
     def pairs(self) -> List[Tuple[Value, Value]]:
         """MAP: (key, value) pairs. RECORD: (field name, value) pairs."""
-        var items = self.items()
-        return [(items[i].copy(), items[i + 1].copy()) for i in range(0, len(items), 2)]
+        return [(self.item(i), self.item(i + 1)) for i in range(0, self.item_count(), 2)]
 
     def keys(self) -> List[Value]:
         """MAP: the keys."""
