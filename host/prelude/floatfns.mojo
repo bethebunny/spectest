@@ -1,10 +1,9 @@
 """The float functions: classification, neighbours, `ulp`, `qe`, rounding, `real`."""
 
-from bigint import BigUInt
-
 from numeric.bigint import BigInt
 from numeric.floats import (
     exactly,
+    floor_log2,
     is_finite as fl_is_finite,
     is_inf as fl_is_inf,
     is_nan as fl_is_nan,
@@ -15,7 +14,6 @@ from numeric.floats import (
     round_to,
     signbit as fl_signbit,
     to_real,
-    _floor_log2,
 )
 from numeric.formats import FloatFormat
 from numeric.real import Real
@@ -58,10 +56,7 @@ def next_down(v: Value) raises -> Value:
 
 
 def _pow2(k: Int) -> Real:
-    var one = BigUInt(UInt64(1))
-    if k >= 0:
-        return Real(lowest_numerator=BigInt(negative=False, magnitude=one << k), lowest_denominator=BigInt(1))
-    return Real(lowest_numerator=BigInt(1), lowest_denominator=BigInt(negative=False, magnitude=one << (-k)))
+    return Real.dyadic(False, 1, k)
 
 
 def ulp(f: FloatFormat, x: Value) raises -> Value:
@@ -75,7 +70,7 @@ def ulp(f: FloatFormat, x: Value) raises -> Value:
     elif r.is_zero():
         e = emin
     else:
-        e = _floor_log2(r.numerator.magnitude, r.denominator.magnitude)
+        e = floor_log2(r.numerator.magnitude, r.denominator.magnitude)
         e = min(max(e, emin), emax)
     return real_value(_pow2(e - f.fraction_bits))
 
@@ -88,7 +83,7 @@ def _ordinal(f: FloatFormat, bits: UInt64) -> Int:
 def _in_format(v: Value, f: FloatFormat) raises -> Value:
     var who = String("qe<", f, ">")
     if v.kind == .FLOAT:
-        if v.float_format_id() != f.id:
+        if v.float_format() != f:
             raise fail(who, t"compares {f} values, got a {float_of(v, who)}")
         return v.copy()
     var r = real_of(v, who)
@@ -114,7 +109,7 @@ def qe(x_in: Value, y_in: Value, format: Optional[FloatFormat]) raises -> Value:
     if x_nan or y_nan:
         return Value.qerr(BigInt(0), BigInt(0 if (x_nan and y_nan) else 1))
     var d = BigInt(_ordinal(fx, x.float_bits())) - BigInt(_ordinal(fx, y.float_bits()))
-    return Value.qerr(d.__abs__(), BigInt(0))
+    return Value.qerr(abs(d), BigInt(0))
 
 
 def qerr_part(who: String, v: Value, index: Int) raises -> Value:

@@ -1,8 +1,7 @@
 """Fixed-width integers and bytes: `wrap`, `fits`, `le_uint`, `bit_length`."""
 
-from bigint import BigUInt
-
 from numeric.bigint import BigInt
+from numeric.digits import magnitude_of_fields
 from numeric.fixed import int_max, int_min, wrapped
 from numeric.formats import FloatFormat
 from numeric.floats import exactly
@@ -29,19 +28,7 @@ def fits_float(x: Value, f: FloatFormat) raises -> Value:
 def le_uint(b: Value) raises -> Value:
     if b.kind != .BYTES:
         raise fail("le_uint", t"expected bytes, got {b}")
-    ref data = b.data()
-    var acc = BigUInt(UInt64(0))
-    var i = len(data) - 1
-    # seven bytes at a time keeps the big shifts few
-    while i >= 0:
-        var chunk = UInt64(0)
-        var taken = 0
-        while taken < 7 and i >= 0:
-            chunk = (chunk << 8) | UInt64(data[i])
-            i -= 1
-            taken += 1
-        acc = (acc << (8 * taken)) | BigUInt(chunk)
-    return Value.int(BigInt(negative=False, magnitude=acc^))
+    return Value.int(BigInt(negative=False, magnitude=magnitude_of_fields(b.data(), width=8)))
 
 
 def bit_length(n: Value) raises -> Value:

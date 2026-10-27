@@ -4,10 +4,9 @@ Every function raises an `Error` whose message says what went wrong; the evaluat
 attaches the location.
 """
 
-from bigint import BigUInt
 from numeric.bigint import BigInt
+from numeric.fixed import wrapped
 from numeric.floats import is_nan, to_real
-from numeric.formats import format_by_id
 from numeric.real import Real
 from prelude.util import real_value
 from syntax import ast
@@ -56,7 +55,7 @@ def real_of(v: Value) raises -> Real:
             lowest_denominator=v.item(1).as_bigint(),
         )
     if v.kind == .FLOAT:
-        var f = format_by_id(v.float_format_id())
+        var f = v.float_format()
         if is_nan(f, v.float_bits()):
             raise Error("promoting a NaN to a real is an error")
         return to_real(f, v.float_bits())
@@ -97,7 +96,7 @@ def index_of_value(v: Value, what: String) raises -> BigInt:
 
 def negate(v: Value) raises -> Value:
     if v.kind == .FLOAT:
-        var f = format_by_id(v.float_format_id())
+        var f = v.float_format()
         return Value.float(f, v.float_bits() ^ f.sign_mask())
     if v.kind == .INT:
         return Value.int(-v.as_bigint())
@@ -118,16 +117,7 @@ def _pow(base: BigInt, exponent: BigInt) raises -> BigInt:
     var n = exponent.int64_or_none()
     if n is None or Int(n.value()) * base.bit_length() > MAX_SHIFT:
         raise Error("the result of ** is too large to compute")
-    var k = Int(n.value())
-    var result = BigInt(1)
-    var square = base.copy()
-    while k > 0:
-        if k & 1 == 1:
-            result = result * square
-        k >>= 1
-        if k > 0:
-            square = square * square
-    return result^
+    return base ** Int(n.value())
 
 
 def _shift_amount(v: Value, op: String) raises -> Int:
@@ -140,29 +130,19 @@ def _shift_amount(v: Value, op: String) raises -> Int:
     return Int(n.value())
 
 
-def _twos(x: BigInt, modulus: BigUInt) -> BigUInt:
-    """x modulo 2**W as a non-negative number."""
-    if x.negative:
-        return modulus - x.magnitude
-    return x.magnitude.copy()
-
-
 def _bitwise(a: BigInt, b: BigInt, is_or: Bool) -> BigInt:
     var sa = a.int64_or_none()
     var sb = b.int64_or_none()
     if sa is not None and sb is not None:
         return BigInt(Int(sa.value() | sb.value() if is_or else sa.value() & sb.value()))
     var width = max(a.bit_length(), b.bit_length()) + 2
-    var modulus = BigUInt(1) << width
-    var ua = _twos(a, modulus)
-    var ub = _twos(b, modulus)
+    var ua = wrapped(a, width, signed=False).magnitude.copy()
+    var ub = wrapped(b, width, signed=False).magnitude.copy()
     var combined = ua | ub
     if not is_or:
         # a & b = a + b - (a | b) for non-negative a and b.
         combined = (ua + ub) - combined
-    if combined.bit(width - 1):
-        return BigInt(negative=True, magnitude=modulus - combined)
-    return BigInt(negative=False, magnitude=combined^)
+    return wrapped(BigInt(negative=False, magnitude=combined^), width, signed=True)
 
 
 def arith(op: ast.Op, a: Value, b: Value) raises -> Value:
@@ -186,7 +166,7 @@ def arith(op: ast.Op, a: Value, b: Value) raises -> Value:
         )
         if op == .SHL:
             return Value.int(x << n)
-        return Value.int(x // (BigInt(1) << n))
+        return Value.int(x >> n)
     if op == .BITAND or op == .BITOR:
         var x = big_of(a, String(t"the left operand of {op}"))
         var y = big_of(b, String(t"the right operand of {op}"))

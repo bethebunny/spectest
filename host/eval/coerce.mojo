@@ -4,9 +4,8 @@ patterns of fixed-width values."""
 from check import types as ty
 from numeric.bigint import BigInt
 from numeric.fixed import int_max, int_min, pattern_of, signed_of
-from numeric.floats import exactly, is_nan, is_zero, round_to, signbit, to_real
+from numeric.floats import converted, exactly, is_nan
 from numeric.formats import FloatFormat, format_by_id
-from numeric.real import Real
 from wire.value import Value
 
 from .numbers import real_of, show, to_real_kind
@@ -41,27 +40,21 @@ def _inexact(what: String, v: Value, f: FloatFormat) -> Error:
 
 
 def _to_float(v: Value, f: FloatFormat, what: String) raises -> Value:
-    var r: Real
+    var found: Optional[UInt64]
     if v.kind == .FLOAT:
-        var src = format_by_id(v.float_format_id())
+        var src = v.float_format()
         if src == f:
             return v.copy()
-        var bits = v.float_bits()
-        if is_nan(src, bits):
+        if is_nan(src, v.float_bits()):
             raise _inexact(what, v, f)
-        if is_zero(src, bits):
-            return Value.float(f, f.sign_mask() if signbit(src, bits) else UInt64(0))
-        r = to_real(src, bits)
+        found = converted(src, f, v.float_bits())
     elif v.kind == .INT or v.kind == .REAL:
-        r = real_of(v)
+        found = exactly(f, real_of(v))
     else:
         raise Error(t"{what}: expected a number for {f}, got {show(v)}")
-    if r.is_inf():
-        return Value.float(f, round_to(f, r))
-    var found = exactly(f, r)
-    if found is None:
-        raise _inexact(what, v, f)
-    return Value.float(f, found.value())
+    if case .Some(bits) = found:
+        return Value.float(f, bits)
+    raise _inexact(what, v, f)
 
 
 def coerce_arg(types: ty.Types, v: Value, t: Int, what: String) raises -> Value:

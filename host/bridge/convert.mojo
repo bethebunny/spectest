@@ -10,7 +10,7 @@ from std.ffi import c_int
 from std.python._cpython import PyObjectPtr
 
 from numeric.bigint import BigInt
-from numeric.formats import format_by_id, format_by_name
+from numeric.formats import format_by_name
 from wire.value import Value
 
 from .capi import (
@@ -198,7 +198,7 @@ def _to_py(value: Value, w: Pointer[Wire, MutUntrackedOrigin]) raises -> Owned:
         _ = len(digits)  # keeps the text alive through the call
         return Owned(checked(made))
     if kind == .FLOAT:
-        var fmt = format_by_id(value.float_format_id())
+        var fmt = value.float_format()
         return call(w[].float_cls, [new_string(String(fmt.name())), new_u64(value.float_bits())])
     if kind == .STRING:
         return new_string(value.text())

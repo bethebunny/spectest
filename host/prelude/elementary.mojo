@@ -3,7 +3,7 @@ the argument's format, with IEEE 754's special cases)."""
 
 from std.memory import bitcast
 
-from numeric.floats import round_to
+from numeric.floats import is_nan, round_to
 from numeric.formats import FloatFormat, BF16, F16, F32, F64
 from numeric.real import Real
 from prelude.mpfr import Mpfr
@@ -51,16 +51,12 @@ def _to_double(f: FloatFormat, bits: UInt64) -> Float64:
     return Float64(bitcast[DType.float32](UInt32(bits) << 16))
 
 
-def canonical_nan(f: FloatFormat) -> UInt64:
-    return f.exponent_mask() | (UInt64(1) << UInt64(f.fraction_bits - 1))
-
-
 def cr(function: String, x: Value) raises -> Value:
     var who = String("cr.", function)
     var f = float_of(x, who)
     var bits = x.float_bits()
-    if (bits & f.exponent_mask()) == f.exponent_mask() and (bits & f.fraction_mask()) != 0:
-        return Value.float(f, canonical_nan(f))
+    if is_nan(f, bits):
+        return Value.float(f, f.quiet_nan())
     var prec = f.fraction_bits + 1
     var emin = 1 - f.bias()
     var m = Mpfr()
@@ -71,7 +67,7 @@ def cr(function: String, x: Value) raises -> Value:
     var ternary = m.apply(function, 1, 0)
     m.subnormalize(1, ternary)
     if m.is_nan(1):
-        return Value.float(f, canonical_nan(f))
+        return Value.float(f, f.quiet_nan())
     var sign = f.sign_mask() if m.negative(1) else UInt64(0)
     if m.is_inf(1):
         return Value.float(f, sign | f.exponent_mask())

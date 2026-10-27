@@ -10,9 +10,8 @@ from std.ffi import OwnedDLHandle, _Global
 from std.os import getenv
 from std.pathlib import Path
 
-from bigint import BigUInt
-
 from numeric.bigint import BigInt
+from numeric.digits import magnitude_of_fields
 from numeric.real import Real
 
 comptime RNDN = Int32(0)
@@ -184,23 +183,8 @@ struct Mpfr(Movable):
         var exp = self.cells[4 * cell + 2]
         var limbs = (prec + 63) // 64
         var ptr = Pointer[UInt64, MutUntrackedOrigin](unsafe_from_address=self.cells[4 * cell + 3])
-        var magnitude = BigUInt(UInt64(0))
-        for k in range(limbs - 1, -1, -1):
-            magnitude = (magnitude << 64) | BigUInt(ptr[unsafe_offset=k])
-        # dropping trailing zero bits leaves an odd numerator, so the power of two is in lowest terms
-        var zeros = 0
-        while not magnitude.bit(zeros):
-            zeros += 1
-        magnitude = magnitude >> zeros
-        var shift = exp - 64 * limbs + zeros
-        var numerator = BigInt(negative=self.negative(cell), magnitude=magnitude^)
-        var one = BigUInt(UInt64(1))
-        if shift >= 0:
-            return Real(
-                lowest_numerator=BigInt(negative=numerator.negative, magnitude=numerator.magnitude << shift),
-                lowest_denominator=BigInt(1),
-            )
-        return Real(lowest_numerator=numerator^, lowest_denominator=BigInt(negative=False, magnitude=one << (-shift)))
+        var magnitude = magnitude_of_fields(Span(unsafe_ptr=ptr, length=limbs), width=64)
+        return Real.dyadic(self.negative(cell), magnitude, exp - 64 * limbs)
 
     # Operations
 

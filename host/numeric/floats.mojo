@@ -61,7 +61,7 @@ def to_real(format: FloatFormat, bits: UInt64) raises -> Real:
 # Real to pattern
 
 
-def _floor_log2(n: BigUInt, d: BigUInt) -> Int:
+def floor_log2(n: BigUInt, d: BigUInt) -> Int:
     """`floor(log2(n / d))` for positive n and d."""
     var e = n.bits() - d.bits()
     var at_least = d << e <= n if e >= 0 else d <= n << -e
@@ -89,7 +89,7 @@ def round_ratio(format: FloatFormat, negative: Bool, n: BigUInt, d: BigUInt) -> 
     infinity and underflowing gradually. A zero result keeps the sign."""
     if not n:
         return format.sign_mask() if negative else UInt64(0)
-    var e = _floor_log2(n, d)
+    var e = floor_log2(n, d)
     var q = max(e, 1 - format.bias()) - format.fraction_bits
     var num = n << -q if q < 0 else n.copy()
     var den = d << q if q >= 0 else d.copy()

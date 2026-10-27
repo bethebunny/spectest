@@ -8,7 +8,7 @@ from check import types as ty
 from check.types import Types
 from numeric.bigint import BigInt
 from numeric.fixed import int_max, int_min, low_mask
-from numeric.floats import exactly, is_nan, is_zero, round_to, signbit, to_real
+from numeric.floats import converted, is_nan, signbit
 from numeric.formats import FloatFormat, format_by_id
 from .util import norm_name
 from wire.format import format_value
@@ -35,7 +35,7 @@ def _float(
 ) raises -> Value:
     if v.kind != .FLOAT:
         raise _mismatch(types, t, v, path)
-    var src = format_by_id(v.float_format_id())
+    var src = v.float_format()
     if src == f:
         return v.copy()
     var bits = v.float_bits()
@@ -58,15 +58,9 @@ def _float(
             f,
             f.exponent_mask() | kept | (f.sign_mask() if signbit(src, bits) else UInt64(0)),
         )
-    if is_zero(src, bits):
-        return Value.float(f, f.sign_mask() if signbit(src, bits) else UInt64(0))
-    var r = to_real(src, bits)
-    if r.is_inf():
-        return Value.float(f, round_to(f, r))
-    var found = exactly(f, r)
-    if not found:
-        raise _mismatch(types, t, v, path, String("not exact in ", f))
-    return Value.float(f, found.value())
+    if case .Some(exact) = converted(src, f, bits):
+        return Value.float(f, exact)
+    raise _mismatch(types, t, v, path, String("not exact in ", f))
 
 
 def _record(

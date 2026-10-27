@@ -2,7 +2,7 @@
 
 from numeric.bigint import BigInt
 from numeric.floats import to_real
-from numeric.formats import FloatFormat, format_by_id
+from numeric.formats import FloatFormat
 from numeric.real import Real
 from wire.value import Value
 
@@ -27,17 +27,15 @@ def int_of(v: Value, who: String) raises -> BigInt:
 def float_of(v: Value, who: String) raises -> FloatFormat:
     if v.kind != .FLOAT:
         raise fail(who, t"expected a float, got {v}")
-    return format_by_id(v.float_format_id())
+    return v.float_format()
 
 
 def real_of(v: Value, who: String) raises -> Real:
     """An INT, REAL or FLOAT as an extended real. A NaN raises."""
-    if v.kind == .INT:
-        return Real(v.as_bigint())
-    if v.kind == .REAL:
-        return Real(lowest_numerator=v.item(0).as_bigint(), lowest_denominator=v.item(1).as_bigint())
+    if v.kind == .INT or v.kind == .REAL:
+        return v.as_real()
     if v.kind == .FLOAT:
-        var f = format_by_id(v.float_format_id())
+        var f = v.float_format()
         try:
             return to_real(f, v.float_bits())
         except:

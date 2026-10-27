@@ -9,7 +9,6 @@ from std.hash import default_hasher
 
 from numeric.bigint import BigInt
 from numeric.floats import is_nan as fl_is_nan, to_real
-from numeric.formats import format_by_id
 from prelude.util import codepoint_count, fail, int_of, list_items
 from wire.equality import hash_same, same
 from wire.order import compare, is_ord
@@ -221,11 +220,11 @@ comptime FLOAT_NAN_ANY = 2
 
 
 def _eq_floats(a: Value, b: Value, mode: Int) raises -> Bool:
-    if a.float_format_id() != b.float_format_id():
+    if a.float_format() != b.float_format():
         return False
     if mode == FLOAT_BITS:
         return a.float_bits() == b.float_bits()
-    var f = format_by_id(a.float_format_id())
+    var f = a.float_format()
     var a_nan = fl_is_nan(f, a.float_bits())
     var b_nan = fl_is_nan(f, b.float_bits())
     if a_nan or b_nan:

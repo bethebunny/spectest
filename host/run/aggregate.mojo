@@ -84,7 +84,7 @@ def _members(
     total_out = Int(exact.value()) if exact is not None and exact.value() < UInt64(1 << 62) else (1 << 62)
     var rng = Rng(seed)
     # The ends of the set, then random members.
-    out.append(value_from_bits(spec.types, elem, ctx.nth(s, BigUInt(UInt64(0)))))
+    out.append(value_from_bits(spec.types, elem, ctx.nth(s, BigUInt(0))))
     if exact is not None:
         out.append(value_from_bits(spec.types, elem, ctx.nth(s, BigUInt(exact.value() - 1))))
     for _ in range(max(0, samples - 2)):
