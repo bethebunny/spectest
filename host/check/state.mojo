@@ -4,16 +4,15 @@ and the type relations (join, equality and order rules) the expression rules use
 
 from std.collections import Dict
 
-from numeric.literal import is_integer_literal, parse_number
+from numeric.literal import parse_number
 from numeric.real import Real
 from prelude.names import NAMES
 from syntax import ast
-from syntax.ast import Ast, Diagnostic, Span
+from syntax.ast import Diagnostic
 
 from check import types as ty
 from check.psig import PreludeSig, make_sig
 from check.spec import Resolution, Spec
-from check.types import ANY_TYPE, Types
 
 
 comptime NO_TYPE = -1

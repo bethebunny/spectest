@@ -44,7 +44,6 @@ from check.psig import (
     T_CODEPOINTS,
     T_FRESH,
     T_TWO_MODELS,
-    T_EQ,
     T_BIT_LENGTH,
     T_FROM_CODEPOINTS,
 )

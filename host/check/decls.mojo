@@ -9,12 +9,10 @@ from numeric.formats import format_by_id
 from numeric.real import Real
 from numeric.bigint import BigInt
 from syntax import ast
-from syntax.ast import Diagnostic
 
 from check import types as ty
 from check.exprs import (
     assignable,
-    binds_value,
     infer,
     poison_subtree,
     want_bool,
@@ -43,7 +41,6 @@ from check.state import (
     K_OBSERVER,
     K_PARTITION,
     K_PARTITION_SET,
-    NO_TYPE,
     is_builtin_type_name,
     is_reserved,
     qualify_error,

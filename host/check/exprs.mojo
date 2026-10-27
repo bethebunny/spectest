@@ -11,7 +11,7 @@ from numeric.literal import is_integer_literal
 from syntax import ast
 
 from check import types as ty
-from check.psig import CallInfo, PreludeSig
+from check.psig import CallInfo
 from check.sigs import type_prelude
 from check.spec import (
     Param,
