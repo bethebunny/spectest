@@ -56,6 +56,13 @@ def _check_ordered(items: List[Value], who: String) raises:
             raise fail(who, describe(items[i]) + " is not ordered (floats compare after real())")
 
 
+def _cmp(a: Value, b: Value, who: String) raises -> Int:
+    try:
+        return compare(a, b)
+    except e:
+        raise fail(who, String(e))
+
+
 def _merge_sort(items: List[Value]) raises -> List[Value]:
     var out = items.copy()
     var n = len(out)
@@ -69,7 +76,7 @@ def _merge_sort(items: List[Value]) raises -> List[Value]:
             var i = lo
             var j = mid
             while i < mid and j < hi:
-                if compare(out[i], out[j]) <= 0:
+                if _cmp(out[i], out[j], "sorted") <= 0:
                     merged.append(out[i].copy())
                     i += 1
                 else:
@@ -97,7 +104,7 @@ def is_sorted(xs: Value) raises -> Value:
     var items = list_items(xs, "is_sorted")
     _check_ordered(items, "is_sorted")
     for i in range(1, len(items)):
-        if compare(items[i - 1], items[i]) > 0:
+        if _cmp(items[i - 1], items[i], "is_sorted") > 0:
             return Value.bool(False)
     return Value.bool(True)
 
