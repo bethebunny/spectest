@@ -1,5 +1,6 @@
 from std.pathlib import Path
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
+from std.ffi import external_call
 from std.time import perf_counter_ns
 
 from check.checker import check, check_source
@@ -23,6 +24,21 @@ from check_testkit import (
 )
 from syntax import ast
 from syntax.parser import parse_spec
+
+
+comptime CLOCK_THREAD_CPUTIME_ID = Int32(3)
+
+
+@fieldwise_init
+struct Timespec(Copyable, Movable):
+    var sec: Int64
+    var nsec: Int64
+
+
+def thread_cpu_ns() -> Int:
+    var ts = Timespec(0, 0)
+    _ = external_call["clock_gettime", Int32](CLOCK_THREAD_CPUTIME_ID, UnsafePointer(to=ts))
+    return Int(ts.sec) * 1_000_000_000 + Int(ts.nsec)
 
 
 def sample() raises -> Spec:
@@ -395,12 +411,14 @@ def test_deque_interface() raises:
 def test_bitpattern_checks_fast() raises:
     var source = Path("trials/bitpattern/bitpattern.spec").read_text()
     var ast = parse_spec(source, "trials/bitpattern/bitpattern.spec")
-    var start = perf_counter_ns()
+    var wall_start = perf_counter_ns()
+    var cpu_start = thread_cpu_ns()
     var spec = check(ast^)
-    var elapsed = perf_counter_ns() - start
-    print("bitpattern.spec checked in", Float64(elapsed) / 1.0e6, "ms")
+    var cpu = thread_cpu_ns() - cpu_start
+    var wall = perf_counter_ns() - wall_start
+    print("bitpattern.spec checked in", Float64(cpu) / 1.0e6, "ms cpu,", Float64(wall) / 1.0e6, "ms wall")
     assert_equal(len(spec.fns), 236)
-    assert_true(elapsed < 500_000_000, "checking bitpattern.spec took 500 ms or more")
+    assert_true(cpu < 50_000_000, "checking bitpattern.spec took 50 ms of CPU time or more")
 
 
 def test_aggregate_shapes() raises:
