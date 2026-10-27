@@ -1,25 +1,17 @@
 """ASCII character classes, on a byte widened to `Int`."""
 
 
-def is_digit(c: Int) -> Bool:
-    return ord("0") <= c <= ord("9")
+def is_digit(c: Int, *, hex: Bool = False) -> Bool:
+    """A decimal digit, or a hexadecimal one when `hex`."""
+    if ord("0") <= c <= ord("9"):
+        return True
+    return hex and (ord("a") <= c <= ord("f") or ord("A") <= c <= ord("F"))
 
 
-def is_hex(c: Int) -> Bool:
-    return is_digit(c) or ord("a") <= c <= ord("f") or ord("A") <= c <= ord("F")
-
-
-def is_alpha(c: Int) -> Bool:
+def is_word_start(c: Int) -> Bool:
+    """A letter or `_`, which may start a name."""
     return ord("a") <= c <= ord("z") or ord("A") <= c <= ord("Z") or c == ord("_")
 
 
-def is_alnum(c: Int) -> Bool:
-    return is_alpha(c) or is_digit(c)
-
-
-def is_space(c: Int) -> Bool:
-    return c == ord(" ") or c == ord("\t") or c == 11 or c == 12
-
-
-def hex_value(c: Int) -> Int:
-    return c - (ord("0") if is_digit(c) else (ord("a") - 10 if c >= ord("a") else ord("A") - 10))
+def is_word_char(c: Int) -> Bool:
+    return is_word_start(c) or is_digit(c)

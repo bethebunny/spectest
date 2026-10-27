@@ -1,36 +1,25 @@
 from std.testing import assert_equal, TestSuite
 
-from syntax.lexer import (
-    tokenize,
-    T_NAME,
-    T_NUMBER,
-    T_STRING,
-    T_OP,
-    T_PERF,
-    T_NEWLINE,
-    T_INDENT,
-    T_DEDENT,
-    T_EOF,
-)
+from syntax.lexer import tokens
 
 
 def kinds(source: String) raises -> String:
     """Tokens as words: layout tokens by name, strings and perf text quoted."""
     var out = String()
-    for t in tokenize(source, "t.spec"):
+    for t in tokens(source, "t.spec"):
         if out.byte_length() > 0:
             out += " "
-        if t.kind == T_NEWLINE:
+        if t.kind == .NEWLINE:
             out += "NEWLINE"
-        elif t.kind == T_INDENT:
+        elif t.kind == .INDENT:
             out += "INDENT"
-        elif t.kind == T_DEDENT:
+        elif t.kind == .DEDENT:
             out += "DEDENT"
-        elif t.kind == T_EOF:
+        elif t.kind == .EOF:
             out += "EOF"
-        elif t.kind == T_STRING:
+        elif t.kind == .STRING:
             out += '"' + t.text + '"'
-        elif t.kind == T_PERF:
+        elif t.kind == .PERF:
             out += "PERF(" + t.text + ")"
         else:
             out += t.text
@@ -119,18 +108,18 @@ def test_strings_and_escapes() raises:
 
 
 def test_spans() raises:
-    var toks = tokenize('spec a\n  # c\nfn f("é" x)\n', "t.spec")
+    var toks = tokens('spec a\n  # c\nfn f("é" x)\n', "t.spec")
     # spec a NEWLINE fn f ( "é" x ) NEWLINE EOF
-    assert_equal(toks[2].line, 1)
-    assert_equal(toks[2].col, 7)
-    assert_equal(toks[3].line, 3)
-    assert_equal(toks[3].col, 1)
-    assert_equal(toks[4].col, 4)
-    assert_equal(toks[6].col, 6)
-    assert_equal(toks[6].end_col, 9)
+    assert_equal(toks[2].span.line, 1)
+    assert_equal(toks[2].span.column, 7)
+    assert_equal(toks[3].span.line, 3)
+    assert_equal(toks[3].span.column, 1)
+    assert_equal(toks[4].span.column, 4)
+    assert_equal(toks[6].span.column, 6)
+    assert_equal(toks[6].end_column, 9)
     # Columns count code points; offsets count bytes.
-    assert_equal(toks[7].col, 10)
-    assert_equal(toks[7].start, 13 + 10)
+    assert_equal(toks[7].span.column, 10)
+    assert_equal(toks[7].span.start, 13 + 10)
 
 
 def main() raises:

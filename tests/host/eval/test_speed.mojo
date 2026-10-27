@@ -46,7 +46,7 @@ def test_judging_the_clauses_of_cos_takes_microseconds() raises:
     var cos = spec.fn_named("cos").value()
     var clauses = List[Int]()
     for c in spec.fns[cos].clauses:
-        if spec.clauses[c].kind == 25 or spec.clauses[c].kind == 29:
+        if spec.clauses[c].kind == .ENSURES or spec.clauses[c].kind == .RELATES:
             clauses.append(c)
     assert_equal(len(clauses), 3)
     # cos(1.0) correctly rounded, and the planned call cos(-1.0) the same.

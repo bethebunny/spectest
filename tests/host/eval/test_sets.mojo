@@ -90,7 +90,7 @@ def test_a_node_that_is_not_a_class_is_an_error() raises:
 def test_membership_in_a_set_expression() raises:
     var spec = spec_of("fn f(x: u8) -> u8\n  aggregate total: sum(v in u8.range(1, 4) | {9}: v) <= 20\n")
     var clause = spec.clauses[clause_pos(spec, "f.total")].expr
-    var set_node = spec.ast.kid(spec.ast.kid(clause, 0), 0)
+    var set_node = spec.ast.child(spec.ast.child(clause, 0), 0)
     for x in [1, 2, 3, 9]:
         assert_true(set_contains(spec, set_node, Value.int(x)))
     for x in [0, 4, 8, 10, 255]:

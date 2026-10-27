@@ -280,23 +280,23 @@ struct Checker:
 
     # -- tree access ----------------------------------------------------------
 
-    def kind_of(self, n: Int) -> UInt8:
+    def kind_of(self, n: Int) -> ast.NodeKind:
         return self.spec.ast.nodes[n].kind
 
-    def op_of(self, n: Int) -> UInt8:
+    def op_of(self, n: Int) -> ast.Op:
         return self.spec.ast.nodes[n].op
 
     def text_of(self, n: Int) -> String:
         return self.spec.ast.nodes[n].text.copy()
 
     def kid(self, n: Int, k: Int) -> Int:
-        return self.spec.ast.nodes[n].kids[k]
+        return self.spec.ast.nodes[n].children[k]
 
     def nkids(self, n: Int) -> Int:
-        return len(self.spec.ast.nodes[n].kids)
+        return len(self.spec.ast.nodes[n].children)
 
     def kids_of(self, n: Int) -> List[Int]:
-        return self.spec.ast.nodes[n].kids.copy()
+        return self.spec.ast.nodes[n].children.copy()
 
     def line_of(self, n: Int) -> Int:
         return self.spec.ast.nodes[n].span.line
@@ -304,7 +304,7 @@ struct Checker:
     def decl_nodes(self) -> List[Int]:
         """The declarations to check: those of every file read, or the first file's own
         when none were listed."""
-        return self.decls.copy() if self.decls else self.spec.ast.nodes[self.spec.ast.root].kids.copy()
+        return self.decls.copy() if self.decls else self.spec.ast.nodes[self.spec.ast.root()].children.copy()
 
     def source_of(self, n: Int) -> String:
         return self.spec.ast.source_text(n)
@@ -312,8 +312,7 @@ struct Checker:
     # -- reporting -------------------------------------------------------------
 
     def error(mut self, node: Int, message: Some[Writable]):
-        var span = self.spec.ast.nodes[node].span
-        self.diags.append(Diagnostic(self.spec.ast.path_of(node), span, String(message)))
+        self.diags.append(self.spec.ast.diagnostic(node, message))
 
     # -- types -----------------------------------------------------------------
 
@@ -533,12 +532,12 @@ struct Checker:
     def literal_value(self, n: Int) -> Optional[Real]:
         """The value of a numeric literal, possibly negated."""
         var k = self.kind_of(n)
-        if k == ast.NUM:
+        if k == .NUM:
             try:
                 return parse_number(self.spec.ast.nodes[n].text)
             except:
                 return None
-        if k == ast.UNARY and self.op_of(n) == ast.NEG:
+        if k == .UNARY and self.op_of(n) == .NEG:
             var inner = self.literal_value(self.kid(n, 0))
             if inner is not None:
                 return -inner.value()

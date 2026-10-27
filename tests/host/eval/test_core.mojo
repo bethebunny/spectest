@@ -267,7 +267,7 @@ def test_errors_name_the_expression_and_location() raises:
 def test_comprehension_body_must_be_bool() raises:
     var spec = spec_of(fragment("xs: list<int>", "all(x in xs: x > 0)"))
     var host = Mock()
-    var body = spec.ast.kid(expr_node(spec), 1)
+    var body = spec.ast.child(expr_node(spec), 1)
     # The body evaluated outside its comprehension has no value for x.
     try:
         _ = evaluate(spec, body, Env(one(ints(1))), host)

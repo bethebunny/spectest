@@ -186,7 +186,7 @@ struct Machine(Property):
         self.invs = []
         for c in loaded.spec.models[iface].clauses:
             ref cl = loaded.spec.clauses[c]
-            if cl.kind == ast.INVARIANT:
+            if cl.kind == .INVARIANT:
                 self.invs.append(InvTally(c, cl.id.copy(), source_text(loaded.spec, cl.node)))
         self.inv_host = RunHost(loaded, client)
         self.inv_host.tnames = self.props[0].host.tnames.copy()

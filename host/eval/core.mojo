@@ -139,15 +139,15 @@ def ev_inner[
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
     var k = n.kind
-    if k == ast.NAME:
+    if k == .NAME:
         return ev_name(spec, e, env, run, host)
-    if k == ast.BINARY:
+    if k == .BINARY:
         return ev_binary(spec, e, env, run, host)
-    if k == ast.CALL:
+    if k == .CALL:
         return ev_call(spec, e, env, run, host)
-    if k == ast.ATTR:
+    if k == .ATTR:
         return ev_attr(spec, e, env, run, host)
-    if k == ast.NUM:
+    if k == .NUM:
         var small = _int_literal(n.text)
         if small is not None:
             return Value.int(small.value())
@@ -155,58 +155,58 @@ def ev_inner[
         if is_integer_literal(n.text):
             return Value.int(r.numerator.copy())
         return Value.real(r.numerator.copy(), r.denominator.copy())
-    if k == ast.STR:
+    if k == .STR:
         return Value.string(n.text.copy())
-    if k == ast.BOOL:
-        return Value.bool(n.op == ast.TRUE)
-    if k == ast.NONE:
+    if k == .BOOL:
+        return Value.bool(n.op == .TRUE)
+    if k == .NONE:
         return Value.none()
-    if k == ast.UNARY:
-        var operand = ev(spec, n.kids[0], env, run, host)
-        if n.op == ast.NOT:
+    if k == .UNARY:
+        var operand = ev(spec, n.children[0], env, run, host)
+        if n.op == .NOT:
             return Value.bool(not want_bool(operand, "the operand of not"))
         return fit(spec.types, negate(operand), spec.node_types[e])
-    if k == ast.IF:
-        var branch = n.kids[1] if want_bool(ev(spec, n.kids[0], env, run, host), "the condition of if") else n.kids[2]
+    if k == .IF:
+        var branch = n.children[1] if want_bool(ev(spec, n.children[0], env, run, host), "the condition of if") else n.children[2]
         return fit(spec.types, ev(spec, branch, env, run, host), spec.node_types[e])
-    if k == ast.LET:
-        run.push(e, ev(spec, n.kids[0], env, run, host))
-        var body = ev(spec, n.kids[1], env, run, host)
+    if k == .LET:
+        run.push(e, ev(spec, n.children[0], env, run, host))
+        var body = ev(spec, n.children[1], env, run, host)
         run.pop()
         return body^
-    if k == ast.COMPREHENSION:
+    if k == .COMPREHENSION:
         return ev_comprehension(spec, e, env, run, host)
-    if k == ast.INDEX:
-        var v = ev(spec, n.kids[0], env, run, host)
-        var i = ev(spec, n.kids[1], env, run, host)
+    if k == .INDEX:
+        var v = ev(spec, n.children[0], env, run, host)
+        var i = ev(spec, n.children[1], env, run, host)
         if v.kind == wv.MAP:
             return map_lookup(v, i)
         if not is_sequence(v):
             raise Error(t"cannot index {show(v)}")
         return index_value(v, i)
-    if k == ast.SLICE:
-        var v = ev(spec, n.kids[0], env, run, host)
-        var lo = ev(spec, n.kids[1], env, run, host)
-        var hi = ev(spec, n.kids[2], env, run, host)
+    if k == .SLICE:
+        var v = ev(spec, n.children[0], env, run, host)
+        var lo = ev(spec, n.children[1], env, run, host)
+        var hi = ev(spec, n.children[2], env, run, host)
         if not is_sequence(v):
             raise Error(t"cannot slice {show(v)}")
         return slice_value(v, lo, hi)
-    if k == ast.TUPLE_INDEX:
-        var v = ev(spec, n.kids[0], env, run, host)
+    if k == .TUPLE_INDEX:
+        var v = ev(spec, n.children[0], env, run, host)
         if v.kind != wv.TUPLE and v.kind != wv.LIST:
             raise Error(t".{n.text} needs a tuple, but the value is {show(v)}")
         var index = Int(n.text)
         if index < 0 or index >= v.count():
             raise Error(t".{n.text} is out of range for a tuple of {v.count()} elements")
         return v.item(index)
-    if k == ast.LIST or k == ast.TUPLE:
-        var items = [ev(spec, kid, env, run, host) for kid in n.kids]
-        if k == ast.TUPLE:
+    if k == .LIST or k == .TUPLE:
+        var items = [ev(spec, kid, env, run, host) for kid in n.children]
+        if k == .TUPLE:
             return Value.tuple(items^)
         return fit(spec.types, Value.list(items^), spec.node_types[e])
-    if k == ast.SET:
+    if k == .SET:
         raise Error("{...} is a partition set: it has no value in a clause")
-    raise Error(t"cannot evaluate a {ast.kind_name(k)} node")
+    raise Error(t"cannot evaluate a {k} node")
 
 
 def map_lookup(m: Value, key: Value) raises -> Value:
@@ -248,7 +248,7 @@ def ev_name[
     if kind == sp.R_ENUM_MEMBER:
         return enum_member(spec, r.owner, r.index)
     if kind == sp.R_CLASS:
-        var expr = spec.ast.nodes[r.index].kids[0]
+        var expr = spec.ast.nodes[r.index].children[0]
         if tkind(spec, expr) == ty.BOOL:
             return ev(spec, expr, env, run, host)
         raise Error(t"class {name} is a partition set: it has no value in a clause")
@@ -285,12 +285,12 @@ def ev_attr[
         var top = float_max(f)
         return Value.float(f, top if r.name == "max" else top | f.sign_mask())
     if kind == sp.R_OBSERVER:
-        var obj = ev(spec, n.kids[0], env, run, host)
+        var obj = ev(spec, n.children[0], env, run, host)
         if obj.kind != wv.HANDLE:
             raise Error(t"observer {n.text} needs a handle, but got {show(obj)}")
         return host.observe(obj, r.owner, r.index, [])
     if kind == sp.R_RECORD_FIELD:
-        var rec = ev(spec, n.kids[0], env, run, host)
+        var rec = ev(spec, n.children[0], env, run, host)
         if rec.kind != wv.RECORD:
             raise Error(t".{n.text} needs a record, but got {show(rec)}")
         for i in range(rec.count()):
@@ -298,7 +298,7 @@ def ev_attr[
                 return rec.item(2 * i + 1)
         raise Error(t"record {rec.name()} has no field {n.text}")
     if kind == sp.R_QERR_PART:
-        var q = ev(spec, n.kids[0], env, run, host)
+        var q = ev(spec, n.children[0], env, run, host)
         if q.kind != wv.QERR:
             raise Error(t".{n.text} needs a qerr, but got {show(q)}")
         return q.item(0 if n.text == "steps" else 1)
@@ -315,33 +315,33 @@ def ev_binary[
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
     var op = n.op
-    if op == ast.IMPLIES or op == ast.AND or op == ast.OR:
-        var name = "implies" if op == ast.IMPLIES else ("and" if op == ast.AND else "or")
-        var left = want_bool(ev(spec, n.kids[0], env, run, host), String("the left operand of ", name))
-        if left if op == ast.OR else not left:
-            return Value.bool(op != ast.AND)
-        return Value.bool(want_bool(ev(spec, n.kids[1], env, run, host), String("the right operand of ", name)))
+    if op == .IMPLIES or op == .AND or op == .OR:
+        var name = "implies" if op == .IMPLIES else ("and" if op == .AND else "or")
+        var left = want_bool(ev(spec, n.children[0], env, run, host), String("the left operand of ", name))
+        if left if op == .OR else not left:
+            return Value.bool(op != .AND)
+        return Value.bool(want_bool(ev(spec, n.children[1], env, run, host), String("the right operand of ", name)))
     if tkind(spec, e) == ty.SET:
-        raise Error(t"{ast.op_name(op)} combines partition sets: it has no value in a clause")
-    if op == ast.IN and tkind(spec, n.kids[1]) == ty.SET:
-        return Value.bool(set_contains(spec, n.kids[1], ev(spec, n.kids[0], env, run, host)))
-    var a = ev(spec, n.kids[0], env, run, host)
-    var b = ev(spec, n.kids[1], env, run, host)
+        raise Error(t"{op} combines partition sets: it has no value in a clause")
+    if op == .IN and tkind(spec, n.children[1]) == ty.SET:
+        return Value.bool(set_contains(spec, n.children[1], ev(spec, n.children[0], env, run, host)))
+    var a = ev(spec, n.children[0], env, run, host)
+    var b = ev(spec, n.children[1], env, run, host)
     var has_qerr = a.kind == wv.QERR or b.kind == wv.QERR
-    if op == ast.EQ or op == ast.NE:
+    if op == .EQ or op == .NE:
         var equal: Bool
         if has_qerr:
-            equal = qerr_compare(ast.EQ, a, b)
-        elif tkind(spec, n.kids[0]) == ty.CHOICE or tkind(spec, n.kids[1]) == ty.CHOICE:
+            equal = qerr_compare(ast.Op.EQ, a, b)
+        elif tkind(spec, n.children[0]) == ty.CHOICE or tkind(spec, n.children[1]) == ty.CHOICE:
             equal = same(a, b)
         else:
             equal = values_equal(a, b)
-        return Value.bool(equal if op == ast.EQ else not equal)
-    if op == ast.LT or op == ast.LE or op == ast.GT or op == ast.GE:
+        return Value.bool(equal if op == .EQ else not equal)
+    if op == .LT or op == .LE or op == .GT or op == .GE:
         return Value.bool(qerr_compare(op, a, b) if has_qerr else holds_order(op, compare_values(a, b)))
-    if op == ast.IN:
+    if op == .IN:
         return Value.bool(contains(b, a))
-    if op == ast.ADD:
+    if op == .ADD:
         if has_qerr:
             if a.kind == wv.QERR and b.kind == wv.QERR:
                 return qerr_add(a, b)
@@ -350,7 +350,7 @@ def ev_binary[
         if joined is not None:
             return joined.take()
     elif has_qerr:
-        raise Error(t"{ast.op_name(op)} is not defined on qerr values")
+        raise Error(t"{op} is not defined on qerr values")
     return fit(spec.types, arith(op, a, b), spec.node_types[e])
 
 
@@ -377,16 +377,16 @@ def ev_comprehension[
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
     var kind = n.op
-    var iterable = n.kids[0]
-    var body = n.kids[1]
-    var what = String("the body of ", ast.op_name(kind), "(...)")
+    var iterable = n.children[0]
+    var body = n.children[1]
+    var what = String("the body of ", kind, "(...)")
     var items = set_members(spec, iterable) if tkind(spec, iterable) == ty.SET else elements(
-        ev(spec, iterable, env, run, host), String(ast.op_name(kind), "(...)")
+        ev(spec, iterable, env, run, host), String(kind, "(...)")
     )
     run.push(e, Value.none())
     var result: Value
-    if kind == ast.ALL or kind == ast.EXISTS:
-        var want = kind == ast.EXISTS
+    if kind == .ALL or kind == .EXISTS:
+        var want = kind == .EXISTS
         var hit = False
         for item in items:
             run.set_top(item.copy())
@@ -394,27 +394,27 @@ def ev_comprehension[
                 hit = True
                 break
         result = Value.bool(hit if want else not hit)
-    elif kind == ast.COUNT:
+    elif kind == .COUNT:
         var count = 0
         for item in items:
             run.set_top(item.copy())
             if want_bool(ev(spec, body, env, run, host), what):
                 count += 1
         result = Value.int(count)
-    elif kind == ast.FILTER:
+    elif kind == .FILTER:
         var kept: List[Value] = []
         for item in items:
             run.set_top(item.copy())
             if want_bool(ev(spec, body, env, run, host), what):
                 kept.append(item.copy())
         result = Value.list(kept^)
-    elif kind == ast.MAP:
+    elif kind == .MAP:
         var mapped: List[Value] = []
         for item in items:
             run.set_top(item.copy())
             mapped.append(ev(spec, body, env, run, host))
         result = Value.list(mapped^)
-    elif kind == ast.SUM:
+    elif kind == .SUM:
         var total = qerr_zero() if tkind(spec, e) == ty.QERR else Value.int(0)
         for item in items:
             run.set_top(item.copy())
@@ -448,14 +448,14 @@ def bind_args[
     mut host: H,
 ) raises -> List[Value]:
     """The arguments of the call at `e` in the order of `params`, defaults filled in."""
-    ref kids = spec.ast.nodes[e].kids
+    ref kids = spec.ast.nodes[e].children
     var names = [param.name.copy() for param in params]
     var vals = [Value.none() for _ in params]
     var have = [False for _ in params]
     var next_position = 0
     for k in range(2, len(kids)):
         ref arg = spec.ast.nodes[kids[k]]
-        var v = ev(spec, arg.kids[0], env, run, host)
+        var v = ev(spec, arg.children[0], env, run, host)
         var at = next_position
         if arg.text == "":
             if next_position >= len(params):
@@ -489,7 +489,7 @@ def ev_call[
     ref n = spec.ast.nodes[e]
     var found = spec.resolutions.get(e)
     if found is None:
-        found = spec.resolutions.get(n.kids[0])
+        found = spec.resolutions.get(n.children[0])
     if found is None:
         raise Error("this call cannot be evaluated: the checker did not resolve it")
     var r = found.value().copy()
@@ -524,10 +524,10 @@ def ev_call[
         if kind == sp.R_FIELD:
             obj = self_of(env)
         else:
-            var callee = n.kids[0]
-            if spec.ast.nodes[callee].kind != ast.ATTR:
+            var callee = n.children[0]
+            if spec.ast.nodes[callee].kind != .ATTR:
                 raise Error(t"observer call {r.name} has no handle")
-            obj = ev(spec, spec.ast.nodes[callee].kids[0], env, run, host)
+            obj = ev(spec, spec.ast.nodes[callee].children[0], env, run, host)
         if obj.kind != wv.HANDLE:
             raise Error(t"observer {r.name} needs a handle, but got {show(obj)}")
         var what = String(spec.models[r.owner].name, ".", r.name)
@@ -535,10 +535,10 @@ def ev_call[
         coerce_args(spec, args, obs.params, what)
         return host.observe(obj, r.owner, r.index, args^)
     if kind == sp.R_EXTERN:
-        var args = [ev(spec, spec.ast.nodes[n.kids[k]].kids[0], env, run, host) for k in range(2, len(n.kids))]
+        var args = [ev(spec, spec.ast.nodes[n.children[k]].children[0], env, run, host) for k in range(2, len(n.children))]
         return host.call_extern(r.name, args^)
     if kind == sp.R_SET_CTOR:
-        raise Error(t"{spec.ast.source_text(n.kids[0])}(...) is a partition set")
+        raise Error(t"{spec.ast.source_text(n.children[0])}(...) is a partition set")
     raise Error(t"a call of {r.name} cannot be evaluated")
 
 
@@ -550,12 +550,12 @@ def ev_prelude[
     var arg_types: List[Int] = []
     var names: List[String] = []
     var keywords: List[Value] = []
-    for k in range(2, len(n.kids)):
-        ref arg = spec.ast.nodes[n.kids[k]]
-        var v = ev(spec, arg.kids[0], env, run, host)
+    for k in range(2, len(n.children)):
+        ref arg = spec.ast.nodes[n.children[k]]
+        var v = ev(spec, arg.children[0], env, run, host)
         if arg.text == "":
             args.append(v^)
-            arg_types.append(spec.node_types[arg.kids[0]])
+            arg_types.append(spec.node_types[arg.children[0]])
         else:
             names.append(arg.text.copy())
             keywords.append(v^)
@@ -577,7 +577,7 @@ def ev_prelude[
             if "order" in names:
                 order = keywords[names.index("order")].copy()
             return Value.bool(model_eq(spec, args[0], args[1], t, float_mode, order, host))
-    var type_args = [type_arg(spec, tn, env) for tn in spec.ast.nodes[n.kids[1]].kids]
+    var type_args = [type_arg(spec, tn, env) for tn in spec.ast.nodes[n.children[1]].children]
     var out = api.call(pid, api.CallArgs(args^, names^, keywords^, type_args^, arg_types^), spec.types)
     return fit(spec.types, out, spec.node_types[e])
 

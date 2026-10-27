@@ -71,7 +71,7 @@ def ensures_ty(params: String, expr: String, returns: String = "") raises -> Str
     var arrow = String(" -> ", returns) if returns else String()
     var spec = ok(String(t"fn f({params}){arrow}\n  ensures e: let v = {expr} in true\n"))
     var let = clause_expr(spec, "f.e")
-    return type_text(spec, spec.ast.kid(let, 0))
+    return type_text(spec, spec.ast.child(let, 0))
 
 
 def descendants(spec: Spec, root: Int) -> List[Int]:
@@ -81,12 +81,12 @@ def descendants(spec: Spec, root: Int) -> List[Int]:
     while stack:
         var n = stack.pop()
         out.append(n)
-        for k in reversed(spec.ast.nodes[n].kids):
+        for k in reversed(spec.ast.nodes[n].children):
             stack.append(k)
     return out^
 
 
-def nodes_of(spec: Spec, root: Int, kind: UInt8) -> List[Int]:
+def nodes_of(spec: Spec, root: Int, kind: ast.NodeKind) -> List[Int]:
     return [n for n in descendants(spec, root) if spec.ast.nodes[n].kind == kind]
 
 
@@ -94,11 +94,11 @@ def parents(spec: Spec) -> List[Int]:
     """By node id: the node's parent, 0 for the root."""
     var out = List[Int](length=len(spec.ast.nodes), fill=0)
     for n in range(len(spec.ast.nodes)):
-        for k in spec.ast.nodes[n].kids:
+        for k in spec.ast.nodes[n].children:
             out[k] = n
     return out^
 
 
-def named(spec: Spec, root: Int, kind: UInt8, text: String) -> List[Int]:
+def named(spec: Spec, root: Int, kind: ast.NodeKind, text: String) -> List[Int]:
     """The nodes of `kind` with this text below `root`, in source order."""
     return [n for n in nodes_of(spec, root, kind) if spec.ast.nodes[n].text == text]

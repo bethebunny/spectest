@@ -4,7 +4,7 @@ The op is left out when it is `NO_OP` and the text when it is empty. An absent p
 (`EMPTY`) is `_`. Example: `(binary + (name "x") (num "1"))`.
 """
 
-from syntax.ast import Ast, EMPTY, NO_OP, kind_name, op_name
+from syntax.ast import Ast, NIL
 
 
 def _quoted(text: String) -> String:
@@ -13,14 +13,14 @@ def _quoted(text: String) -> String:
 
 
 def dump(ast: Ast, id: Int) -> String:
-    if id == Int(EMPTY):
+    if id == NIL:
         return "_"
     ref node = ast.nodes[id]
-    var parts: List[String] = [String(kind_name(node.kind))]
-    if node.op != NO_OP:
-        parts.append(String(op_name(node.op)))
+    var parts: List[String] = [String(node.kind)]
+    if node.op != .NO_OP:
+        parts.append(String(node.op))
     if node.text.byte_length() > 0:
         parts.append(_quoted(node.text))
-    for kid in node.kids:
-        parts.append(dump(ast, kid))
+    for child in node.children:
+        parts.append(dump(ast, child))
     return String("(", " ".join(parts), ")")

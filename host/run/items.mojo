@@ -26,15 +26,15 @@ def _item(
 
 
 def _clause_items(
-    spec: Spec, func: Fn, decl: String, tparams: List[String], kinds: List[UInt8], mut out: List[Value]
+    spec: Spec, func: Fn, decl: String, tparams: List[String], kinds: List[ast.Op], mut out: List[Value]
 ) raises -> Bool:
     """Appends the items of the clauses of `func` with one of `kinds`; True when it has a modifies clause."""
     var modifies = False
     for c in func.clauses:
         ref cl = spec.clauses[c]
         if cl.kind in kinds:
-            out.append(_item(spec, decl, tparams, cl.id, String(ast.op_name(cl.kind)), source_text(spec, cl.node), cl.node))
-        modifies = modifies or cl.kind == ast.MODIFIES
+            out.append(_item(spec, decl, tparams, cl.id, String(cl.kind), source_text(spec, cl.node), cl.node))
+        modifies = modifies or cl.kind == .MODIFIES
     return modifies
 
 
@@ -56,7 +56,7 @@ def _invariant_items(
 ) raises:
     for c in model.clauses:
         ref cl = spec.clauses[c]
-        if cl.kind == ast.INVARIANT:
+        if cl.kind == .INVARIANT:
             out.append(_item(spec, decl, tparams, prefix + cl.id, "invariant", source_text(spec, cl.node), cl.node))
 
 
@@ -67,7 +67,7 @@ def _interface_items(spec: Spec, f: Int, mut out: List[Value]) raises:
     if func.owner < 0:
         return
     ref model = spec.models[func.owner]
-    var modifies = _clause_items(spec, func, model.name, model.tparams, [ast.ENSURES, ast.RELATES, ast.RAISES, ast.MODIFIES], out)
+    var modifies = _clause_items(spec, func, model.name, model.tparams, [ast.Op.ENSURES, ast.Op.RELATES, ast.Op.RAISES, ast.Op.MODIFIES], out)
     var frame = "leaves every live object unchanged (no modifies clause)" if func.receiver and not modifies else ""
     _builtin_items(spec, func, model.name, model.tparams, frame, out)
     var members = model.ctors + model.methods.copy()
@@ -81,12 +81,12 @@ def items_of(loaded: Loaded) raises -> List[Value]:
     var out = List[Value]()
     for f in range(len(spec.fns)):
         ref func = spec.fns[f]
-        if func.kind != ast.FN:
+        if func.kind != .FN:
             _interface_items(spec, f, out)
             continue
         var decl = func.decl_id
         var modifies = _clause_items(
-            spec, func, decl, func.tparams, [ast.ENSURES, ast.RELATES, ast.RAISES, ast.AGGREGATE, ast.MODIFIES], out
+            spec, func, decl, func.tparams, [ast.Op.ENSURES, ast.Op.RELATES, ast.Op.RAISES, ast.Op.AGGREGATE, ast.Op.MODIFIES], out
         )
         var has_handles = any([spec.types.info(p.type).kind == ty.MODEL and not spec.types.info(p.type).signed for p in func.params])
         var frame = "leaves its handle parameters unchanged (no modifies clause)" if has_handles and not modifies else ""
@@ -95,7 +95,7 @@ def items_of(loaded: Loaded) raises -> List[Value]:
         collect_models(spec.types, func.result, models)
         for p in func.params:
             for n in func.clauses:
-                if spec.clauses[n].kind == ast.MODIFIES and p.name in spec.clauses[n].names:
+                if spec.clauses[n].kind == .MODIFIES and p.name in spec.clauses[n].names:
                     collect_models(spec.types, p.type, models)
         for name in models:
             var m = spec.model_named(name)

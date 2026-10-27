@@ -8,7 +8,7 @@ Declarations keep source order. Lists of declarations refer to each other by pos
 (`Fn.owner` is a position in `Spec.models`, `Fn.clauses` positions in `Spec.clauses`).
 """
 
-from syntax.ast import Ast
+from syntax.ast import Ast, NodeKind, Op
 
 from check.types import ANY_TYPE, Types
 
@@ -78,7 +78,7 @@ struct Param(Copyable, Movable):
 struct Clause(Copyable, Movable):
     var id: String
     """`<decl>.<label>` or `<decl>#<n>`, as verdicts name it."""
-    var kind: UInt8
+    var kind: Op
     """The clause kind, an op of syntax.ast (REQUIRES, ENSURES, ...)."""
     var label: String
     var node: Int
@@ -138,7 +138,7 @@ struct Fn(Copyable, Movable):
     interface's constructors and methods."""
     var decl_id: String
     """The prefix of its clause ids: `cos`, `Deque.pop`."""
-    var kind: UInt8
+    var kind: NodeKind
     """FN, CTOR or METHOD (node kinds of syntax.ast)."""
     var node: Int
     var owner: Int

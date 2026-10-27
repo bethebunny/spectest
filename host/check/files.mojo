@@ -78,23 +78,23 @@ struct _Walk(Movable):
 
 
 def _is_prelude(ast: Ast, file: Int) -> Bool:
-    return ast.nodes[ast.files[file].root].kind == sx.PRELUDE_FILE
+    return ast.nodes[ast.files[file].root].kind == .PRELUDE_FILE
 
 
 def _report(mut w: _Walk, ast: Ast, node: Int, message: Some[Writable]):
-    w.diags.append(Diagnostic(ast.path_of(node), ast.nodes[node].span, String(message)))
+    w.diags.append(ast.diagnostic(node, message))
 
 
 def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
     w.state[file] = 1
     w.stack.append(file)
-    var decls = ast.nodes[ast.files[file].root].kids.copy()
+    var decls = ast.nodes[ast.files[file].root].children.copy()
     for d in decls:
         var kind = ast.nodes[d].kind
-        if kind != sx.USE and kind != sx.PRELUDE:
+        if kind != .USE and kind != .PRELUDE:
             continue
         var name = ast.nodes[d].text.copy()
-        var word = "use" if kind == sx.USE else "prelude"
+        var word = "use" if kind == .USE else "prelude"
         var key = join(ast.files[file].path, name)
         var target = index_of(w.keys, key)
         if target < 0:
@@ -112,7 +112,7 @@ def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
             var chain = " -> ".join(files_in_cycle + [ast.files[target].path.copy()])
             _report(w, ast, d, String(word, " cycle: ", chain))
             continue
-        var wants_prelude = kind == sx.PRELUDE or _is_prelude(ast, file)
+        var wants_prelude = kind == .PRELUDE or _is_prelude(ast, file)
         if _is_prelude(ast, target) != wants_prelude:
             if wants_prelude:
                 _report(w, ast, d, String(name, " is a spec, not a prelude file"))

@@ -29,12 +29,12 @@ def check_with(var ast: Ast, files: Files) raises -> Spec:
     """Check a spec, reading the files it names (`use`, `prelude`) through `files`.
     Each file is read once. A file that cannot be read or a cycle of `use` is an
     error."""
-    var name = ast.nodes[ast.root].text.copy()
+    var name = ast.nodes[ast.root()].text.copy()
     var diags: List[Diagnostic] = []
     var order = resolve_files(ast, files, diags)
     var decls: List[Int] = []
     for f in order:
-        decls.extend([d for d in ast.nodes[ast.files[f].root].kids if ast.nodes[d].kind not in (sx.USE, sx.PRELUDE)])
+        decls.extend([d for d in ast.nodes[ast.files[f].root].children if ast.nodes[d].kind not in (sx.NodeKind.USE, sx.NodeKind.PRELUDE)])
     var c = Checker(Spec(name^, ast^, Types()))
     c.decls = decls^
     c.diags = diags^

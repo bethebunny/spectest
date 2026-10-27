@@ -9,458 +9,445 @@ it. Newlines inside `()`, `[]` and `{}` are ignored, as are blank and comment-on
 lines. `perf` takes the rest of its line raw.
 """
 
-from syntax.ast import Span as SrcSpan, Diagnostic
-from syntax.chars import is_digit, is_hex, is_alpha, is_alnum, is_space, hex_value
+from syntax.ast import Diagnostic, Span
+from syntax.chars import is_digit, is_word_char, is_word_start
 
-comptime T_NAME: UInt8 = 0
-comptime T_NUMBER: UInt8 = 1
-comptime T_STRING: UInt8 = 2
-comptime T_OP: UInt8 = 3
-comptime T_PERF: UInt8 = 4
-comptime T_NEWLINE: UInt8 = 5
-comptime T_INDENT: UInt8 = 6
-comptime T_DEDENT: UInt8 = 7
-comptime T_EOF: UInt8 = 8
+
+__enum TokenKind(Equatable, ImplicitlyCopyable, Writable):
+    case NAME
+    case NUMBER
+    case STRING
+    case OP
+    case PERF
+    case NEWLINE
+    case INDENT
+    case DEDENT
+    case EOF
+
+    def __eq__(self, other: Self) -> Bool:
+        return self._get_enum_discriminant() == other._get_enum_discriminant()
+
+    def is_layout(self) -> Bool:
+        """NEWLINE, INDENT or DEDENT, which the layout rule adds between the words."""
+        return self in (Self.NEWLINE, Self.INDENT, Self.DEDENT)
 
 
 @fieldwise_init
-struct Token(Copyable, Movable):
-    var kind: UInt8
+struct Token(Copyable):
+    var kind: TokenKind
     var text: String
     """Names and operators: the text. Strings: the decoded value. Perf: the stripped rest
     of the line. Numbers: the literal."""
-    var start: Int
-    var end: Int
-    var line: Int
-    var col: Int
-    var end_col: Int
-
-    def span(self) -> SrcSpan:
-        return SrcSpan(self.start, self.end, self.line, self.col)
+    var span: Span
+    var end_column: Int
 
     def is_op(self, op: StaticString) -> Bool:
-        return self.kind == T_OP and self.text == op
+        return self.kind == .OP and self.text == op
+
+    def is_keyword(self, word: StaticString) -> Bool:
+        return self.kind == .NAME and self.text == word
 
 
-def syntax_error(path: String, span: SrcSpan, message: String) -> Error:
-    """An `Error` whose message is `path:line:col: message`."""
+def syntax_error(path: String, span: Span, message: String) -> Error:
+    """An `Error` whose message is `path:line:column: message`."""
     return Error(String(Diagnostic(path.copy(), span, message.copy())))
 
 
-def _at(src: Span[Byte, _], i: Int, end: Int) -> Int:
-    """The byte at `i`, or 0 at or past `end`."""
-    return Int(src[i]) if i < end else 0
+def tokens(text: StringSpan, path: String) raises -> List[Token]:
+    """Tokens of a spec source, with NEWLINE, INDENT and DEDENT from the layout rule."""
+    var lexer = _Lexer(text, path)
+    var start = 0
+    for number, line in enumerate(text.split("\n"), start=1):
+        var end = start + line.removesuffix("\r").byte_length()
+        lexer.line = _Line(number=number, start=start, end=end)
+        lexer.lex_line()
+        start += line.byte_length() + 1
+    return lexer.finished()
 
 
-def _text(src: Span[Byte, _], a: Int, b: Int) -> String:
-    return String(unsafe_from_utf8=src[a:b])
-
-
-def _char_width(lead: Int) -> Int:
-    """The bytes in a UTF-8 character that starts with `lead`."""
-    return 4 if lead >= 0xF0 else (3 if lead >= 0xE0 else (2 if lead >= 0xC0 else 1))
-
-
-def _char_at(src: Span[Byte, _], i: Int, end: Int) -> String:
-    return _text(src, i, min(i + _char_width(Int(src[i])), end))
-
-
-comptime _TWO_CHAR_OPS = "-> == != <= << >= >> // **"
+comptime _SPACES = " \t\x0b\x0c"
 comptime _ONE_CHAR_OPS = "<>=+-*/%|&()[]{},:."
-comptime _OPENERS = "fn new method model interface partition"
+comptime _TWO_CHAR_OPS: Array[StaticString, 9] = [
+    "->", "==", "!=", "<=", "<<", ">=", ">>", "//", "**"
+]
+comptime _OPENERS: Array[StaticString, 6] = [
+    "fn", "new", "method", "model", "interface", "partition"
+]
+comptime _ESCAPED: StaticString = 'ntr0\\"'
+comptime _ESCAPES: StaticString = '\n\t\r\x00\\"'
+"""What each character of `_ESCAPED` stands for after a backslash, by position."""
 
 
 def _in(c: Int, chars: StaticString) -> Bool:
-    return chr(c) in chars
+    return UInt8(c) in chars.as_bytes()
 
 
-def _digits(src: Span[Byte, _], i: Int, end: Int, *, hex: Bool) -> Int:
-    """End of the run `d(_?d)*` of digits starting at `i`, or `i` if it starts with none."""
-    var j = i
-    while True:
-        var c = _at(src, j, end)
-        var next = _at(src, j + 1, end)
-        if is_hex(c) if hex else is_digit(c):
-            j += 1
-        elif j > i and c == ord("_") and (is_hex(next) if hex else is_digit(next)):
-            j += 1
-        else:
-            return j
+def _closer(open: Int) -> Int:
+    return ord(")") if open == ord("(") else (ord("]") if open == ord("[") else ord("}"))
 
 
-def _exponent(src: Span[Byte, _], i: Int, end: Int, marks: StaticString) -> Int:
-    """End of an exponent (a mark, an optional sign and digits) at `i`, or `i` if none."""
-    if not _in(_at(src, i, end), marks):
-        return i
-    var first = i + (2 if _in(_at(src, i + 1, end), "+-") else 1)
-    var j = first
-    while is_digit(_at(src, j, end)):
-        j += 1
-    return j if j > first else i
+def _first_byte(text: StringSlice) -> Int:
+    """The first byte of `text`, or 0 if it is empty."""
+    return Int(text.as_bytes()[0]) if text else 0
 
 
-def _opens(src: Span[Byte, _], i: Int, end: Int, word: String) -> Bool:
-    """Whether `word` and then a name start at `i`."""
-    var j = i + word.byte_length()
-    if _text(src, i, min(j, end)) != word or not is_space(_at(src, j, end)):
+def _opens(rest: StringSlice, word: StaticString) -> Bool:
+    """Whether `rest` starts with `word`, blanks and a name."""
+    if not rest.startswith(word):
         return False
-    while is_space(_at(src, j, end)):
-        j += 1
-    return is_alpha(_at(src, j, end))
+    var after = rest[byte = word.byte_length() :]
+    var name = after.lstrip(_SPACES)
+    return name.byte_length() < after.byte_length() and is_word_start(_first_byte(name))
 
 
-def _is_opener(src: Span[Byte, _], i: Int, end: Int) -> Bool:
-    return any([_opens(src, i, end, String(word)) for word in _OPENERS.split(" ")])
-
-
-def _is_perf(src: Span[Byte, _], i: Int, end: Int) -> Bool:
-    var after = _at(src, i + 4, end)
-    var ends_word = i + 4 == end or is_space(after) or after == 13
-    return _text(src, i, min(i + 4, end)) == "perf" and ends_word
+def _is_perf(rest: StringSlice) -> Bool:
+    if not rest.startswith("perf"):
+        return False
+    var after = rest[byte=4:]
+    return not after or _in(_first_byte(after), " \t\x0b\x0c\r")
 
 
 @fieldwise_init
-struct _Bracket(Copyable, Movable):
+struct _Bracket(Copyable):
     var open: Int
-    var line: Int
-    var col: Int
+    var span: Span
+
+
+struct _Line(Copyable):
+    """The physical line being lexed."""
+
+    var number: Int
     var start: Int
+    var end: Int
+    """Past its last byte, leaving out the newline and one carriage return before it."""
+    var counted: Int
+    """An offset whose column is known; columns are mostly asked left to right."""
+    var column: Int
+
+    def __init__(out self, *, number: Int, start: Int, end: Int):
+        self.number = number
+        self.start = start
+        self.end = end
+        self.counted = start
+        self.column = 1
+
+    def column_at(mut self, text: StringSlice, offset: Int) -> Int:
+        """1-based column, in code points, of byte `offset` on this line."""
+        if offset < self.counted:
+            self.counted = self.start
+            self.column = 1
+        self.column += text[byte = self.counted : offset].count_codepoints()
+        self.counted = offset
+        return self.column
 
 
-struct Lexer:
+@fieldwise_init
+struct _LogicalLine(TrivialRegisterPassable):
+    var indent: Int
+    var opener: Bool
+    """Its first word opens a block, so a deeper line starts one rather than continuing it."""
+    var perf: Bool
+    """It is a `perf` clause, whose continuation lines are raw text."""
+    var end: Span
+    """Where its NEWLINE goes: after its last token."""
+
+
+struct _Lexer[origin: ImmOrigin]:
+    var text: StringSlice[Self.origin]
     var path: String
     var tokens: List[Token]
     var brackets: List[_Bracket]
-    var stack: List[Int]
-    # The current logical line.
-    var has_cur: Bool
-    var cur_indent: Int
-    var cur_opener: Bool
-    var cur_perf: Bool
-    var last_line: Int
-    var last_end: Int
-    var last_col: Int
-    # The current physical line.
-    var line_no: Int
-    var line_start: Int
-    var cp_off: Int
-    var cp_col: Int
+    var indents: List[Int]
+    """The indentation of each open block, the top level's 0 first."""
+    var line: _Line
+    var logical: Optional[_LogicalLine]
+    """None before the first logical line."""
 
-    def __init__(out self, path: String):
+    def __init__(out self, text: StringSlice[Self.origin], path: String):
+        self.text = text
         self.path = path.copy()
-        self.tokens = List[Token]()
-        self.brackets = List[_Bracket]()
-        self.stack = [0]
-        self.has_cur = False
-        self.cur_indent = 0
-        self.cur_opener = False
-        self.cur_perf = False
-        self.last_line = 1
-        self.last_end = 0
-        self.last_col = 1
-        self.line_no = 0
-        self.line_start = 0
-        self.cp_off = 0
-        self.cp_col = 1
+        self.tokens = []
+        self.brackets = []
+        self.indents = [0]
+        self.line = _Line(number=0, start=0, end=0)
+        self.logical = None
+
+    def byte(self, i: Int) -> Int:
+        """The byte at `i`, or 0 at or past the end of the line."""
+        return Int(self.text.as_bytes()[i]) if i < self.line.end else 0
+
+    def rest_of_line(self, i: Int) -> StringSlice[Self.origin]:
+        return self.text[byte = i : self.line.end]
+
+    def char_at(self, i: Int) raises -> String:
+        """The character that starts at byte `i`."""
+        var chars = self.rest_of_line(i).codepoint_slices()
+        return String(next(chars))
 
     def block_indent(self) -> Int:
-        return self.stack[len(self.stack) - 1]
+        return self.indents[len(self.indents) - 1]
 
-    def col_at(mut self, src: Span[Byte, _], pos: Int) -> Int:
-        """1-based column, in code points, of byte offset `pos` on the current line."""
-        if pos < self.cp_off:  # offsets within a line are asked in increasing order
-            self.cp_off = self.line_start
-            self.cp_col = 1
-        var col = self.cp_col
-        for i in range(self.cp_off, pos):
-            if (Int(src[i]) & 0xC0) != 0x80:
-                col += 1
-        self.cp_off = pos
-        self.cp_col = col
-        return col
+    def column_at(mut self, i: Int) -> Int:
+        return self.line.column_at(self.text, i)
 
-    def error(self, line: Int, col: Int, start: Int, message: Some[Writable]) -> Error:
-        return syntax_error(self.path, SrcSpan(start, start + 1, line, col), String(message))
+    def position(mut self, i: Int) -> Span:
+        """The empty span at `i` on this line."""
+        return Span(i, i, self.line.number, self.column_at(i))
 
-    def emit(mut self, kind: UInt8, var text: String, start: Int, end: Int, col: Int, end_col: Int):
-        self.tokens.append(Token(kind, text^, start, end, self.line_no, col, end_col))
-        if self.has_cur:
-            self.last_line = self.line_no
-            self.last_end = end
-            self.last_col = end_col
+    def error_at(self, span: Span, message: Some[Writable]) -> Error:
+        return syntax_error(self.path, span, String(message))
 
-    def emit_layout(mut self, kind: UInt8, text: String, offset: Int, line: Int, col: Int):
-        self.tokens.append(Token(kind, text.copy(), offset, offset, line, col, col))
+    def span_at(mut self, i: Int) -> Span:
+        """The span of the byte at `i` on this line."""
+        return Span(i, i + 1, self.line.number, self.column_at(i))
 
-    def run(mut self, src: Span[Byte, _]) raises -> List[Token]:
-        var n = len(src)
-        var pos = 0
-        var last_line_start: Int
-        var last_line_end: Int
-        var ln = 0
-        while True:
-            var end = pos
-            while end < n and Int(src[end]) != ord("\n"):
-                end += 1
-            ln += 1
-            last_line_start = pos
-            var stop = end - 1 if end > pos and Int(src[end - 1]) == 13 else end
-            last_line_end = stop
-            self.line_no = ln
-            self.line_start = pos
-            self.cp_off = pos
-            self.cp_col = 1
-            self.line(src, pos, stop)
-            if end >= n:
-                break
-            pos = end + 1
-        if len(self.brackets) > 0:
-            ref b = self.brackets[len(self.brackets) - 1]
-            raise self.error(b.line, b.col, b.start, t"'{chr(b.open)}' is never closed")
-        self.line_no = ln
-        self.line_start = last_line_start
-        self.cp_off = last_line_start
-        self.cp_col = 1
-        var last_col = self.col_at(src, last_line_end)
-        if self.has_cur:
-            self.emit_layout(T_NEWLINE, "\n", self.last_end, self.last_line, self.last_col)
-        while len(self.stack) > 1:
-            _ = self.stack.pop()
-            self.emit_layout(T_DEDENT, "", last_line_end, ln, last_col)
-        self.emit_layout(T_EOF, "", last_line_end, ln, last_col)
-        var out = self.tokens^
-        self.tokens = List[Token]()
-        return out^
+    def error(mut self, i: Int, message: Some[Writable]) -> Error:
+        return self.error_at(self.span_at(i), message)
 
-    def line(mut self, src: Span[Byte, _], start: Int, end: Int) raises:
-        var i = start
-        while _at(src, i, end) == ord(" ") or _at(src, i, end) == ord("\t"):
-            i += 1
+    def emit(mut self, kind: TokenKind, *, start: Int, end: Int):
+        """Appends a token of the source from `start` to `end`."""
+        self.emit_text(kind, String(self.text[byte=start:end]), start=start, end=end)
+
+    def emit_text(mut self, kind: TokenKind, var text: String, *, start: Int, end: Int):
+        var span = Span(start, end, self.line.number, self.column_at(start))
+        var after = self.position(end)
+        self.tokens.append(Token(kind, text^, span, after.column))
+        self.logical.value().end = after
+
+    def layout(mut self, kind: TokenKind, at: Span):
+        """Appends a NEWLINE, INDENT, DEDENT or EOF, which stand for no text."""
+        self.tokens.append(Token(kind, "\n" if kind == .NEWLINE else "", at, at.column))
+
+    def dedent(mut self, indent: Int, at: Span):
+        """Closes the blocks indented deeper than `indent`."""
+        while indent < self.block_indent():
+            _ = self.indents.pop()
+            self.layout(.DEDENT, at)
+
+    def continues(self, indent: Int) -> Bool:
+        """Whether a line indented `indent` continues the current logical line."""
+        if case .Some(logical) = self.logical:
+            return not logical.opener and indent > logical.indent
+        return False
+
+    def lex_line(mut self) raises:
+        var start = self.line.start
+        var rest = self.rest_of_line(start).lstrip(" \t")
+        var i = self.line.end - rest.byte_length()
         var indent = i - start
-        var blank = i >= end
-        if not blank:
-            for k in range(start, i):
-                if Int(src[k]) == ord("\t"):
-                    raise self.error(
-                        self.line_no, k - start + 1, k, "tab in indentation: indent with spaces"
-                    )
-        if len(self.brackets) > 0:
-            self.scan(src, i, end)
+        var tab = self.text[byte=start:i].find("\t")
+        if rest and tab >= 0:
+            raise self.error(start + tab, "tab in indentation: indent with spaces")
+        if self.brackets:
+            self.scan(i)
+        elif not rest or rest.startswith("#"):
             return
-        if blank or Int(src[i]) == ord("#"):
-            return
-        if self.has_cur and not self.cur_opener and indent > self.cur_indent:
-            if self.cur_perf:
-                self.perf_text(src, i, end)
+        elif self.continues(indent):
+            if self.logical.value().perf:
+                self.scan_perf(i)
             else:
-                self.scan(src, i, end)
-            return
-        var col = indent + 1
-        if self.has_cur:
-            self.emit_layout(T_NEWLINE, "\n", self.last_end, self.last_line, self.last_col)
-        if self.has_cur and self.cur_opener and indent > self.block_indent():
-            self.stack.append(indent)
-            self.emit_layout(T_INDENT, "", i, self.line_no, col)
+                self.scan(i)
+        else:
+            self.start_logical_line(i, indent)
+
+    def start_logical_line(mut self, i: Int, indent: Int) raises:
+        var here = self.position(i)
+        var opens_block = False
+        if self.logical is not None:
+            var previous = self.logical.value()
+            self.layout(.NEWLINE, previous.end)
+            opens_block = previous.opener
+        if opens_block and indent > self.block_indent():
+            self.indents.append(indent)
+            self.layout(.INDENT, here)
         elif indent > self.block_indent():
-            raise self.error(self.line_no, col, i, "unexpected indentation")
+            raise self.error(i, "unexpected indentation")
         else:
-            while indent < self.block_indent():
-                _ = self.stack.pop()
-                self.emit_layout(T_DEDENT, "", i, self.line_no, col)
+            self.dedent(indent, here)
             if indent != self.block_indent():
-                raise self.error(
-                    self.line_no, col, i, "indentation does not match any enclosing block"
-                )
-        var perf = _is_perf(src, i, end)
-        self.has_cur = True
-        self.cur_indent = indent
-        self.cur_opener = _is_opener(src, i, end)
-        self.cur_perf = perf
-        self.last_line = self.line_no
-        self.last_end = i
-        self.last_col = col
+                raise self.error(i, "indentation does not match any enclosing block")
+        var rest = self.rest_of_line(i)
+        var perf = _is_perf(rest)
+        var opener = any([_opens(rest, word) for word in materialize[_OPENERS]()])
+        self.logical = _LogicalLine(indent=indent, opener=opener, perf=perf, end=here)
         if perf:
-            self.emit(T_NAME, "perf", i, i + 4, col, col + 4)
-            self.perf_text(src, i + 4, end)
+            self.emit(.NAME, start=i, end=i + 4)
+            self.scan_perf(i + 4)
         else:
-            self.scan(src, i, end)
+            self.scan(i)
 
-    def perf_text(mut self, src: Span[Byte, _], start: Int, end: Int) raises:
-        var a = start
-        while is_space(_at(src, a, end)):
-            a += 1
-        var b = end
-        while b > a and is_space(Int(src[b - 1])):
-            b -= 1
-        if a >= b:
-            return
-        var col = self.col_at(src, a)
-        var end_col = self.col_at(src, b)
-        self.emit(T_PERF, _text(src, a, b), a, b, col, end_col)
+    def finished(mut self) raises -> List[Token]:
+        """The tokens, ended by the last NEWLINE, a DEDENT per open block and EOF."""
+        if case [*_, bracket] = self.brackets:
+            raise self.error_at(bracket.span, t"'{chr(bracket.open)}' is never closed")
+        if self.logical is not None:
+            var end = self.logical.value().end
+            self.layout(.NEWLINE, end)
+        var end = self.position(self.line.end)
+        self.dedent(0, end)
+        self.layout(.EOF, end)
+        var tokens: List[Token] = []
+        swap(tokens, self.tokens)
+        return tokens^
 
-    def scan(mut self, src: Span[Byte, _], begin: Int, end: Int) raises:
-        var i = begin
-        while i < end:
-            var c = Int(src[i])
+    def scan_perf(mut self, start: Int):
+        """The rest of the line as one PERF token, blanks stripped."""
+        var left = self.rest_of_line(start).lstrip(_SPACES)
+        var a = self.line.end - left.byte_length()
+        var b = a + left.rstrip(_SPACES).byte_length()
+        if a < b:
+            self.emit(.PERF, start=a, end=b)
+
+    def scan(mut self, start: Int) raises:
+        var i = start
+        while i < self.line.end:
+            var c = self.byte(i)
             if c == ord(" ") or c == ord("\t"):
                 i += 1
             elif c == ord("#"):
                 return
             elif c == ord('"'):
-                i = self.string(src, i, end)
+                i = self.scan_string(i)
             elif is_digit(c):
-                i = self.number(src, i, end)
-            elif is_alpha(c):
-                var j = i + 1
-                while is_alnum(_at(src, j, end)):
-                    j += 1
-                var col = self.col_at(src, i)
-                self.emit(T_NAME, _text(src, i, j), i, j, col, col + (j - i))
-                i = j
+                i = self.scan_number(i)
+            elif is_word_start(c):
+                i = self.scan_name(i)
             else:
-                i = self.operator(src, i, end)
+                i = self.scan_operator(i)
 
-    def operator(mut self, src: Span[Byte, _], i: Int, end: Int) raises -> Int:
-        var c = Int(src[i])
-        var col = self.col_at(src, i)
-        var pair = _text(src, i, min(i + 2, end))
-        var is_pair = pair.byte_length() == 2 and " " not in pair and pair in _TWO_CHAR_OPS
-        var width = 2 if is_pair else 1
-        if width == 1 and not (c < 128 and _in(c, _ONE_CHAR_OPS)):
-            raise self.error(
-                self.line_no, col, i, t"unexpected character '{_char_at(src, i, end)}'"
-            )
+    def scan_name(mut self, start: Int) -> Int:
+        var end = start + 1
+        while is_word_char(self.byte(end)):
+            end += 1
+        self.emit(.NAME, start=start, end=end)
+        return end
+
+    def scan_operator(mut self, start: Int) raises -> Int:
+        var c = self.byte(start)
+        var rest = self.rest_of_line(start)
+        var width = 2 if any([rest.startswith(op) for op in materialize[_TWO_CHAR_OPS]()]) else 1
+        if width == 1 and not _in(c, _ONE_CHAR_OPS):
+            raise self.error(start, t"unexpected character '{self.char_at(start)}'")
         if _in(c, "([{"):
-            self.brackets.append(_Bracket(c, self.line_no, col, i))
+            self.brackets.append(_Bracket(c, self.span_at(start)))
         elif _in(c, ")]}"):
-            if len(self.brackets) == 0:
-                raise self.error(self.line_no, col, i, t"unmatched '{chr(c)}'")
+            if not self.brackets:
+                raise self.error(start, t"unmatched '{chr(c)}'")
             var opened = self.brackets.pop()
-            if String("([{").find(chr(opened.open)) != String(")]}").find(chr(c)):
+            if c != _closer(opened.open):
                 raise self.error(
-                    self.line_no, col, i,
-                    t"'{chr(c)}' does not match '{chr(opened.open)}' at {opened.line}:{opened.col}",
+                    start, t"'{chr(c)}' does not match '{chr(opened.open)}' at {opened.span}"
                 )
-        self.emit(T_OP, _text(src, i, i + width), i, i + width, col, col + width)
-        return i + width
+        self.emit(.OP, start=start, end=start + width)
+        return start + width
 
-    def number(mut self, src: Span[Byte, _], i: Int, end: Int) raises -> Int:
-        var col = self.col_at(src, i)
-        var j = i
-        var after_dot = len(self.tokens) > 0 and self.tokens[len(self.tokens) - 1].is_op(".")
-        if after_dot:
-            while is_digit(_at(src, j, end)):
-                j += 1
-            if is_alnum(_at(src, j, end)):
-                raise self.error(
-                    self.line_no, col, i, "a tuple field is a decimal index, e.g. p.0"
-                )
-        elif _at(src, i, end) == ord("0") and _in(_at(src, i + 1, end), "xX"):
-            j = _digits(src, i + 2, end, hex=True)
-            if j == i + 2:
-                raise self.error(
-                    self.line_no, col, i, "hexadecimal literal needs digits after 0x"
-                )
-            var dotted = _at(src, j, end) == ord(".")
-            if dotted:
-                j = _digits(src, j + 1, end, hex=True)
-            var with_exponent = _exponent(src, j, end, "pP")
-            if dotted and with_exponent == j:
-                var text = _text(src, i, j)
-                raise self.error(
-                    self.line_no, col, i,
-                    t"hexadecimal float {text} needs a binary exponent, e.g. {text}p0",
-                )
-            j = with_exponent
-        else:
-            j = _digits(src, i, end, hex=False)
-            if _at(src, j, end) == ord("."):
-                var fraction = _digits(src, j + 1, end, hex=False)
-                j = fraction if fraction > j + 1 else j
-            j = _exponent(src, j, end, "eE")
-        if not after_dot and is_alnum(_at(src, j, end)):
-            var stop = j
-            while is_alnum(_at(src, stop, end)) or _at(src, stop, end) == ord("."):
-                stop += 1
-            raise self.error(
-                self.line_no, col, i, t"invalid numeric literal '{_text(src, i, stop)}'"
-            )
-        self.emit(T_NUMBER, _text(src, i, j), i, j, col, col + (j - i))
-        return j
-
-    def string(mut self, src: Span[Byte, _], start: Int, end: Int) raises -> Int:
-        var col = self.col_at(src, start)
-        var i = start + 1
-        var out = List[UInt8]()
-        var simple = {
-            ord("n"): 10, ord("t"): 9, ord("r"): 13, ord("0"): 0, ord("\\"): 92, ord('"'): 34
-        }
+    def after_digits(self, start: Int, *, hex: Bool) -> Int:
+        """The end of the run `d(_?d)*` of digits at `start`, or `start` if there is none."""
+        var end = start
         while True:
-            if i >= end:
-                raise self.error(self.line_no, col, start, "unterminated string")
-            var c = Int(src[i])
-            if c == ord('"'):
-                i += 1
-                break
-            if c != ord("\\"):
-                out.append(src[i])
-                i += 1
-                continue
-            if i + 1 >= end:
-                raise self.error(self.line_no, col, start, "unterminated string")
-            var e = Int(src[i + 1])
-            var ecol = self.col_at(src, i)
-            if e in simple:
-                out.append(UInt8(simple[e]))
-                i += 2
-            elif e == ord("x"):
-                var hi = _at(src, i + 2, end)
-                var lo = _at(src, i + 3, end)
-                if not (is_hex(hi) and is_hex(lo)):
-                    raise self.error(self.line_no, ecol, i, "\\x needs two hex digits")
-                _append_codepoint(out, hex_value(hi) * 16 + hex_value(lo))
-                i += 4
-            elif e == ord("u"):
-                var code = 0
-                var next = i + 2
-                var braced = _at(src, next, end) == ord("{")
-                var digits_end = next + 1 if braced else next
-                var count = 0
-                while is_hex(_at(src, digits_end, end)) and count < (7 if braced else 4):
-                    code = code * 16 + hex_value(_at(src, digits_end, end))
-                    digits_end += 1
-                    count += 1
-                if braced:
-                    if count < 1 or count > 6 or _at(src, digits_end, end) != ord("}"):
-                        raise self.error(
-                            self.line_no, ecol, i, "\\u needs {hex} or four hex digits"
-                        )
-                    digits_end += 1
-                elif count < 4:
-                    raise self.error(
-                        self.line_no, ecol, i, "\\u needs {hex} or four hex digits"
-                    )
-                if code > 0x10FFFF or 0xD800 <= code <= 0xDFFF:
-                    raise self.error(
-                        self.line_no, ecol, i,
-                        t"\\u{String(hex(code))[byte=2:]} is not a Unicode scalar value",
-                    )
-                _append_codepoint(out, code)
-                i = digits_end
+            var separated = end > start and self.byte(end) == ord("_")
+            if is_digit(self.byte(end + 1 if separated else end), hex=hex):
+                end += 2 if separated else 1
             else:
+                return end
+
+    def after_exponent(self, start: Int, marks: StaticString) -> Int:
+        """The end of an exponent (a mark, an optional sign and digits) at `start`, or
+        `start` if there is none."""
+        if not _in(self.byte(start), marks):
+            return start
+        var digits = start + (2 if _in(self.byte(start + 1), "+-") else 1)
+        var end = digits
+        while is_digit(self.byte(end)):
+            end += 1
+        return end if end > digits else start
+
+    def scan_number(mut self, start: Int) raises -> Int:
+        var after_dot = False
+        if case [*_, last] = self.tokens:
+            after_dot = last.is_op(".")
+        var end = start
+        if after_dot:
+            while is_digit(self.byte(end)):
+                end += 1
+            if is_word_char(self.byte(end)):
+                raise self.error(start, "a tuple field is a decimal index, e.g. p.0")
+        elif self.byte(start) == ord("0") and _in(self.byte(start + 1), "xX"):
+            end = self.after_digits(start + 2, hex=True)
+            if end == start + 2:
+                raise self.error(start, "hexadecimal literal needs digits after 0x")
+            var dotted = self.byte(end) == ord(".")
+            if dotted:
+                end = self.after_digits(end + 1, hex=True)
+            var with_exponent = self.after_exponent(end, "pP")
+            if dotted and with_exponent == end:
+                var text = self.text[byte=start:end]
                 raise self.error(
-                    self.line_no, ecol, i, t"unknown escape \\{_char_at(src, i + 1, end)}"
+                    start, t"hexadecimal float {text} needs a binary exponent, e.g. {text}p0"
                 )
-        var end_col = self.col_at(src, i)
-        self.emit(T_STRING, String(unsafe_from_utf8=Span(out)), start, i, col, end_col)
-        return i
+            end = with_exponent
+        else:
+            end = self.after_digits(start, hex=False)
+            if self.byte(end) == ord("."):
+                var fraction = self.after_digits(end + 1, hex=False)
+                end = fraction if fraction > end + 1 else end
+            end = self.after_exponent(end, "eE")
+        if not after_dot and is_word_char(self.byte(end)):
+            var stop = end
+            while is_word_char(self.byte(stop)) or self.byte(stop) == ord("."):
+                stop += 1
+            var text = self.text[byte=start:stop]
+            raise self.error(start, t"invalid numeric literal '{text}'")
+        self.emit(.NUMBER, start=start, end=end)
+        return end
 
+    def scan_string(mut self, start: Int) raises -> Int:
+        var value: List[UInt8] = []
+        var i = start + 1
+        while True:
+            var c = self.byte(i)
+            if i >= self.line.end or (c == ord("\\") and i + 1 >= self.line.end):
+                raise self.error(start, "unterminated string")
+            if c == ord('"'):
+                break
+            if c == ord("\\"):
+                i = self.scan_escape(i, value)
+            else:
+                value.append(UInt8(c))
+                i += 1
+        self.emit_text(.STRING, String(unsafe_from_utf8=value), start=start, end=i + 1)
+        return i + 1
 
-def _append_codepoint(mut out: List[UInt8], code: Int):
-    out.extend(chr(code).as_bytes())
+    def scan_escape(mut self, i: Int, mut value: List[UInt8]) raises -> Int:
+        """Appends what the escape at `i` stands for; returns the index after it."""
+        var e = self.byte(i + 1)
+        var simple = _ESCAPED.find(chr(e))
+        if simple >= 0:
+            value.append(_ESCAPES.as_bytes()[simple])
+            return i + 2
+        if e == ord("x"):
+            if not (is_digit(self.byte(i + 2), hex=True) and is_digit(self.byte(i + 3), hex=True)):
+                raise self.error(i, "\\x needs two hex digits")
+            value.extend(chr(atol(self.text[byte = i + 2 : i + 4], 16)).as_bytes())
+            return i + 4
+        if e == ord("u"):
+            return self.scan_unicode_escape(i, value)
+        raise self.error(i, t"unknown escape \\{self.char_at(i + 1)}")
 
-
-def tokenize(source: String, path: String) raises -> List[Token]:
-    """Tokens of a spec source, with NEWLINE, INDENT and DEDENT from the layout rule."""
-    var lexer = Lexer(path)
-    return lexer.run(source.as_bytes())
+    def scan_unicode_escape(mut self, i: Int, mut value: List[UInt8]) raises -> Int:
+        """`\\u` and four hex digits, or one to six in braces."""
+        var braced = self.byte(i + 2) == ord("{")
+        var first = i + 3 if braced else i + 2
+        var end = first
+        while is_digit(self.byte(end), hex=True) and end - first < (7 if braced else 4):
+            end += 1
+        var count = end - first
+        var well_formed = (1 <= count <= 6 and self.byte(end) == ord("}")) if braced else count == 4
+        if not well_formed:
+            raise self.error(i, "\\u needs {hex} or four hex digits")
+        var code = atol(self.text[byte=first:end], 16)
+        if Codepoint.from_u32(UInt32(code)) is None:
+            var digits = hex(code, prefix="")
+            raise self.error(i, t"\\u{digits} is not a Unicode scalar value")
+        value.extend(chr(code).as_bytes())
+        return end + 1 if braced else end

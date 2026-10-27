@@ -120,31 +120,31 @@ def real_text(v: Real) -> String:
 def describe(ast: Ast, e: Int) -> String:
     """What a node is, for a message: `the operator ==`, `a call to f`, `x`."""
     ref n = ast.nodes[e]
-    if n.kind == sx.BINARY:
-        return String("the operator ", sx.op_name(n.op))
-    if n.kind == sx.UNARY:
-        return String("the operator ", "-" if n.op == sx.NEG else sx.op_name(n.op))
-    if n.kind == sx.CALL:
-        ref callee = ast.nodes[n.kids[0]]
-        if callee.kind == sx.NAME or callee.kind == sx.ATTR:
+    if n.kind == .BINARY:
+        return String("the operator ", n.op)
+    if n.kind == .UNARY:
+        return String("the operator ", "-" if n.op == .NEG else String(n.op))
+    if n.kind == .CALL:
+        ref callee = ast.nodes[n.children[0]]
+        if callee.kind == .NAME or callee.kind == .ATTR:
             return String("a call to ", callee.text)
-    if n.kind == sx.NUM:
+    if n.kind == .NUM:
         return String("the number ", n.text)
-    if n.kind == sx.ATTR:
+    if n.kind == .ATTR:
         return String(".", n.text)
-    if n.kind == sx.NAME:
+    if n.kind == .NAME:
         return n.text.copy()
-    return String(sx.kind_name(n.kind))
+    return String(n.kind)
 
 
 def positional_args(ast: Ast, call: Int) -> Optional[List[Int]]:
     """The argument values of a CALL node (`[callee, TYPEARGS, ARG...]`), or None when
     an argument is named."""
     var values = List[Int]()
-    for arg in ast.nodes[call].kids[2:]:
+    for arg in ast.nodes[call].children[2:]:
         if ast.nodes[arg].text != "":
             return None
-        values.append(ast.kid(arg, 0))
+        values.append(ast.child(arg, 0))
     return values^
 
 
@@ -195,15 +195,15 @@ struct SetCompiler(Movable):
 
     def compile(mut self, mut ctx: SetContext, ast: Ast, e: Int) raises -> BitSet:
         ref n = ast.nodes[e]
-        if n.kind == sx.BINARY and n.op in [sx.BITOR, sx.BITAND, sx.SUB]:
-            var a = self.compile(ctx, ast, n.kids[0])
-            var b = self.compile(ctx, ast, n.kids[1])
-            if n.op == sx.BITOR:
+        if n.kind == .BINARY and n.op in [sx.Op.BITOR, sx.Op.BITAND, sx.Op.SUB]:
+            var a = self.compile(ctx, ast, n.children[0])
+            var b = self.compile(ctx, ast, n.children[1])
+            if n.op == .BITOR:
                 return ctx.union(a, b)
-            if n.op == sx.BITAND:
+            if n.op == .BITAND:
                 return ctx.intersection(a, b)
             return ctx.difference(a, b)
-        if n.kind == sx.NAME:
+        if n.kind == .NAME:
             var cls = self.classes.get(n.text)
             if cls is not None:
                 if Int(cls.value().width) != self.elem.width:
@@ -214,23 +214,23 @@ struct SetCompiler(Movable):
             raise self.fail(
                 e, t"unknown class {n.text} (a class can only use classes defined before it)"
             )
-        if n.kind == sx.ATTR:
-            var tname = self.owner(ast, n.kids[0], n.text, e)
+        if n.kind == .ATTR:
+            var tname = self.owner(ast, n.children[0], n.text, e)
             if n.text in ["min", "max"]:
                 raise self.fail(e, t"{tname}.{n.text} is a value, not a set; write {{{tname}.{n.text}}}")
             var named = self.named_set(ctx, n.text)
             if named is None:
                 raise self.fail(e, t"{tname} has no set {n.text} (its sets are {self.set_names()})")
             return named.value()
-        if n.kind == sx.CALL:
-            ref callee = ast.nodes[n.kids[0]]
-            if callee.kind == sx.ATTR and callee.text in ["range", "pattern"]:
-                var tname = self.owner(ast, callee.kids[0], callee.text, e)
+        if n.kind == .CALL:
+            ref callee = ast.nodes[n.children[0]]
+            if callee.kind == .ATTR and callee.text in ["range", "pattern"]:
+                var tname = self.owner(ast, callee.children[0], callee.text, e)
                 if callee.text == "range":
                     return self.range(ctx, ast, e, tname)
                 return self.pattern(ctx, ast, e, tname)
-        if n.kind == sx.SET:
-            return ctx.exactly([self.member_bits(ast, k) for k in n.kids], self.elem.width)
+        if n.kind == .SET:
+            return ctx.exactly([self.member_bits(ast, k) for k in n.children], self.elem.width)
         var name = self.elem.name()
         raise self.fail(
             e,
@@ -243,7 +243,7 @@ struct SetCompiler(Movable):
         """The type name `value` writes, checked to be the partition's own type."""
         ref v = ast.nodes[value]
         var found: Optional[Elem] = None
-        if v.kind == sx.NAME:
+        if v.kind == .NAME:
             found = self.type_named(v.text)
         if found is None:
             raise self.fail(whole, t"{describe(ast, value)}.{member} is not a partition set")
@@ -283,7 +283,7 @@ struct SetCompiler(Movable):
         if not (self.elem.is_float() or self.elem.is_int()):
             raise self.fail(call, t"{tname} has no range")
         var args = positional_args(ast, call)
-        if args is None or len(args.value()) != 2 or len(ast.nodes[ast.kid(call, 1)].kids) > 0:
+        if args is None or len(args.value()) != 2 or len(ast.nodes[ast.child(call, 1)].children) > 0:
             raise self.fail(call, t"{tname}.range takes two bounds: {tname}.range(start, stop)")
         var lo = self.bound(ast, args.value()[0], tname)
         var hi = self.bound(ast, args.value()[1], tname)
@@ -292,10 +292,10 @@ struct SetCompiler(Movable):
         return ctx.int_range(self.elem.width, self.elem.signed, _numerator(lo), _numerator(hi))
 
     def bound(mut self, ast: Ast, e: Int, tname: String) raises -> Optional[Real]:
-        if ast.nodes[e].kind == sx.NONE:
+        if ast.nodes[e].kind == .NONE:
             return None
         var v = self.const(ast, e)
-        var text = ast.nodes[e].text if ast.nodes[e].kind == sx.NUM else real_text(v)
+        var text = ast.nodes[e].text if ast.nodes[e].kind == .NUM else real_text(v)
         if self.elem.is_float():
             if exactly(self.elem.format(), v) is None:
                 raise self.fail(
@@ -318,7 +318,7 @@ struct SetCompiler(Movable):
         mut self, mut ctx: SetContext, ast: Ast, call: Int, tname: String
     ) raises -> BitSet:
         var args = positional_args(ast, call)
-        if args is None or len(args.value()) != 1 or ast.nodes[args.value()[0]].kind != sx.STR:
+        if args is None or len(args.value()) != 1 or ast.nodes[args.value()[0]].kind != .STR:
             raise self.fail(call, t'{tname}.pattern takes one string: {tname}.pattern("...")')
         var arg = args.value()[0]
         try:
@@ -330,11 +330,11 @@ struct SetCompiler(Movable):
         ref n = ast.nodes[e]
         var name = self.elem.name()
         if self.elem.kind == ty.BOOL:
-            if n.kind != sx.BOOL:
+            if n.kind != .BOOL:
                 raise self.fail(e, t"a bool set holds true and false, not {describe(ast, e)}")
-            return UInt64(1) if n.op == sx.TRUE else UInt64(0)
+            return UInt64(1) if n.op == .TRUE else UInt64(0)
         var v = self.const(ast, e)
-        var text = n.text if n.kind == sx.NUM else real_text(v)
+        var text = n.text if n.kind == .NUM else real_text(v)
         if self.elem.is_int():
             if (
                 not v.is_integer()
@@ -346,7 +346,7 @@ struct SetCompiler(Movable):
             if wrapped.negative:
                 wrapped = wrapped + BigInt(negative=False, magnitude=BigUInt(1) << self.elem.width)
             return wrapped.magnitude.uint64_or_none().value()
-        if n.kind == sx.UNARY and n.op == sx.NEG and v.is_zero():
+        if n.kind == .UNARY and n.op == .NEG and v.is_zero():
             raise self.fail(
                 e,
                 t"-0 is the number 0, which is +0.0 as a {name}; write {name}.zero &"
@@ -359,28 +359,28 @@ struct SetCompiler(Movable):
 
     def const(mut self, ast: Ast, e: Int) raises -> Real:
         ref n = ast.nodes[e]
-        if n.kind == sx.NUM:
+        if n.kind == .NUM:
             try:
                 return parse_number(n.text)
             except err:
                 raise self.fail(e, err)
-        if n.kind == sx.UNARY and n.op == sx.NEG:
-            return -self.const(ast, n.kids[0])
-        if n.kind == sx.BINARY and n.op in [sx.ADD, sx.SUB, sx.MUL, sx.DIV]:
-            var a = self.const(ast, n.kids[0])
-            var b = self.const(ast, n.kids[1])
-            if n.op == sx.ADD:
+        if n.kind == .UNARY and n.op == .NEG:
+            return -self.const(ast, n.children[0])
+        if n.kind == .BINARY and n.op in [sx.Op.ADD, sx.Op.SUB, sx.Op.MUL, sx.Op.DIV]:
+            var a = self.const(ast, n.children[0])
+            var b = self.const(ast, n.children[1])
+            if n.op == .ADD:
                 return a + b
-            if n.op == sx.SUB:
+            if n.op == .SUB:
                 return a - b
-            if n.op == sx.MUL:
+            if n.op == .MUL:
                 return a * b
             if b.is_zero():
                 raise self.fail(e, "division by zero")
             return a / b
-        if n.kind == sx.ATTR and n.text in ["min", "max"]:
-            ref owner = ast.nodes[n.kids[0]]
-            var found = self.type_named(owner.text) if owner.kind == sx.NAME else None
+        if n.kind == .ATTR and n.text in ["min", "max"]:
+            ref owner = ast.nodes[n.children[0]]
+            var found = self.type_named(owner.text) if owner.kind == .NAME else None
             if found is not None:
                 var elem = found.value()
                 var is_min = n.text == "min"

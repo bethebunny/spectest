@@ -107,7 +107,7 @@ def _example(mut ctx: SetContext, elem: Elem, s: BitSet) raises -> String:
 
 def _uses(ast: Ast, e: Int, names: Dict[String, Bool]) -> Bool:
     ref n = ast.nodes[e]
-    return (n.kind == sx.NAME and n.text in names) or any([_uses(ast, k, names) for k in n.kids])
+    return (n.kind == .NAME and n.text in names) or any([_uses(ast, k, names) for k in n.children])
 
 
 def compile_partitions(mut ctx: SetContext, spec: Spec) raises -> PartitionSets:
@@ -148,10 +148,6 @@ def compile_partitions(mut ctx: SetContext, spec: Spec) raises -> PartitionSets:
 
 def _diag(ast: Ast, node: Int, message: Some[Writable]) -> String:
     return String(ast.location(node), ": ", message)
-
-
-def _warning(ast: Ast, node: Int, message: Some[Writable]) -> Diagnostic:
-    return Diagnostic(ast.path_of(node), ast.nodes[node].span, String(message))
 
 
 def _check_partition(
@@ -199,7 +195,7 @@ def _check_partition(
     for i, k in enumerate(compiled):
         ref cls = part.classes[k]
         if ctx.is_empty(results[k]):
-            warnings.append(_warning(ast, cls.node, t"{label}: class {cls.name} is empty"))
+            warnings.append(ast.diagnostic(cls.node, t"{label}: class {cls.name} is empty"))
         for earlier in compiled[:i]:
             var common = ctx.intersection(results[earlier], results[k])
             if not ctx.is_empty(common):
@@ -242,8 +238,7 @@ def _check_partition(
         var outside = ctx.difference(results[k], target.value())
         if not ctx.is_empty(results[k]) and not ctx.is_empty(outside):
             warnings.append(
-                _warning(
-                    ast,
+                ast.diagnostic(
                     cls.node,
                     t"{label}: class {cls.name} has {_count_text(ctx.count(outside))} that"
                     t" requires rejects, e.g. {pname} = {_example(ctx, elem, outside)}",

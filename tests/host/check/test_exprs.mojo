@@ -189,7 +189,7 @@ def test_let_scoping() raises:
     var spec = ok("fn f(x: int)\n  ensures e: let x = [x] in len(x) == 1\n")
     var let = clause_expr(spec, "f.e")
     var inner = List[Int]()
-    for n in nodes_of(spec, let, ast.NAME):
+    for n in nodes_of(spec, let, ast.NodeKind.NAME):
         if spec.ast.nodes[n].text == "x":
             inner.append(n)
     # let x = [x]: the value's x is the parameter, the body's x the local.
@@ -220,7 +220,7 @@ def test_comprehension_variable_is_local() raises:
     var spec = ok("fn f(xs: list<int>)\n  ensures e: all(x in xs: x > 0)\n")
     var comp = clause_expr(spec, "f.e")
     var xs = List[Int]()
-    for n in nodes_of(spec, comp, ast.NAME):
+    for n in nodes_of(spec, comp, ast.NodeKind.NAME):
         if spec.ast.nodes[n].text == "x":
             xs.append(n)
     assert_equal(len(xs), 1)
@@ -274,9 +274,9 @@ def test_every_expression_gets_a_type() raises:
         'eq(result, m, float="bits") and len(map(x in xs: real(x))) == k\n'
     )
     var expr = clause_expr(spec, "f.a")
-    for n in nodes_of(spec, expr, ast.CALL):
+    for n in nodes_of(spec, expr, ast.NodeKind.CALL):
         assert_true(spec.node_types[n] != 0)
-    for n in nodes_of(spec, expr, ast.NAME):
+    for n in nodes_of(spec, expr, ast.NodeKind.NAME):
         var found = spec.resolution(n)
         assert_true(Bool(found))
         assert_true(spec.node_types[n] != 0)
@@ -488,8 +488,8 @@ def test_qerr_comparison_types() raises:
     var spec = ok("fn f(x: f32) -> f32\n  ensures a: qe(result, cr.cos(x)) <= 1\n")
     var e = clause_expr(spec, "f.a")
     assert_equal(type_text(spec, e), "bool")
-    assert_equal(type_text(spec, spec.ast.kid(e, 0)), "qerr")
-    assert_equal(type_text(spec, spec.ast.kid(e, 1)), "int")
+    assert_equal(type_text(spec, spec.ast.child(e, 0)), "qerr")
+    assert_equal(type_text(spec, spec.ast.child(e, 1)), "int")
 
 
 def test_max_and_sum_types() raises:
@@ -537,19 +537,19 @@ def test_aggregate_accepted_shapes() raises:
 def test_aggregate_resolutions_and_types() raises:
     var spec = aggregate_ok("sum(v in f16.finite - f16.zero: qe(f(v), cr.cos(v))) == 0")
     var id = spec.clause_named("f.a").value()
-    assert_equal(spec.clauses[id].kind, ast.AGGREGATE)
+    assert_equal(spec.clauses[id].kind, ast.Op.AGGREGATE)
     var e = spec.clauses[id].expr
-    var top = spec.ast.kid(e, 0)
-    assert_equal(type_text(spec, spec.ast.kid(top, 0)), "set<f16>")
+    var top = spec.ast.child(e, 0)
+    assert_equal(type_text(spec, spec.ast.child(top, 0)), "set<f16>")
     assert_equal(type_text(spec, top), "qerr")
-    var finite = spec.ast.kid(spec.ast.kid(top, 0), 0)
+    var finite = spec.ast.child(spec.ast.child(top, 0), 0)
     assert_equal(spec.resolution(finite).value().kind, R_TYPE_CONST)
     assert_equal(spec.resolution(finite).value().name, "finite")
-    var body = spec.ast.kid(top, 1)
-    var call = spec.ast.kid(spec.ast.kid(body, 2), 0)
+    var body = spec.ast.child(top, 1)
+    var call = spec.ast.child(spec.ast.child(body, 2), 0)
     assert_equal(spec.resolution(call).value().kind, R_SPEC_FN)
     assert_equal(spec.resolution(call).value().index, spec.fn_named("f").value())
-    var vs = named(spec, call, ast.NAME, "v")
+    var vs = named(spec, call, ast.NodeKind.NAME, "v")
     assert_equal(type_text(spec, vs[0]), "f16")
     assert_equal(spec.resolution(vs[0]).value().kind, R_LOCAL)
     assert_equal(spec.resolution(vs[0]).value().index, top)
@@ -560,8 +560,8 @@ def test_aggregate_set_constructor_resolution() raises:
         "fn f(x: f32) -> f32\n"
         "  aggregate worst: max(v in f32.range(-1, 1): qe(f(v), cr.cos(v))) <= 0\n"
     )
-    var top = spec.ast.kid(clause_expr(spec, "f.worst"), 0)
-    var it = spec.ast.kid(top, 0)
+    var top = spec.ast.child(clause_expr(spec, "f.worst"), 0)
+    var it = spec.ast.child(top, 0)
     assert_equal(type_text(spec, it), "set<f32>")
     assert_equal(spec.resolution(it).value().kind, R_SET_CTOR)
     assert_equal(spec.resolution(it).value().name, "range")
@@ -635,7 +635,7 @@ def test_aggregate_spec_functions_are_planned_calls() raises:
         "all(v in f16.all: same(g(v), f(v)))", "fn g(y: f16) -> f16\n"
     )
     var names = List[String]()
-    for n in nodes_of(spec, clause_expr(spec, "f.a"), ast.CALL):
+    for n in nodes_of(spec, clause_expr(spec, "f.a"), ast.NodeKind.CALL):
         var r = spec.resolution(n)
         if r and r.value().kind == R_SPEC_FN:
             names.append(r.value().name.copy())

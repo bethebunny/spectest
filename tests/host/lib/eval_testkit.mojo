@@ -121,7 +121,7 @@ def fragment(params: String, expr: String, returns: String = "") -> String:
 
 def expr_node(spec: Spec) raises -> Int:
     """The expression of the `let` that `fragment` wraps its expression in."""
-    return spec.ast.kid(spec.clauses[clause_pos(spec, "f.e")].expr, 0)
+    return spec.ast.child(spec.clauses[clause_pos(spec, "f.e")].expr, 0)
 
 
 def value_of(

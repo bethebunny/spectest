@@ -274,21 +274,21 @@ struct Prop(Property, Movable):
         for c in clauses:
             ref cl = spec.clauses[c]
             var k = cl.kind
-            if k == ast.REQUIRES:
+            if k == .REQUIRES:
                 self.requires.append(c)
-            elif k == ast.ENSURES or k == ast.RELATES:
-                self.infos.append(PropInfo(K_COND, c, cl.id.copy(), source_text(spec, cl.node), String(ast.op_name(k)), -1))
+            elif k == .ENSURES or k == .RELATES:
+                self.infos.append(PropInfo(K_COND, c, cl.id.copy(), source_text(spec, cl.node), String(k), -1))
                 var olds = List[Int]()
                 if cl.expr != 0:
                     collect_olds(spec, cl.expr, olds)
                 if len(olds) > 0:
                     self.old_clauses.append(c)
-            elif k == ast.RAISES:
+            elif k == .RAISES:
                 self.infos.append(PropInfo(K_RAISES, c, cl.id.copy(), source_text(spec, cl.node), "raises", -1))
                 self.cond_clauses.append(c)
-            elif k == ast.MAY_RAISE:
+            elif k == .MAY_RAISE:
                 self.cond_clauses.append(c)
-            elif k == ast.MODIFIES:
+            elif k == .MODIFIES:
                 has_modifies = True
                 for n in cl.names:
                     self.modified.append(n)
@@ -314,7 +314,7 @@ struct Prop(Property, Movable):
                 continue
             for c in spec.models[m.value()].clauses:
                 ref cl = spec.clauses[c]
-                if cl.kind == ast.INVARIANT:
+                if cl.kind == .INVARIANT:
                     self.infos.append(PropInfo(K_INVARIANT, c, decl + ":" + cl.id, source_text(spec, cl.node), "invariant", m.value()))
         # Tallies.
         var n = len(self.infos)
@@ -705,7 +705,7 @@ struct Prop(Property, Movable):
         for k in range(len(self.cond_clauses)):
             if conds[k] == 1:
                 ref cl = spec.clauses[self.cond_clauses[k]]
-                if cl.kind == ast.RAISES:
+                if cl.kind == .RAISES:
                     due.append(k)
                     must.append(cl.error.copy())
                 else:
@@ -880,11 +880,11 @@ struct Prop(Property, Movable):
             return
         if contains_name(must, mapped) or contains_name(may, mapped):
             return
-        if any([spec.clauses[c].kind == ast.RAISES and spec.clauses[c].error == mapped for c in self.cond_clauses]):
+        if any([spec.clauses[c].kind == .RAISES and spec.clauses[c].error == mapped for c in self.cond_clauses]):
             return
         for k in range(len(self.cond_clauses)):
             ref cl = spec.clauses[self.cond_clauses[k]]
-            if cl.kind == ast.MAY_RAISE and cl.error == mapped and conds[k] < 0:
+            if cl.kind == .MAY_RAISE and cl.error == mapped and conds[k] < 0:
                 self._error(i, String(cl.id, ": ", cond_msg[k]))
                 return
         self.vkind[i] = V_FAIL
@@ -1101,7 +1101,7 @@ struct Prop(Property, Movable):
         elif kind == K_RAISES or kind == K_ANY_RAISES:
             for k in range(len(self.cond_clauses)):
                 ref cl = spec.clauses[self.cond_clauses[k]]
-                d.expl_source.append(String(ast.op_name(cl.kind), " ", cl.error, " when ", source_text(spec, cl.expr) if cl.expr != 0 else String("true")))
+                d.expl_source.append(String(cl.kind, " ", cl.error, " when ", source_text(spec, cl.expr) if cl.expr != 0 else String("true")))
                 d.expl_value.append(String("true") if conds[k] == 1 else (String("false") if conds[k] == 0 else String("error: ", cond_msg[k])))
             d.expl_source.append("errors that must be raised (R)")
             d.expl_value.append(names_text(must))
@@ -1348,7 +1348,7 @@ def run(
     if not failure:
         ref func = loaded.spec.fns[f]
         for ci in func.clauses:
-            if loaded.spec.clauses[ci].kind == ast.AGGREGATE:
+            if loaded.spec.clauses[ci].kind == .AGGREGATE:
                 result.clauses.append(run_aggregate(loaded.spec, loaded.ctx, prop.host, f, ci, options, seed))
     prop.host.release_all()
     result.seconds = Float64(perf_counter_ns() - started) / 1e9

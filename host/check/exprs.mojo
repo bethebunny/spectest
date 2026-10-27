@@ -47,14 +47,9 @@ from check.typesyn import ensure_const, resolve_type
 
 
 def poison_subtree(mut c: Checker, e: Int):
-    var stack = List[Int]()
-    stack.append(e)
-    while len(stack) > 0:
-        var n = stack.pop()
+    for n in c.spec.ast.subtree(e):
         if c.spec.node_types[n] == 0:
             c.spec.node_types[n] = c.poison
-        for k in c.spec.ast.nodes[n].kids:
-            stack.append(k)
 
 
 def want_bool(mut c: Checker, node: Int, t: Int, what: String):
@@ -78,18 +73,18 @@ def binds_value(c: Checker, name: String) -> Bool:
 
 def _root_name(c: Checker, e: Int) -> String:
     var n = e
-    while c.kind_of(n) == ast.ATTR:
+    while c.kind_of(n) == .ATTR:
         n = c.kid(n, 0)
-    if c.kind_of(n) == ast.NAME:
+    if c.kind_of(n) == .NAME:
         return c.text_of(n)
     return String()
 
 
 def dotted(c: Checker, e: Int) -> String:
     """`a.b.c` for a chain of names and attributes, or "" for anything else."""
-    if c.kind_of(e) == ast.NAME:
+    if c.kind_of(e) == .NAME:
         return c.text_of(e)
-    if c.kind_of(e) == ast.ATTR:
+    if c.kind_of(e) == .ATTR:
         var inner = dotted(c, c.kid(e, 0))
         if inner == "":
             return String()
@@ -135,7 +130,7 @@ def assignable(mut c: Checker, actual: Int, target: Int, node: Int) -> Bool:
                 if not found:
                     return False
             return True
-        if node > 0 and c.kind_of(node) == ast.STR:
+        if node > 0 and c.kind_of(node) == .STR:
             var text = c.text_of(node)
             for w in values:
                 if w == text:
@@ -163,7 +158,7 @@ def assignable(mut c: Checker, actual: Int, target: Int, node: Int) -> Bool:
     if kt == ty.STRING:
         return c.is_stringish(actual)
     if kt == ty.LIST and ka == ty.LIST:
-        if node > 0 and c.kind_of(node) == ast.LIST and c.nkids(node) > 0:
+        if node > 0 and c.kind_of(node) == .LIST and c.nkids(node) > 0:
             for x in c.kids_of(node):
                 if not assignable(c, c.spec.node_types[x], c.arg(target, 0), x):
                     return False
@@ -181,7 +176,7 @@ def assignable(mut c: Checker, actual: Int, target: Int, node: Int) -> Bool:
         if len(ts) != len(xs):
             return False
         var subs = List[Int]()
-        if node > 0 and c.kind_of(node) == ast.TUPLE and c.nkids(node) == len(ts):
+        if node > 0 and c.kind_of(node) == .TUPLE and c.nkids(node) == len(ts):
             subs = c.kids_of(node)
         for i in range(len(ts)):
             if not assignable(c, xs[i], ts[i], subs[i] if len(subs) > 0 else 0):
@@ -196,41 +191,41 @@ def assignable(mut c: Checker, actual: Int, target: Int, node: Int) -> Bool:
 def infer(mut c: Checker, e: Int, expected: Int = NO_TYPE) -> Int:
     var k = c.kind_of(e)
     var t: Int
-    if k == ast.NAME:
+    if k == .NAME:
         t = infer_name(c, e)
-    elif k == ast.BINARY:
+    elif k == .BINARY:
         t = infer_binary(c, e, expected)
-    elif k == ast.CALL:
+    elif k == .CALL:
         t = infer_call(c, e)
-    elif k == ast.ATTR:
+    elif k == .ATTR:
         t = infer_attr(c, e)
-    elif k == ast.NUM:
+    elif k == .NUM:
         t = c.int_ if is_integer_literal(c.spec.ast.nodes[e].text) else c.real_
-    elif k == ast.STR:
+    elif k == .STR:
         t = c.string_
-    elif k == ast.BOOL:
+    elif k == .BOOL:
         t = c.bool_
-    elif k == ast.NONE:
+    elif k == .NONE:
         t = c.spec.types.option_of(ty.ANY_TYPE)
-    elif k == ast.UNARY:
+    elif k == .UNARY:
         t = infer_unary(c, e)
-    elif k == ast.IF:
+    elif k == .IF:
         t = infer_if(c, e, expected)
-    elif k == ast.LET:
+    elif k == .LET:
         t = infer_let(c, e, expected)
-    elif k == ast.COMPREHENSION:
+    elif k == .COMPREHENSION:
         t = infer_comprehension(c, e)
-    elif k == ast.TUPLE_INDEX:
+    elif k == .TUPLE_INDEX:
         t = infer_tuple_index(c, e)
-    elif k == ast.INDEX:
+    elif k == .INDEX:
         t = infer_index(c, e)
-    elif k == ast.SLICE:
+    elif k == .SLICE:
         t = infer_slice(c, e)
-    elif k == ast.LIST:
+    elif k == .LIST:
         t = infer_list(c, e)
-    elif k == ast.TUPLE:
+    elif k == .TUPLE:
         t = infer_tuple(c, e)
-    elif k == ast.SET:
+    elif k == .SET:
         t = infer_set(c, e, expected)
     else:
         t = c.poison
@@ -248,8 +243,8 @@ def infer_name(mut c: Checker, e: Int) -> Int:
 
 def _old_local_message(c: Checker, name: String, binder: Int) -> String:
     var how = "let"
-    if c.kind_of(binder) == ast.COMPREHENSION:
-        how = String(ast.op_name(c.op_of(binder))) + "(...)"
+    if c.kind_of(binder) == .COMPREHENSION:
+        how = String(c.op_of(binder)) + "(...)"
     return (
         "old(...) is evaluated before the call, so it cannot use "
         + name
@@ -431,7 +426,7 @@ def unknown_name(mut c: Checker, e: Int, name: String):
 def infer_unary(mut c: Checker, e: Int) -> Int:
     var operand = c.kid(e, 0)
     var t = infer(c, operand)
-    if c.op_of(e) == ast.NOT:
+    if c.op_of(e) == .NOT:
         want_bool(c, operand, t, "the operand of not")
         return c.bool_
     if c.is_any(t):
@@ -456,34 +451,34 @@ def infer_binary(mut c: Checker, e: Int, expected: Int) -> Int:
         side = expected
     var lt = infer(c, left, side)
     var rt = infer(c, right, side)
-    if op == ast.AND or op == ast.OR or op == ast.IMPLIES:
-        var word = String(ast.op_name(op))
+    if op == .AND or op == .OR or op == .IMPLIES:
+        var word = String(op)
         want_bool(c, left, lt, "the left operand of " + word)
         want_bool(c, right, rt, "the right operand of " + word)
         return c.bool_
-    if op == ast.BITOR or op == ast.BITAND:
+    if op == .BITOR or op == .BITAND:
         if c.is_integer(lt) and c.is_integer(rt):
             return c.int_
         return set_op(c, e, lt, rt)
-    if op == ast.SUB and (c.tkind(lt) == ty.SET or c.tkind(rt) == ty.SET):
+    if op == .SUB and (c.tkind(lt) == ty.SET or c.tkind(rt) == ty.SET):
         return set_op(c, e, lt, rt)
-    if op == ast.EQ or op == ast.NE:
+    if op == .EQ or op == .NE:
         return equality(c, e, lt, rt)
-    if op == ast.LT or op == ast.LE or op == ast.GT or op == ast.GE:
+    if op == .LT or op == .LE or op == .GT or op == .GE:
         return ordering(c, e, lt, rt)
-    if op == ast.IN:
+    if op == .IN:
         return membership(c, e, lt, rt)
-    if op == ast.SHL or op == ast.SHR or op == ast.POW:
+    if op == .SHL or op == .SHR or op == .POW:
         return integer_op(c, e, lt, rt)
     return arith(c, e, lt, rt)
 
 
 def integer_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
-    var op = String(ast.op_name(c.op_of(e)))
+    var op = String(c.op_of(e))
     if c.is_poison(lt) or c.is_poison(rt):
         return c.poison
     if (c.is_integer(lt) or c.is_any(lt)) and (c.is_integer(rt) or c.is_any(rt)):
-        if c.op_of(e) == ast.POW:
+        if c.op_of(e) == .POW:
             var exponent = c.literal_value(c.kid(e, 1))
             if exponent and exponent.value() < Real(0):
                 c.error(
@@ -500,7 +495,7 @@ def integer_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
 def set_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     if c.is_poison(lt) or c.is_poison(rt):
         return c.poison
-    var op = String(ast.op_name(c.op_of(e)))
+    var op = String(c.op_of(e))
     if c.tkind(lt) != ty.SET or c.tkind(rt) != ty.SET:
         if (op == "|" or op == "&") and c.tkind(lt) == ty.BOOL and c.tkind(rt) == ty.BOOL:
             var word = "or" if op == "|" else "and"
@@ -569,7 +564,7 @@ def qerr_comparison(mut c: Checker, e: Int, lt: Int, rt: Int) -> Bool:
         return True
     c.error(
         e,
-        t"{ast.op_name(c.op_of(e))} compares a qerr with a qerr or a number (an int or real, read "
+        t"{c.op_of(e)} compares a qerr with a qerr or a number (an int or real, read "
         t"as c + 0·nan), but the other side is {c.text(other)}",
     )
     return True
@@ -590,7 +585,7 @@ def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         return c.bool_
     if qerr_comparison(c, e, lt, rt):
         return c.bool_
-    var op = String(ast.op_name(c.op_of(e)))
+    var op = String(c.op_of(e))
     var left = c.kid(e, 0)
     var right = c.kid(e, 1)
     var lc = c.tkind(lt) == ty.CHOICE
@@ -631,7 +626,7 @@ def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
 
 
 def literal_member(mut c: Checker, at: Int, b: Int):
-    if c.tkind(at) == ty.LITERAL and c.kind_of(b) == ast.STR:
+    if c.tkind(at) == ty.LITERAL and c.kind_of(b) == .STR:
         var text = c.text_of(b)
         for v in c.spec.types.infos[at].names:
             if v == text:
@@ -658,7 +653,7 @@ def ordering(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
             hint = ": compare their observers"
         c.error(
             e,
-            t"{ast.op_name(c.op_of(e))} needs ordered operands, but {c.text(j)} has no total order"
+            t"{c.op_of(e)} needs ordered operands, but {c.text(j)} has no total order"
             t"{hint}",
         )
     return c.bool_
@@ -699,13 +694,13 @@ def membership(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
 
 def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     var op = c.op_of(e)
-    var opn = String(ast.op_name(op))
+    var opn = String(op)
     if c.is_any(lt) or c.is_any(rt):
         return c.poison if (c.is_poison(lt) or c.is_poison(rt)) else ty.ANY_TYPE
     var lk = c.tkind(lt)
     var rk = c.tkind(rt)
     if lk == ty.QERR or rk == ty.QERR:
-        if op == ast.ADD and lk == ty.QERR and rk == ty.QERR:
+        if op == .ADD and lk == ty.QERR and rk == ty.QERR:
             return c.qerr_
         c.error(
             e,
@@ -713,7 +708,7 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
             t"other (qe(a, b) + qe(c, d)); read their parts with steps(e) and nans(e)",
         )
         return c.poison
-    if op == ast.ADD:
+    if op == .ADD:
         if lk == ty.LIST and rk == ty.LIST:
             var j = c.join(lt, rt)
             if j < 0:
@@ -725,9 +720,9 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         if lk == ty.BYTES and rk == ty.BYTES:
             return c.bytes_
     if c.is_numeric(lt) and c.is_numeric(rt):
-        if op == ast.DIV:
+        if op == .DIV:
             return c.real_
-        if op == ast.FLOORDIV or op == ast.MOD:
+        if op == .FLOORDIV or op == .MOD:
             if c.is_integer(lt) and c.is_integer(rt):
                 return c.int_
             c.error(
@@ -790,7 +785,7 @@ def infer_let(mut c: Checker, e: Int, expected: Int) -> Int:
 def infer_comprehension(mut c: Checker, e: Int) -> Int:
     var name = c.text_of(e)
     var kind = c.op_of(e)
-    var kname = String(ast.op_name(kind))
+    var kname = String(kind)
     bind_name(c, e, name)
     var iterable = c.kid(e, 0)
     var body = c.kid(e, 1)
@@ -819,15 +814,15 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
     push_local(c, name, elem, e)
     var bt = infer(c, body)
     pop_local(c)
-    if kind == ast.ALL or kind == ast.EXISTS or kind == ast.COUNT or kind == ast.FILTER:
+    if kind == .ALL or kind == .EXISTS or kind == .COUNT or kind == .FILTER:
         want_bool(c, body, bt, "the body of " + kname + "(...)")
-    if kind == ast.ALL or kind == ast.EXISTS:
+    if kind == .ALL or kind == .EXISTS:
         return c.bool_
-    if kind == ast.COUNT:
+    if kind == .COUNT:
         return c.int_
-    if kind == ast.FILTER:
+    if kind == .FILTER:
         return c.spec.types.list_of(elem)
-    if kind == ast.MAP:
+    if kind == .MAP:
         return c.spec.types.list_of(bt)
     if c.is_any(bt):
         return bt
@@ -837,7 +832,7 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
         return c.int_
     if c.is_numeric(bt):
         return c.real_
-    var what = "adds" if kind == ast.SUM else "takes the largest of"
+    var what = "adds" if kind == .SUM else "takes the largest of"
     c.error(body, t"{kname}(...) {what} numbers or qerr values, but the body is {c.text(bt)}")
     return c.poison
 
@@ -845,11 +840,11 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
 def is_set_syntax(mut c: Checker, e: Int) -> Bool:
     """Is e written as a partition set (f16.all, f32.range(a, b), {v, ...}, | & -)?"""
     var k = c.kind_of(e)
-    if k == ast.SET:
+    if k == .SET:
         return True
-    if k == ast.BINARY:
+    if k == .BINARY:
         var op = c.op_of(e)
-        if op == ast.BITOR or op == ast.BITAND or op == ast.SUB:
+        if op == .BITOR or op == .BITAND or op == .SUB:
             return is_set_syntax(c, c.kid(e, 0)) or is_set_syntax(c, c.kid(e, 1))
         return False
     return set_scalar(c, e) >= 0
@@ -858,10 +853,10 @@ def is_set_syntax(mut c: Checker, e: Int) -> Bool:
 def set_scalar(mut c: Checker, e: Int) -> Int:
     """The scalar type T of a `T.<set>` or `T.range(...)` / `T.pattern(...)` node, or -1."""
     var attr = e
-    var is_call = c.kind_of(e) == ast.CALL
+    var is_call = c.kind_of(e) == .CALL
     if is_call:
         attr = c.kid(e, 0)
-    if c.kind_of(attr) != ast.ATTR or c.kind_of(c.kid(attr, 0)) != ast.NAME:
+    if c.kind_of(attr) != .ATTR or c.kind_of(c.kid(attr, 0)) != .NAME:
         return NO_TYPE
     var name = c.text_of(c.kid(attr, 0))
     if binds_value(c, name) or c.ctx.hidden_index(name) >= 0:
@@ -890,7 +885,7 @@ def _find_set_scalar(mut c: Checker, n: Int) -> Int:
 def set_iterable(mut c: Checker, e: Int) -> Int:
     """Check a set ranged over by a comprehension; the type of its members."""
     var it = c.kid(e, 0)
-    var kname = String(ast.op_name(c.op_of(e)))
+    var kname = String(c.op_of(e))
     if c.ctx.aggregate_top != e:
         c.error(
             it,
@@ -955,7 +950,7 @@ def set_call_res(mut c: Checker, e: Int, kind: UInt8, index: Int, owner: Int, na
 def infer_call(mut c: Checker, e: Int) -> Int:
     var f = c.kid(e, 0)
     var fk = c.kind_of(f)
-    if fk == ast.NAME:
+    if fk == .NAME:
         var name = c.text_of(f)
         if binds_value(c, name):
             return fail_call(c, e, f, t"{name} is a value, not a function")
@@ -990,7 +985,7 @@ def infer_call(mut c: Checker, e: Int) -> Int:
                 joined += options[i]
             hint = " (did you mean " + joined + "?)"
         return fail_call(c, e, f, t"unknown function {name}{hint}")
-    if fk == ast.ATTR:
+    if fk == .ATTR:
         var base = c.kid(f, 0)
         var attr = c.text_of(f)
         var chain = chain_candidate(c, f)
@@ -1001,7 +996,7 @@ def infer_call(mut c: Checker, e: Int) -> Int:
             var pi = c.prelude_ids.get(chain)
             if pi:
                 return call_prelude(c, e, chain, pi.value())
-            if c.kind_of(base) == ast.NAME:
+            if c.kind_of(base) == .NAME:
                 var bname = c.text_of(base)
                 if bname == "mp" or bname == "cr":
                     c.set_type(base, ty.ANY_TYPE)
@@ -1020,7 +1015,7 @@ def infer_call(mut c: Checker, e: Int) -> Int:
                 var root = _root_name(c, f)
                 if root != "" and c.scalar(root) < 0:
                     return call_extern(c, e, chain)
-            var known_type_root = c.kind_of(base) == ast.NAME and (
+            var known_type_root = c.kind_of(base) == .NAME and (
                 c.scalar(c.text_of(base)) >= 0 or c.text_of(base) in c.enum_index
             )
             if not known_type_root:
@@ -1400,7 +1395,7 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             ok = False
         for i in range(2, len(kids)):
             var a = c.kid(kids[i], 0)
-            if c.kind_of(a) == ast.NONE:
+            if c.kind_of(a) == .NONE:
                 var ot = c.spec.types.option_of(ty.ANY_TYPE)
                 c.set_type(a, ot)
                 arg_types.append(ot)
@@ -1411,7 +1406,7 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
                 c.error(a, t"a bound of {stext}.range must be a number or none, not {c.text(t)}")
                 ok = False
     else:
-        if nargs != 1 or has_kw or c.kind_of(c.kid(kids[2], 0)) != ast.STR:
+        if nargs != 1 or has_kw or c.kind_of(c.kid(kids[2], 0)) != .STR:
             c.error(
                 e,
                 stext
@@ -1495,7 +1490,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
             ensure_const(c, ci.value())
             c.resolve(e, R_CONST, ci.value(), -1, chain)
             return c.spec.consts[ci.value()].type
-        if c.kind_of(base) == ast.NAME:
+        if c.kind_of(base) == .NAME:
             var bname = c.text_of(base)
             if bname == "mp" or bname == "cr":
                 c.set_type(base, ty.ANY_TYPE)

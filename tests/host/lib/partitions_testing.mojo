@@ -24,10 +24,10 @@ def _resolved(
     if node == 0:
         return ty.ANY_TYPE
     ref n = ast.nodes[node]
-    var args = [_resolved(types, ast, aliases, tparams, k) for k in n.kids]
-    if n.kind == sx.TUPLE_TYPE:
+    var args = [_resolved(types, ast, aliases, tparams, k) for k in n.children]
+    if n.kind == .TUPLE_TYPE:
         return types.tuple_of(args)
-    if n.kind != sx.TYPE:
+    if n.kind != .TYPE:
         return ty.ANY_TYPE
     if len(args) == 0:
         var scalar = types.scalar(n.text)
@@ -49,10 +49,10 @@ def _resolved(
 
 
 def _clause_expr(it: sx.Node) -> Int:
-    if it.op in [sx.REQUIRES, sx.ENSURES, sx.RELATES, sx.INVARIANT, sx.AGGREGATE]:
-        return it.kids[0]
-    if it.op in [sx.RAISES, sx.MAY_RAISE] and len(it.kids) > 1:
-        return it.kids[1]
+    if it.op in [sx.Op.REQUIRES, sx.Op.ENSURES, sx.Op.RELATES, sx.Op.INVARIANT, sx.Op.AGGREGATE]:
+        return it.children[0]
+    if it.op in [sx.Op.RAISES, sx.Op.MAY_RAISE] and len(it.children) > 1:
+        return it.children[1]
     return 0
 
 
@@ -67,28 +67,28 @@ def _add_fn(
     mut clauses: List[Clause],
 ):
     ref n = ast.nodes[node]
-    var own = [ast.nodes[t].text for t in ast.nodes[n.kids[0]].kids]
+    var own = [ast.nodes[t].text for t in ast.nodes[n.children[0]].children]
     var tparams = outer.copy() + own.copy()
     var params = List[Param]()
-    for pn in ast.nodes[n.kids[1]].kids:
-        ref kids = ast.nodes[pn].kids
+    for pn in ast.nodes[n.children[1]].children:
+        ref kids = ast.nodes[pn].children
         var type_id = _resolved(types, ast, aliases, tparams, kids[0] if kids else 0)
         params.append(Param(ast.nodes[pn].text, type_id, 0, pn))
     var partitions = List[Partition]()
     var clause_ids = List[Int]()
-    for item in n.kids[3:]:
+    for item in n.children[3:]:
         ref it = ast.nodes[item]
-        if it.kind == sx.PARTITION:
+        if it.kind == .PARTITION:
             var position = -1
             for j, param in enumerate(params):
                 if param.name == it.text:
                     position = j
             var classes = [
-                PartitionClass(ast.nodes[c].text, c, ast.nodes[c].kids[0])
-                for c in it.kids
+                PartitionClass(ast.nodes[c].text, c, ast.nodes[c].children[0])
+                for c in it.children
             ]
             partitions.append(Partition(position, item, classes^))
-        elif it.kind == sx.CLAUSE:
+        elif it.kind == .CLAUSE:
             clause_ids.append(len(clauses))
             clauses.append(
                 Clause(
@@ -118,22 +118,22 @@ def build_spec(source: String, path: String = "t.spec") raises -> Spec:
     var fns = List[Fn]()
     var clauses = List[Clause]()
     var no_tparams = List[String]()
-    for d in ast.nodes[ast.root].kids:
-        if ast.nodes[d].kind == sx.ALIAS:
+    for d in ast.nodes[ast.root()].children:
+        if ast.nodes[d].kind == .ALIAS:
             aliases[ast.nodes[d].text] = _resolved(
-                types, ast, aliases, no_tparams, ast.nodes[d].kids[0]
+                types, ast, aliases, no_tparams, ast.nodes[d].children[0]
             )
-    for d in ast.nodes[ast.root].kids:
+    for d in ast.nodes[ast.root()].children:
         ref dn = ast.nodes[d]
-        if dn.kind == sx.FN:
+        if dn.kind == .FN:
             _add_fn(ast, types, aliases, no_tparams, d, dn.text, fns, clauses)
-        elif dn.kind == sx.INTERFACE:
-            var tparams = [ast.nodes[t].text for t in ast.nodes[dn.kids[0]].kids]
-            for m in dn.kids[1:]:
-                if ast.nodes[m].kind in [sx.CTOR, sx.METHOD]:
+        elif dn.kind == .INTERFACE:
+            var tparams = [ast.nodes[t].text for t in ast.nodes[dn.children[0]].children]
+            for m in dn.children[1:]:
+                if ast.nodes[m].kind in [sx.NodeKind.CTOR, sx.NodeKind.METHOD]:
                     var decl_id = String(dn.text, ".", ast.nodes[m].text)
                     _add_fn(ast, types, aliases, tparams, m, decl_id, fns, clauses)
-    var spec = Spec(ast.nodes[ast.root].text, ast^, types^)
+    var spec = Spec(ast.nodes[ast.root()].text, ast^, types^)
     spec.fns = fns^
     spec.clauses = clauses^
     spec.aliases = aliases^
@@ -151,7 +151,7 @@ def parse_set_expr(source: String, line_offset: Int = 0) raises -> Ast:
 
 
 def set_expr_node(ast: Ast) -> Int:
-    return ast.kid(ast.kid(ast.kid(ast.root, 0), 3), 0)
+    return ast.child(ast.child(ast.child(ast.root(), 0), 3), 0)
 
 
 def compile_set(

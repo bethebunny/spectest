@@ -13,7 +13,7 @@ from gen.models import (
 )
 from gen.sizes import Sizes
 from mcheck.source import Source
-from syntax.ast import Ast, FN, METHOD
+from syntax.ast import Ast, NodeKind
 from wire.value import Value, HANDLE, INT, STRING, LIST
 
 
@@ -163,7 +163,7 @@ def test_draw_args() raises:
     params.append(param("b", spec.types.string(), 7))
     params.append(param("c", box))
     spec.fns.append(
-        Fn("m.f", "m.f", "f", METHOD, 0, -1, List[String](), List[String](), params^, True,
+        Fn("m.f", "m.f", "f", NodeKind.METHOD, 0, -1, List[String](), List[String](), params^, True,
            spec.types.unit(), List[Partition](), List[Int]())
     )
     var rec = Recorder()

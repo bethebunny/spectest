@@ -8,6 +8,7 @@ from check.spec import Spec
 from eval.api import explain, snapshot_olds
 from eval_testkit import *
 from numeric.formats import F32
+from syntax.ast import Op
 from wire.value import Value
 
 
@@ -16,7 +17,7 @@ def example(name: String) raises -> Spec:
     return check_source(Path(path).read_text(), path)
 
 
-def clause_ids(spec: Spec, decl: String, *kinds: UInt8) -> List[Int]:
+def clause_ids(spec: Spec, decl: String, *kinds: Op) -> List[Int]:
     """Positions of the clauses of declaration `decl` of the given kinds."""
     var out = List[Int]()
     for i in range(len(spec.clauses)):
@@ -43,7 +44,7 @@ def test_libm_cos_holds_for_correctly_rounded_results() raises:
     var spec = example("libm")
     var host = Mock()
     var cos = spec.fn_named("cos").value()
-    var clauses = clause_ids(spec, "cos", 25, 29)
+    var clauses = clause_ids(spec, "cos", Op.ENSURES, Op.RELATES)
     assert_equal(len(clauses), 3)
     var inputs = List[Value]()
     for x in [0.0, -0.0, 1.0, -1.0, 0.5, 1e-300, 5e-324, 1e-9, 3.0, 1e5, 1048575.5, 1e10, -1e22, 1.7976931348623157e308]:
@@ -88,14 +89,14 @@ def test_libm_cos32_with_correctly_rounded_f32_results() raises:
     host.on_call(spec.fn_named("cos32").value(), result.copy())
     var env = Env(one(x^))
     env.set_result(result^)
-    all_hold(spec, clause_ids(spec, "cos32", 25, 29), env, host)
+    all_hold(spec, clause_ids(spec, "cos32", Op.ENSURES, Op.RELATES), env, host)
 
 
 def test_libm_sqrt() raises:
     var spec = example("libm")
     var host = Mock()
     var sqrt = spec.fn_named("sqrt").value()
-    var clauses = clause_ids(spec, "sqrt", 25, 29)
+    var clauses = clause_ids(spec, "sqrt", Op.ENSURES, Op.RELATES)
     for x in [0.0, -0.0, 1.0, 2.0, 0.25, 5e-324, 1e300, 1.7976931348623157e308]:
         var result = value_of("x: f64", "cr.sqrt(x)", one(f64v(x)))
         host.on_call(sqrt, result.copy())
@@ -103,7 +104,7 @@ def test_libm_sqrt() raises:
         env.set_result(result^)
         all_hold(spec, clauses, env, host)
     # The freedom to raise applies to negative inputs only.
-    var may = clause_ids(spec, "sqrt", 27)
+    var may = clause_ids(spec, "sqrt", Op.MAY_RAISE)
     assert_equal(len(may), 1)
     assert_true(judge(spec, may[0], Env(one(f64v(4.0))), host).is_false())
     assert_true(judge(spec, may[0], Env(one(f64v(-1.0))), host).is_true())
@@ -116,8 +117,8 @@ def test_binary_pack_and_utf8() raises:
     var env = Env(one(Value.int(-2)))
     env.set_result(Value.bytes([0xFE, 0xFF, 0xFF, 0xFF]))
     host.on_call(spec.fn_named("unpack_i32").value(), Value.int(-2))
-    all_hold(spec, clause_ids(spec, "pack_i32", 25, 29), env, host)
-    var raising = clause_ids(spec, "pack_i32", 26)
+    all_hold(spec, clause_ids(spec, "pack_i32", Op.ENSURES, Op.RELATES), env, host)
+    var raising = clause_ids(spec, "pack_i32", Op.RAISES)
     assert_equal(len(raising), 1)
     assert_true(judge(spec, raising[0], Env(one(Value.int(-2))), host).is_false())
     assert_true(judge(spec, raising[0], Env(one(big("2147483648"))), host).is_true())
@@ -128,7 +129,7 @@ def test_binary_pack_and_utf8() raises:
     host.on_call(spec.fn_named("utf8_decode").value(), text.copy())
     var env2 = Env(one(text.copy()))
     env2.set_result(encoded.copy())
-    all_hold(spec, clause_ids(spec, "utf8_encode", 25, 29), env2, host)
+    all_hold(spec, clause_ids(spec, "utf8_encode", Op.ENSURES, Op.RELATES), env2, host)
     env2.set_result(Value.bytes([0x61, 0xC3, 0xA9]))
     assert_true(judge_clause(spec, "utf8_encode.length", env2, host).is_false())
     assert_true(judge_clause(spec, "utf8_encode.valid", env2, host).is_true())
@@ -183,7 +184,7 @@ def test_frames_invariants_and_dropna() raises:
     host.on_observe(model, 2, Value.int(1), 2)
     var denv = Env(two(Value.handle(1, "Frame"), Value.string("any")))
     denv.set_result(Value.handle(2, "Frame"))
-    var dropna = clause_ids(spec, "dropna", 25)
+    var dropna = clause_ids(spec, "dropna", Op.ENSURES)
     for c in dropna:
         assert_true(judge(spec, c, denv, host).is_true(), spec.clauses[c].id)
     host.on_observe(model, 1, rows.copy(), 2)
@@ -203,7 +204,7 @@ def test_sorting_clauses() raises:
     ))
     var env = Env(one(xs.copy()))
     env.set_result(stable^)
-    all_hold(spec, clause_ids(spec, "sort_by_first", 25), env, host)
+    all_hold(spec, clause_ids(spec, "sort_by_first", Op.ENSURES), env, host)
     var dup = Value.list(three_pairs())
     var env2 = Env(one(dup.copy()))
     # Equal keys must keep their input order.
@@ -233,7 +234,7 @@ def test_deque_append_with_old() raises:
     host.on_observe(model, 0, ints(1, 2, 3))
     host.on_observe(model, 1, Value.some(Value.int(3)))
     var env = Env(two(h.copy(), Value.int(4)))
-    var clauses = clause_ids(spec, "Deque.append", 25)
+    var clauses = clause_ids(spec, "Deque.append", Op.ENSURES)
     snapshot_olds(spec, clauses, env, host)
     # A bounded deque drops from the opposite end.
     host.on_observe(model, 0, ints(2, 3, 4))
@@ -258,14 +259,14 @@ def test_deque_pop() raises:
     host.on_observe(model, 0, ints(5, 6, 7))
     host.on_observe(model, 1, Value.none())
     var env = Env(one(h.copy()))
-    var clauses = clause_ids(spec, "Deque.pop", 25)
+    var clauses = clause_ids(spec, "Deque.pop", Op.ENSURES)
     snapshot_olds(spec, clauses, env, host)
     host.on_observe(model, 0, ints(5, 6))
     env.set_result(Value.int(7))
     all_hold(spec, clauses, env, host)
     env.set_result(Value.int(5))
     assert_true(judge_clause(spec, "Deque.pop.value", env, host).is_false())
-    var raises = clause_ids(spec, "Deque.pop", 26)
+    var raises = clause_ids(spec, "Deque.pop", Op.RAISES)
     assert_equal(len(raises), 1)
     assert_true(judge(spec, raises[0], env, host).is_false())
     host.on_observe(model, 0, ints())

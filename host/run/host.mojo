@@ -204,7 +204,7 @@ struct RunHost(Builder, EvalHost):
         if len(func.tparams) > 0:
             rtype = self.loaded[].spec.types.substitute(rtype, names, ids)
         for c in func.clauses:
-            if self.loaded[].spec.clauses[c].kind != ast.REQUIRES:
+            if self.loaded[].spec.clauses[c].kind != .REQUIRES:
                 continue
             var j = judge(self.loaded[].spec, c, env, self)
             if j.is_false():

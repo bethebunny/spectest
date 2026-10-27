@@ -82,10 +82,10 @@ def judge[
     """Does the clause hold? A `raises` or `may_raise` clause judges its `when` condition."""
     ref c = spec.clauses[clause]
     if c.expr == 0:
-        if c.kind == ast.RAISES or c.kind == ast.MAY_RAISE:
+        if c.kind == .RAISES or c.kind == .MAY_RAISE:
             return Judgment(J_TRUE)
         return Judgment(
-            J_ERROR, String(t"{c.id}: a {ast.op_name(c.kind)} clause has no condition to evaluate"), c.node
+            J_ERROR, String(t"{c.id}: a {c.kind} clause has no condition to evaluate"), c.node
         )
     var run = Run()
     try:
@@ -105,12 +105,12 @@ def collect_olds(spec: Spec, root: Int, mut out: List[Int]):
     while len(stack) > 0:
         var n = stack.pop()
         ref node = spec.ast.nodes[n]
-        if node.kind == ast.CALL:
+        if node.kind == .CALL:
             var r = spec.resolutions.get(n)
             if r is not None and r.value().kind == R_OLD:
                 out.append(n)
                 continue
-        for kid in reversed(node.kids):
+        for kid in reversed(node.children):
             stack.append(kid)
 
 
@@ -125,8 +125,8 @@ def snapshot_olds[
     for call in calls:
         if call in env.olds:
             continue
-        ref kids = spec.ast.nodes[call].kids
-        var arg = spec.ast.nodes[kids[2]].kids[0] if len(kids) > 2 else 0
+        ref kids = spec.ast.nodes[call].children
+        var arg = spec.ast.nodes[kids[2]].children[0] if len(kids) > 2 else 0
         var run = Run()
         try:
             var old = Old(ev(spec, arg, env, run, host), String(), 0, False)

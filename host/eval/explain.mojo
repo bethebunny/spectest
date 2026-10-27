@@ -88,20 +88,20 @@ def outcome_of[H: EvalHost](spec: Spec, e: Int, env: Env, mut run: Run, mut host
 def is_literal(spec: Spec, e: Int) -> Bool:
     ref n = spec.ast.nodes[e]
     var k = n.kind
-    if k == ast.NUM or k == ast.STR or k == ast.BOOL or k == ast.NONE:
+    if k == .NUM or k == .STR or k == .BOOL or k == .NONE:
         return True
-    if k == ast.UNARY and n.op == ast.NEG:
-        return is_literal(spec, n.kids[0])
-    if k == ast.LIST or k == ast.TUPLE:
-        return all([is_literal(spec, kid) for kid in n.kids])
+    if k == .UNARY and n.op == .NEG:
+        return is_literal(spec, n.children[0])
+    if k == .LIST or k == .TUPLE:
+        return all([is_literal(spec, kid) for kid in n.children])
     return False
 
 
-def chain(spec: Spec, e: Int, op: UInt8, mut out: List[Int]):
+def chain(spec: Spec, e: Int, op: ast.Op, mut out: List[Int]):
     ref n = spec.ast.nodes[e]
-    if n.kind == ast.BINARY and n.op == op:
-        chain(spec, n.kids[0], op, out)
-        chain(spec, n.kids[1], op, out)
+    if n.kind == .BINARY and n.op == op:
+        chain(spec, n.children[0], op, out)
+        chain(spec, n.children[1], op, out)
     else:
         out.append(e)
 
@@ -126,22 +126,22 @@ def operand[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, env: Env, mut ru
     if is_literal(spec, e):
         return
     ref n = spec.ast.nodes[e]
-    if n.kind == ast.CALL and not is_old(spec, e):
-        for k in range(2, len(n.kids)):
-            var a = spec.ast.nodes[n.kids[k]].kids[0]
+    if n.kind == .CALL and not is_old(spec, e):
+        for k in range(2, len(n.children)):
+            var a = spec.ast.nodes[n.children[k]].children[0]
             if not is_literal(spec, a):
                 add(ex, spec, a, env, run, host)
-    elif n.kind == ast.INDEX:
-        add(ex, spec, n.kids[0], env, run, host)
-        if not is_literal(spec, n.kids[1]):
-            add(ex, spec, n.kids[1], env, run, host)
-    elif n.kind == ast.SLICE:
-        add(ex, spec, n.kids[0], env, run, host)
+    elif n.kind == .INDEX:
+        add(ex, spec, n.children[0], env, run, host)
+        if not is_literal(spec, n.children[1]):
+            add(ex, spec, n.children[1], env, run, host)
+    elif n.kind == .SLICE:
+        add(ex, spec, n.children[0], env, run, host)
         for j in range(1, 3):
-            if not is_literal(spec, n.kids[j]):
-                add(ex, spec, n.kids[j], env, run, host)
-    elif n.kind == ast.IF:
-        add(ex, spec, n.kids[0], env, run, host)
+            if not is_literal(spec, n.children[j]):
+                add(ex, spec, n.children[j], env, run, host)
+    elif n.kind == .IF:
+        add(ex, spec, n.children[0], env, run, host)
     add(ex, spec, e, env, run, host)
 
 
@@ -149,61 +149,61 @@ def walk[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: Outcome, env
     if ex.full():
         return
     ref n = spec.ast.nodes[e]
-    if n.kind == ast.BINARY:
+    if n.kind == .BINARY:
         var op = n.op
-        if op == ast.AND or op == ast.OR:
+        if op == .AND or op == .OR:
             walk_chain(ex, spec, e, value, env, run, host)
             return
-        if op == ast.IMPLIES:
+        if op == .IMPLIES:
             if value.is_bool(False):
-                var r = outcome_of(spec, n.kids[1], env, run, host)
-                walk(ex, spec, n.kids[1], r, env, run, host)
+                var r = outcome_of(spec, n.children[1], env, run, host)
+                walk(ex, spec, n.children[1], r, env, run, host)
                 return
-            var left = outcome_of(spec, n.kids[0], env, run, host)
+            var left = outcome_of(spec, n.children[0], env, run, host)
             if left.is_bool(False):
-                walk(ex, spec, n.kids[0], left, env, run, host)
+                walk(ex, spec, n.children[0], left, env, run, host)
                 return
             if not left.ok:
-                add_known(ex, spec, n.kids[0], left)
+                add_known(ex, spec, n.children[0], left)
                 return
-            var right = outcome_of(spec, n.kids[1], env, run, host)
-            walk(ex, spec, n.kids[1], right, env, run, host)
+            var right = outcome_of(spec, n.children[1], env, run, host)
+            walk(ex, spec, n.children[1], right, env, run, host)
             return
         if (
-            op == ast.EQ or op == ast.NE or op == ast.LT or op == ast.LE
-            or op == ast.GT or op == ast.GE or op == ast.IN
+            op == .EQ or op == .NE or op == .LT or op == .LE
+            or op == .GT or op == .GE or op == .IN
         ):
-            operand(ex, spec, n.kids[0], env, run, host)
-            operand(ex, spec, n.kids[1], env, run, host)
+            operand(ex, spec, n.children[0], env, run, host)
+            operand(ex, spec, n.children[1], env, run, host)
             return
-    if n.kind == ast.UNARY and n.op == ast.NOT:
-        var inner = outcome_of(spec, n.kids[0], env, run, host)
+    if n.kind == .UNARY and n.op == .NOT:
+        var inner = outcome_of(spec, n.children[0], env, run, host)
         if not inner.is_any_bool():
-            add_known(ex, spec, n.kids[0], inner)
+            add_known(ex, spec, n.children[0], inner)
             return
-        walk(ex, spec, n.kids[0], inner, env, run, host)
+        walk(ex, spec, n.children[0], inner, env, run, host)
         return
-    if n.kind == ast.IF:
-        var cond = outcome_of(spec, n.kids[0], env, run, host)
-        add_known(ex, spec, n.kids[0], cond)
+    if n.kind == .IF:
+        var cond = outcome_of(spec, n.children[0], env, run, host)
+        add_known(ex, spec, n.children[0], cond)
         if cond.is_any_bool():
-            var branch = n.kids[1] if cond.value.as_bool() else n.kids[2]
+            var branch = n.children[1] if cond.value.as_bool() else n.children[2]
             walk(ex, spec, branch, value, env, run, host)
         return
-    if n.kind == ast.LET:
+    if n.kind == .LET:
         walk_let(ex, spec, e, value, env, run, host)
         return
-    if n.kind == ast.COMPREHENSION and (n.op == ast.ALL or n.op == ast.EXISTS):
+    if n.kind == .COMPREHENSION and (n.op == .ALL or n.op == .EXISTS):
         walk_quantifier(ex, spec, e, value, env, run, host)
         return
-    if n.kind == ast.CALL and not is_old(spec, e):
-        for k in range(2, len(n.kids)):
-            var a = spec.ast.nodes[n.kids[k]].kids[0]
+    if n.kind == .CALL and not is_old(spec, e):
+        for k in range(2, len(n.children)):
+            var a = spec.ast.nodes[n.children[k]].children[0]
             if not is_literal(spec, a):
                 add(ex, spec, a, env, run, host)
         add_known(ex, spec, e, value)
         return
-    if n.kind == ast.BOOL:
+    if n.kind == .BOOL:
         return
     add_known(ex, spec, e, value)
 
@@ -212,7 +212,7 @@ def walk_chain[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: Outcom
     var op = spec.ast.nodes[e].op
     var parts = List[Int]()
     chain(spec, e, op, parts)
-    var decisive = value.is_bool(False) if op == ast.AND else value.is_bool(True)
+    var decisive = value.is_bool(False) if op == .AND else value.is_bool(True)
     for part in parts:
         var v = outcome_of(spec, part, env, run, host)
         if not v.is_any_bool():
@@ -228,24 +228,24 @@ def walk_chain[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: Outcom
 
 def walk_let[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     ref n = spec.ast.nodes[e]
-    var bound = outcome_of(spec, n.kids[0], env, run, host)
+    var bound = outcome_of(spec, n.children[0], env, run, host)
     if not bound.ok:
-        add_known(ex, spec, n.kids[0], bound)
+        add_known(ex, spec, n.children[0], bound)
         return
     ex.add_text(n.text, bound.text())
     var base = len(run.locals)
     run.push(e, bound.value.copy())
-    var body = outcome_of(spec, n.kids[1], env, run, host)
-    walk(ex, spec, n.kids[1], body, env, run, host)
+    var body = outcome_of(spec, n.children[1], env, run, host)
+    walk(ex, spec, n.children[1], body, env, run, host)
     run.truncate(base)
 
 
 def walk_quantifier[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     ref n = spec.ast.nodes[e]
-    var witness = (n.op == ast.ALL and value.is_bool(False)) or (
-        n.op == ast.EXISTS and value.is_bool(True)
+    var witness = (n.op == .ALL and value.is_bool(False)) or (
+        n.op == .EXISTS and value.is_bool(True)
     )
-    var iterable = n.kids[0]
+    var iterable = n.children[0]
     var is_set = tkind(spec, iterable) == ty.SET
     var coll = Outcome(Value.none())
     if not is_set:
@@ -259,7 +259,7 @@ def walk_quantifier[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: O
         if is_set:
             items = set_members(spec, iterable)
         else:
-            items = elements(coll.value, String(ast.op_name(n.op), "(...)"))
+            items = elements(coll.value, String(n.op, "(...)"))
     except err:
         add_known(ex, spec, iterable, Outcome(String("error: ", err)))
         return
@@ -267,12 +267,12 @@ def walk_quantifier[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: O
     run.push(e, Value.none())
     for item in items:
         run.set_top(item.copy())
-        var v = outcome_of(spec, n.kids[1], env, run, host)
+        var v = outcome_of(spec, n.children[1], env, run, host)
         if not v.ok or v.is_bool(value.value.as_bool()):
             ex.add_text(n.text, show(item))
             if not v.ok:
-                add_known(ex, spec, n.kids[1], v)
+                add_known(ex, spec, n.children[1], v)
             else:
-                walk(ex, spec, n.kids[1], v, env, run, host)
+                walk(ex, spec, n.children[1], v, env, run, host)
             break
     run.truncate(base)

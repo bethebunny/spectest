@@ -45,7 +45,7 @@ def source_text(spec: Spec, node: Int) -> String:
     """The source text of a node, comments dropped and whitespace collapsed."""
     var text = normalize(spec.ast.source_text(node))
     if text.byte_length() == 0:
-        return String("<", spec.ast.nodes[node].kind, ">")
+        return String("<", Int(spec.ast.nodes[node].kind), ">")
     return text^
 
 
@@ -59,17 +59,12 @@ def short(text: String, limit: Int) -> String:
     return String(text[byte = 0 : cut], "...")
 
 
-def location(spec: Spec, node: Int) -> String:
-    ref span = spec.ast.nodes[node].span
-    return String(spec.ast.path_of(node), ":", span.line, ":", span.col)
-
-
 def located(spec: Spec, node: Int, message: String) -> String:
     """`message (at path:line:col: source text)`."""
     return String(
         message,
         " (at ",
-        location(spec, node),
+        spec.ast.location(node),
         ": ",
         short(source_text(spec, node), 100),
         ")",

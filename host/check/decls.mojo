@@ -2,8 +2,6 @@
 rules of functions, models and interfaces, then the whole-file `run`.
 """
 
-from std.builtin.sort import sort
-
 from numeric.floats import exactly
 from numeric.formats import format_by_id
 from numeric.real import Real
@@ -54,7 +52,7 @@ from check.typesyn import alias_type, ensure_const, record_type, resolve_type
 def _where(c: Checker, here: Int, other: Int) -> String:
     """`line N` of `other`, with its file when that is not the file of `here`."""
     var line = "line " + String(c.line_of(other))
-    if c.spec.ast.file_of(here) != c.spec.ast.file_of(other):
+    if c.spec.ast.nodes[here].file != c.spec.ast.nodes[other].file:
         return c.spec.ast.path_of(other) + ", " + line
     return line
 
@@ -102,8 +100,8 @@ def set_tvars(mut c: Checker, names: List[String], bounds: List[String]):
 
 
 def _has_modifies(c: Checker, decl: Int) -> Bool:
-    for k in c.spec.ast.nodes[decl].kids:
-        if c.kind_of(k) == ast.CLAUSE and c.op_of(k) == ast.MODIFIES:
+    for k in c.spec.ast.nodes[decl].children:
+        if c.kind_of(k) == .CLAUSE and c.op_of(k) == .MODIFIES:
             return True
     return False
 
@@ -113,7 +111,7 @@ def _new_fn(
     name: String,
     target: String,
     decl_id: String,
-    kind: UInt8,
+    kind: ast.NodeKind,
     node: Int,
     owner: Int,
     tparams: List[String],
@@ -144,16 +142,16 @@ def _new_fn(
 def collect(mut c: Checker):
     for d in c.decl_nodes():
         var k = c.kind_of(d)
-        if k == ast.ERROR:
+        if k == .ERROR:
             var name = c.text_of(d)
             if declare(c, name, d):
                 c.spec.errors.append(qualify_error(name))
-        elif k == ast.CONST:
+        elif k == .CONST:
             var name = c.text_of(d)
             if declare(c, name, d):
                 c.spec.consts.append(Const(name, -1, d))
                 c.const_index[name] = len(c.spec.consts) - 1
-        elif k == ast.ENUM:
+        elif k == .ENUM:
             var name = c.text_of(d)
             var members = List[String]()
             for m in c.kids_of(d):
@@ -170,29 +168,29 @@ def collect(mut c: Checker):
                 var t = c.spec.types.enum_(name.copy(), members)
                 c.spec.enums.append(t)
                 c.enum_index[name] = t
-        elif k == ast.RECORD:
+        elif k == .RECORD:
             var name = c.text_of(d)
             if declare(c, name, d):
                 c.record_nodes[name] = d
-        elif k == ast.ALIAS:
+        elif k == .ALIAS:
             var name = c.text_of(d)
             if declare(c, name, d):
                 c.alias_nodes[name] = d
-        elif k == ast.MODEL or k == ast.INTERFACE:
+        elif k == .MODEL or k == .INTERFACE:
             _collect_model(c, d)
-        elif k == ast.FN:
+        elif k == .FN:
             var name = c.text_of(d)
             if declare(c, name, d):
                 var tn = List[String]()
                 var tb = List[String]()
                 tvars_of(c, c.kid(d, 0), tn, tb)
-                var pos = _new_fn(c, name.copy(), name.copy(), name.copy(), ast.FN, d, -1, tn, tb)
+                var pos = _new_fn(c, name.copy(), name.copy(), name.copy(), ast.NodeKind.FN, d, -1, tn, tb)
                 c.fn_index[name] = pos
             else:
                 var tn = List[String]()
                 var tb = List[String]()
                 tvars_of(c, c.kid(d, 0), tn, tb)
-        elif k == ast.DEF:
+        elif k == .DEF:
             var name = c.text_of(d)
             var tn = List[String]()
             var tb = List[String]()
@@ -202,8 +200,8 @@ def collect(mut c: Checker):
                 c.duplicate[d] = True
             elif (
                 name in c.names
-                and c.spec.ast.kind_of_file(c.names.get(name).value()) == ast.FILE
-                and c.spec.ast.kind_of_file(d) == ast.PRELUDE_FILE
+                and c.spec.ast.kind_of_file(c.names.get(name).value()) == .FILE
+                and c.spec.ast.kind_of_file(d) == .PRELUDE_FILE
             ):
                 # A definition of the spec itself shadows the attached prelude's.
                 c.duplicate[d] = True
@@ -220,9 +218,9 @@ def collect(mut c: Checker):
         var k = c.kind_of(d)
         if c.duplicate[d]:
             continue
-        if k == ast.ALIAS:
+        if k == .ALIAS:
             _ = alias_type(c, c.text_of(d), d)
-        elif k == ast.RECORD:
+        elif k == .RECORD:
             var t = record_type(c, c.text_of(d), d)
             c.spec.records.append(t)
     for i in range(len(c.spec.consts)):
@@ -231,7 +229,7 @@ def collect(mut c: Checker):
 
 def _collect_model(mut c: Checker, d: Int):
     var name = c.text_of(d)
-    var is_iface = c.kind_of(d) == ast.INTERFACE
+    var is_iface = c.kind_of(d) == .INTERFACE
     var tn = List[String]()
     var tb = List[String]()
     tvars_of(c, c.kid(d, 0), tn, tb)
@@ -261,7 +259,7 @@ def _collect_model(mut c: Checker, d: Int):
         for i in range(1, len(kids)):
             var m = kids[i]
             var mk = c.kind_of(m)
-            if mk == ast.CTOR or mk == ast.METHOD:
+            if mk == .CTOR or mk == .METHOD:
                 var mname = c.text_of(m)
                 var fpos = _new_fn(
                     c,
@@ -274,7 +272,7 @@ def _collect_model(mut c: Checker, d: Int):
                     tn,
                     tb,
                 )
-                if mk == ast.CTOR:
+                if mk == .CTOR:
                     c.spec.models[pos].ctors.append(fpos)
                 else:
                     c.spec.models[pos].methods.append(fpos)
@@ -329,11 +327,11 @@ def declare_signatures(mut c: Checker):
         if c.duplicate[d]:
             continue
         var k = c.kind_of(d)
-        if k == ast.MODEL or k == ast.INTERFACE:
+        if k == .MODEL or k == .INTERFACE:
             _declare_model(c, d)
-        elif k == ast.FN:
+        elif k == .FN:
             _declare_fn(c, d)
-        elif k == ast.DEF:
+        elif k == .DEF:
             _declare_def(c, d)
 
 
@@ -347,7 +345,7 @@ def _declare_model(mut c: Checker, d: Int):
     for i in range(1, len(kids)):
         var m = kids[i]
         var mk = c.kind_of(m)
-        if mk == ast.OBSERVE:
+        if mk == .OBSERVE:
             var oname = c.text_of(m)
             _member_dup(c, members, oname, m, name)
             members.append(oname.copy())
@@ -358,10 +356,10 @@ def _declare_model(mut c: Checker, d: Int):
             c.spec.models[pos].observers.append(
                 Observer(oname^, params^, t, c.kid(m, 2), m)
             )
-        elif mk == ast.BUILD:
+        elif mk == .BUILD:
             var params = build_params(c, c.kid(m, 0), -1, False, pos)
             c.spec.models[pos].builds.append(Build(c.text_of(m), params^, m))
-        elif mk == ast.CTOR:
+        elif mk == .CTOR:
             var fpos = c.decl_pos[m]
             var mname = c.text_of(m)
             _member_dup(c, members, mname, m, name)
@@ -377,7 +375,7 @@ def _declare_model(mut c: Checker, d: Int):
             else:
                 c.error(m, t"a constructor returns its interface: -> {name}")
             c.spec.fns[fpos].result = rt
-        elif mk == ast.METHOD:
+        elif mk == .METHOD:
             var fpos = c.decl_pos[m]
             var mname = c.text_of(m)
             _member_dup(c, members, mname, m, name)
@@ -478,7 +476,7 @@ def check_default(mut c: Checker, p: Param):
         return
     var t = p.type
     if not assignable(c, dt, t, default):
-        if c.tkind(t) == ty.LITERAL and c.kind_of(default) == ast.STR:
+        if c.tkind(t) == ty.LITERAL and c.kind_of(default) == .STR:
             c.error(default, '"' + c.text_of(default) + '" is not one of ' + c.text(t))
         else:
             c.error(
@@ -521,15 +519,15 @@ def check_defaults(mut c: Checker):
         if c.duplicate[d]:
             continue
         var k = c.kind_of(d)
-        if k == ast.FN:
+        if k == .FN:
             var pos = c.decl_pos[d]
             set_tvars(c, c.spec.fns[pos].tparams.copy(), c.spec.fns[pos].bounds.copy())
             _check_defaults(c, c.spec.fns[pos].params.copy())
-        elif k == ast.DEF:
+        elif k == .DEF:
             var pos = c.decl_pos[d]
             set_tvars(c, c.spec.defs[pos].tparams.copy(), c.spec.defs[pos].bounds.copy())
             _check_defaults(c, c.spec.defs[pos].params.copy())
-        elif k == ast.MODEL or k == ast.INTERFACE:
+        elif k == .MODEL or k == .INTERFACE:
             var pos = c.decl_pos[d]
             set_tvars(c, c.spec.models[pos].tparams.copy(), c.spec.models[pos].bounds.copy())
             for i in range(len(c.spec.models[pos].observers)):
@@ -552,15 +550,15 @@ def _add_clause(
     var error = String()
     var names = List[String]()
     var kids = c.kids_of(node)
-    if op == ast.RAISES or op == ast.MAY_RAISE:
+    if op == .RAISES or op == .MAY_RAISE:
         error = qualify_error(c.text_of(kids[0]))
         expr = kids[1]
-    elif op == ast.MODIFIES:
+    elif op == .MODIFIES:
         for k in kids:
             names.append(c.text_of(k))
-    elif op == ast.UNSPECIFIED or op == ast.IMPL_DEFINED:
+    elif op == .UNSPECIFIED or op == .IMPL_DEFINED:
         names.append(c.text_of(kids[0]))
-    elif op == ast.PERF:
+    elif op == .PERF:
         pass
     else:
         expr = kids[0]
@@ -598,7 +596,7 @@ def assign_ids(
             c.error(
                 cl,
                 t"clause label {label} gives the ID {cid}, which already names the "
-                t"{member_kinds[is_member]} {cid}: rename the label (e.g. {ast.op_name(c.op_of(cl))} "
+                t"{member_kinds[is_member]} {cid}: rename the label (e.g. {c.op_of(cl)} "
                 t"{label}_holds:)",
             )
             id = decl_id + "#" + String(i + 1)
@@ -633,7 +631,7 @@ def check_freedoms(mut c: Checker, decl_id: String, clauses: List[Int]):
     for ci in clauses:
         var cl = c.spec.clauses[ci].node
         var op = c.spec.clauses[ci].kind
-        if op == ast.UNSPECIFIED or op == ast.IMPL_DEFINED:
+        if op == .UNSPECIFIED or op == .IMPL_DEFINED:
             var f = c.spec.clauses[ci].names[0].copy()
             var dup = False
             for n in names:
@@ -650,17 +648,7 @@ def check_freedoms(mut c: Checker, decl_id: String, clauses: List[Int]):
         if expr == 0:
             continue
         var reported = List[String]()
-        var stack = List[Int]()
-        stack.append(expr)
-        var found = List[Int]()
-        while len(stack) > 0:
-            var n = stack.pop()
-            found.append(n)
-            for k in c.spec.ast.nodes[n].kids:
-                stack.append(k)
-        # Source order: nodes in ascending position.
-        sort(found)
-        for n in found:
+        for n in c.spec.ast.subtree(expr):
             var r = c.spec.resolutions.get(n)
             if not r:
                 continue
@@ -680,7 +668,7 @@ def check_freedoms(mut c: Checker, decl_id: String, clauses: List[Int]):
                 reported.append(rname.copy())
                 c.error(
                     n,
-                    t"this clause observes {rname}, which {decl_id} declares {ast.op_name(c.op_of(nodes[j]))} "
+                    t"this clause observes {rname}, which {decl_id} declares {c.op_of(nodes[j])} "
                     t"(line {c.line_of(nodes[j])}): no clause may observe it",
                 )
 
@@ -713,7 +701,7 @@ def check_model(mut c: Checker, d: Int):
     # Qualified functions named under the model are its methods and statics.
     var prefix = name + "."
     for f in range(len(c.spec.fns)):
-        if c.spec.fns[f].kind != ast.FN or not c.spec.fns[f].name.startswith(prefix):
+        if c.spec.fns[f].kind != .FN or not c.spec.fns[f].name.startswith(prefix):
             continue
         var rest = String(c.spec.fns[f].name[byte = prefix.byte_length() :])
         if "." not in rest:
@@ -721,7 +709,7 @@ def check_model(mut c: Checker, d: Int):
             member_kinds.append("method" if c.spec.fns[f].receiver else "function")
     var clauses = List[Int]()
     for m in c.kids_of(d):
-        if c.kind_of(m) == ast.CLAUSE:
+        if c.kind_of(m) == .CLAUSE:
             clauses.append(m)
     var ids = assign_ids(c, name, clauses, -1, pos, member_names, member_kinds)
     c.spec.models[pos].clauses = ids.copy()
@@ -729,22 +717,22 @@ def check_model(mut c: Checker, d: Int):
         var op = c.spec.clauses[ci].kind
         var node = c.spec.clauses[ci].node
         if (
-            op != ast.INVARIANT
-            and op != ast.UNSPECIFIED
-            and op != ast.IMPL_DEFINED
-            and op != ast.PERF
+            op != .INVARIANT
+            and op != .UNSPECIFIED
+            and op != .IMPL_DEFINED
+            and op != .PERF
         ):
             c.error(
                 node,
-                t"{ast.op_name(op)} belongs to a function, constructor or method, not to {what} {name}",
+                t"{op} belongs to a function, constructor or method, not to {what} {name}",
             )
             if c.spec.clauses[ci].expr != 0:
                 poison_subtree(c, c.spec.clauses[ci].expr)
             continue
-        if op != ast.INVARIANT or c.spec.clauses[ci].expr == 0:
+        if op != .INVARIANT or c.spec.clauses[ci].expr == 0:
             continue
         var ctx = Ctx()
-        ctx.kind = Int(ast.INVARIANT)
+        ctx.kind = Int(ast.Op.INVARIANT)
         ctx.decl = name.copy()
         ctx.tv_names = c.ctx.tv_names.copy()
         ctx.tv_types = c.ctx.tv_types.copy()
@@ -809,7 +797,7 @@ def _callable_ctx(mut c: Checker, fpos: Int) -> Ctx:
     ctx.tv_names = tn.copy()
     ctx.tv_types = c.spec.types.typevars(tn, tb)
     var receiver = c.spec.fns[fpos].receiver
-    var is_ctor = c.spec.fns[fpos].kind == ast.CTOR
+    var is_ctor = c.spec.fns[fpos].kind == .CTOR
     for i in range(len(c.spec.fns[fpos].params)):
         var p = c.spec.fns[fpos].params[i].copy()
         ctx.param_names.append(String() if (receiver and i == 0) else p.name.copy())
@@ -842,9 +830,9 @@ def check_callable(mut c: Checker, fpos: Int, what: String):
     var kids = c.kids_of(node)
     var first = 3
     for i in range(first, len(kids)):
-        if c.kind_of(kids[i]) == ast.CLAUSE:
+        if c.kind_of(kids[i]) == .CLAUSE:
             body.append(kids[i])
-        elif c.kind_of(kids[i]) == ast.PARTITION:
+        elif c.kind_of(kids[i]) == .PARTITION:
             parts.append(kids[i])
     var no_members = List[String]()
     var ids = assign_ids(c, decl_id, body, fpos, c.spec.fns[fpos].owner, no_members, no_members)
@@ -856,15 +844,15 @@ def check_callable(mut c: Checker, fpos: Int, what: String):
     for ci in ids:
         var op = c.spec.clauses[ci].kind
         var cnode = c.spec.clauses[ci].node
-        if op == ast.INVARIANT:
+        if op == .INVARIANT:
             c.error(cnode, t"invariant belongs to a model or interface; in a {what} use ensures")
             if c.spec.clauses[ci].expr != 0:
                 poison_subtree(c, c.spec.clauses[ci].expr)
             continue
-        if op == ast.MODIFIES:
+        if op == .MODIFIES:
             _check_modifies(c, ci, decl_id, base)
             continue
-        if op == ast.AGGREGATE:
+        if op == .AGGREGATE:
             _check_aggregate(c, ci, fpos, decl_id, base, what)
             continue
         var expr = c.spec.clauses[ci].expr
@@ -872,8 +860,8 @@ def check_callable(mut c: Checker, fpos: Int, what: String):
             continue
         var ctx = base.copy()
         ctx.kind = Int(op)
-        if op == ast.REQUIRES or op == ast.RAISES or op == ast.MAY_RAISE:
-            var word = String(ast.op_name(op))
+        if op == .REQUIRES or op == .RAISES or op == .MAY_RAISE:
+            var word = String(op)
             ctx.no_result = (
                 "result is not available in "
                 + word
@@ -890,16 +878,16 @@ def check_callable(mut c: Checker, fpos: Int, what: String):
                 ctx.result = result
             ctx.no_result = decl_id + " returns nothing, so there is no result"
             ctx.allow_spec_fn = True
-            if op == ast.ENSURES:
+            if op == .ENSURES:
                 ctx.allow_old = has_state
                 ctx.no_old = String(
                     "old(...) needs state that the call can change, but ", decl_id, " has no handle parameter or self"
                 )
         var what_clause: String
-        if op == ast.RAISES or op == ast.MAY_RAISE:
-            what_clause = "the condition of " + String(ast.op_name(op))
+        if op == .RAISES or op == .MAY_RAISE:
+            what_clause = "the condition of " + String(op)
         else:
-            what_clause = "the " + String(ast.op_name(op)) + " clause"
+            what_clause = "the " + String(op) + " clause"
         c.ctx = ctx^
         want_bool(c, expr, infer(c, expr), what_clause)
     check_freedoms(c, decl_id, ids)
@@ -1037,18 +1025,18 @@ struct Shape(Copyable, Movable):
 def aggregate_shape(mut c: Checker, e: Int) -> Shape:
     var out = Shape()
     var shapes = _AGGREGATE_SHAPES
-    if c.kind_of(e) == ast.COMPREHENSION:
+    if c.kind_of(e) == .COMPREHENSION:
         out.top = e
-        if c.op_of(e) != ast.ALL:
+        if c.op_of(e) != .ALL:
             out.problem = shapes
         return out^
-    if c.kind_of(e) == ast.BINARY:
+    if c.kind_of(e) == .BINARY:
         var left = c.kid(e, 0)
         var right = c.kid(e, 1)
         var side = 0
-        if c.kind_of(left) == ast.COMPREHENSION:
+        if c.kind_of(left) == .COMPREHENSION:
             side = left
-        elif c.kind_of(right) == ast.COMPREHENSION:
+        elif c.kind_of(right) == .COMPREHENSION:
             side = right
         if side == 0:
             out.problem = shapes
@@ -1060,14 +1048,14 @@ def aggregate_shape(mut c: Checker, e: Int) -> Shape:
         var lk = c.op_of(left)
         var op = c.op_of(e)
         var allowed = False
-        if lk == ast.SUM:
-            allowed = op == ast.LE or op == ast.LT or op == ast.EQ
-        elif lk == ast.MAX:
-            allowed = op == ast.LE or op == ast.LT
+        if lk == .SUM:
+            allowed = op == .LE or op == .LT or op == .EQ
+        elif lk == .MAX:
+            allowed = op == .LE or op == .LT
         if not allowed:
             out.problem = shapes
             return out^
-        if op == ast.EQ:
+        if op == .EQ:
             var v = c.literal_value(right)
             if not v or not (v.value() == Real(0)):
                 out.problem = _SUM_EQUALS_ZERO
@@ -1080,23 +1068,23 @@ def aggregate_shape(mut c: Checker, e: Int) -> Shape:
 
 def is_constant(mut c: Checker, e: Int) -> Bool:
     var k = c.kind_of(e)
-    if k == ast.NUM:
+    if k == .NUM:
         return True
-    if k == ast.UNARY and c.op_of(e) == ast.NEG:
+    if k == .UNARY and c.op_of(e) == .NEG:
         return is_constant(c, c.kid(e, 0))
-    if k == ast.BINARY:
+    if k == .BINARY:
         var op = c.op_of(e)
         if (
-            op == ast.ADD
-            or op == ast.SUB
-            or op == ast.MUL
-            or op == ast.DIV
-            or op == ast.FLOORDIV
-            or op == ast.MOD
+            op == .ADD
+            or op == .SUB
+            or op == .MUL
+            or op == .DIV
+            or op == .FLOORDIV
+            or op == .MOD
         ):
             return is_constant(c, c.kid(e, 0)) and is_constant(c, c.kid(e, 1))
         return False
-    if k == ast.ATTR:
+    if k == .ATTR:
         var r = c.spec.resolutions.get(e)
         return r.__bool__() and r.value().kind == R_TYPE_CONST
     return False
@@ -1107,7 +1095,7 @@ def _check_aggregate(
 ):
     var node = c.spec.clauses[ci].node
     var expr = c.spec.clauses[ci].expr
-    if c.spec.fns[fpos].kind != ast.FN:
+    if c.spec.fns[fpos].kind != .FN:
         c.error(
             node,
             t"aggregate clauses belong to functions (fn), not to a {what}: a bound over a whole input "
@@ -1116,7 +1104,7 @@ def _check_aggregate(
         poison_subtree(c, expr)
         return
     var ctx = base.copy()
-    ctx.kind = Int(ast.AGGREGATE)
+    ctx.kind = Int(ast.Op.AGGREGATE)
     var fname = c.spec.fns[fpos].name.copy()
     for i in range(len(base.param_names)):
         var p = base.param_names[i].copy()
@@ -1243,10 +1231,10 @@ def run(mut c: Checker):
         if c.duplicate[d]:
             continue
         var k = c.kind_of(d)
-        if k == ast.DEF:
+        if k == .DEF:
             check_def(c, d)
-        elif k == ast.MODEL or k == ast.INTERFACE:
+        elif k == .MODEL or k == .INTERFACE:
             check_model(c, d)
-        elif k == ast.FN:
+        elif k == .FN:
             check_fn(c, d)
     check_def_cycles(c)

@@ -111,20 +111,20 @@ def run_aggregate(
     try:
         var e = cl.expr
         var top = 0
-        var op = UInt8(0)
+        var op = ast.Op.NO_OP
         var bound_node = 0
         ref en = spec.ast.nodes[e]
-        if en.kind == ast.COMPREHENSION and en.op == ast.ALL:
+        if en.kind == .COMPREHENSION and en.op == .ALL:
             top = e
         elif (
-            en.kind == ast.BINARY
-            and spec.ast.nodes[en.kids[0]].kind == ast.COMPREHENSION
-            and (spec.ast.nodes[en.kids[0]].op == ast.SUM or spec.ast.nodes[en.kids[0]].op == ast.MAX)
-            and (en.op == ast.LE or en.op == ast.LT or en.op == ast.EQ)
+            en.kind == .BINARY
+            and spec.ast.nodes[en.children[0]].kind == .COMPREHENSION
+            and (spec.ast.nodes[en.children[0]].op == .SUM or spec.ast.nodes[en.children[0]].op == .MAX)
+            and (en.op == .LE or en.op == .LT or en.op == .EQ)
         ):
-            top = en.kids[0]
+            top = en.children[0]
             op = en.op
-            bound_node = en.kids[1]
+            bound_node = en.children[1]
         else:
             raise Error(
                 String(
@@ -135,8 +135,8 @@ def run_aggregate(
             )
         ref comp = spec.ast.nodes[top]
         var kind = comp.op
-        var iterable = comp.kids[0]
-        var body = comp.kids[1]
+        var iterable = comp.children[0]
+        var body = comp.children[1]
         var env = Env()
         var bound = Value.int(0)
         if bound_node != 0:
@@ -150,7 +150,7 @@ def run_aggregate(
             )
         else:
             var run = Run()
-            members = elements(ev(spec, iterable, env, run, host), String(ast.op_name(kind), "(...)"))
+            members = elements(ev(spec, iterable, env, run, host), String(kind, "(...)"))
             total = len(members)
         var acc = qerr_zero() if tkind(spec, top) == ty.QERR else Value.int(0)
         var best = Optional[Value]()
@@ -172,7 +172,7 @@ def run_aggregate(
                 var node = run.err_node if run.err_node >= 0 else body
                 raise Error(located(spec, node, run.err_message if run.err_node >= 0 else String(err)))
             evaluated += 1
-            if kind == ast.ALL:
+            if kind == .ALL:
                 if term.kind != BOOL:
                     raise Error(located(spec, body, String("the body of all(...) must be a bool, not ", show(term))))
                 if not term.as_bool():
@@ -189,11 +189,11 @@ def run_aggregate(
                         body,
                         String(
                             "the term ", show(t), " for ", comp.text, " = ", show(member),
-                            " is negative: the terms of an aggregate ", ast.op_name(kind), "(...) are non-negative",
+                            " is negative: the terms of an aggregate ", kind, "(...) are non-negative",
                         ),
                     )
                 )
-            if kind == ast.SUM:
+            if kind == .SUM:
                 acc = add_term(acc, t)
             elif best is not None:
                 best = larger(best.value(), t)
@@ -219,13 +219,13 @@ def run_aggregate(
         summary.worst_terms = [format_value(t) for t in worst_terms]
         var holds: Bool
         var value_text: String
-        if kind == ast.ALL:
+        if kind == .ALL:
             holds = failures == 0
             value_text = String(failures)
             summary.bound = "0"
         else:
             var value: Value
-            if kind == ast.SUM:
+            if kind == .SUM:
                 value = acc.copy()
             elif best is not None:
                 value = best.value().copy()
@@ -234,7 +234,7 @@ def run_aggregate(
                     raise Error(located(spec, top, "max(...) over a set with no members has no value"))
                 value = Value.none()
             summary.bound = format_value(bound)
-            if value.kind == BOOL or (best is None and kind == ast.MAX):
+            if value.kind == BOOL or (best is None and kind == .MAX):
                 holds = True
                 value_text = "none"
             else:
@@ -243,7 +243,7 @@ def run_aggregate(
                     holds = qerr_compare(op, value, bound)
                 else:
                     var c = compare_values(value, bound)
-                    holds = (c == 0) if op == ast.EQ else holds_order(op, c)
+                    holds = (c == 0) if op == .EQ else holds_order(op, c)
         summary.value = value_text.copy()
         result.mode = "sampled" if sampled else "exhaustive"
         if holds:
@@ -255,7 +255,7 @@ def run_aggregate(
             var how = String("a seeded sample of ", evaluated + skipped, " of") if sampled else String("every member of")
             cx.input_names.append(comp.text.copy())
             cx.input_values.append(String(how, " ", source_text(spec, iterable), " (", total, " members)"))
-            cx.observation = String(ast.op_name(kind), " = ", value_text, ", against the bound ", summary.bound)
+            cx.observation = String(kind, " = ", value_text, ", against the bound ", summary.bound)
             cx.seed = Int(options.seed)
             cx.reproduce = String("seed=", options.seed, " decl=", spec.fns[f].decl_id, " clause=", cl.id)
             result.counterexample = cx^

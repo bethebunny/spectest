@@ -6,6 +6,7 @@ from check.checker import check_source_with
 from check.files import Files
 from check.spec import R_DEF
 from check.spec import Spec
+from syntax.ast import Op
 
 comptime MATH = "fn twice(x: int) -> int = x + x\nfn quad(x: int) -> int = twice(twice(x))\n"
 comptime SPEC_A = 'spec a\nprelude "math.prelude"\nfn f(x: int) -> int\n  requires twice(x) > 0\n  ensures big: quad(x) >= x\n'
@@ -52,7 +53,7 @@ def test_a_spec_uses_the_definitions_of_its_prelude() raises:
         if kv.value.kind == R_DEF:
             found += 1
     assert_true(found >= 4, String(found))
-    assert_equal(spec.clauses[spec.clause_named("f.big").value()].kind, 25)
+    assert_equal(spec.clauses[spec.clause_named("f.big").value()].kind, Op.ENSURES)
 
 
 def test_a_definition_calls_another_across_files() raises:

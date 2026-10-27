@@ -165,52 +165,52 @@ def _bitwise(a: BigInt, b: BigInt, is_or: Bool) -> BigInt:
     return BigInt(negative=False, magnitude=combined^)
 
 
-def arith(op: UInt8, a: Value, b: Value) raises -> Value:
+def arith(op: ast.Op, a: Value, b: Value) raises -> Value:
     """`+ - * / // % ** << >> & |` on numbers. INT with INT stays INT; any REAL or
     FLOAT operand gives a REAL."""
-    if op == ast.FLOORDIV or op == ast.MOD:
-        var x = big_of(a, String(t"the left operand of {ast.op_name(op)}"))
-        var y = big_of(b, String(t"the right operand of {ast.op_name(op)}"))
+    if op == .FLOORDIV or op == .MOD:
+        var x = big_of(a, String(t"the left operand of {op}"))
+        var y = big_of(b, String(t"the right operand of {op}"))
         if y.is_zero():
             raise Error("division by zero")
         var qr = x.divmod(y)
-        return Value.int(qr[0].copy() if op == ast.FLOORDIV else qr[1].copy())
-    if op == ast.POW:
+        return Value.int(qr[0].copy() if op == .FLOORDIV else qr[1].copy())
+    if op == .POW:
         return Value.int(
             _pow(big_of(a, "the base of **"), big_of(b, "the exponent of **"))
         )
-    if op == ast.SHL or op == ast.SHR:
-        var x = big_of(a, String(t"the left operand of {ast.op_name(op)}"))
+    if op == .SHL or op == .SHR:
+        var x = big_of(a, String(t"the left operand of {op}"))
         var n = _shift_amount(
-            Value.int(big_of(b, "the shift amount")), String(ast.op_name(op))
+            Value.int(big_of(b, "the shift amount")), String(op)
         )
-        if op == ast.SHL:
+        if op == .SHL:
             return Value.int(x << n)
         return Value.int(x // (BigInt(1) << n))
-    if op == ast.BITAND or op == ast.BITOR:
-        var x = big_of(a, String(t"the left operand of {ast.op_name(op)}"))
-        var y = big_of(b, String(t"the right operand of {ast.op_name(op)}"))
-        return Value.int(_bitwise(x, y, op == ast.BITOR))
-    if a.kind == INT and b.kind == INT and op != ast.DIV:
+    if op == .BITAND or op == .BITOR:
+        var x = big_of(a, String(t"the left operand of {op}"))
+        var y = big_of(b, String(t"the right operand of {op}"))
+        return Value.int(_bitwise(x, y, op == .BITOR))
+    if a.kind == INT and b.kind == INT and op != .DIV:
         var x = a.as_bigint()
         var y = b.as_bigint()
-        if op == ast.ADD:
+        if op == .ADD:
             return Value.int(x + y)
-        if op == ast.SUB:
+        if op == .SUB:
             return Value.int(x - y)
-        if op == ast.MUL:
+        if op == .MUL:
             return Value.int(x * y)
     var x = real_of(a)
     var y = real_of(b)
-    if op == ast.ADD:
+    if op == .ADD:
         return real_value(x + y)
-    if op == ast.SUB:
+    if op == .SUB:
         return real_value(x - y)
-    if op == ast.MUL:
+    if op == .MUL:
         return real_value(x * y)
-    if op == ast.DIV:
+    if op == .DIV:
         return real_value(x / y)
-    raise Error(t"unknown operator {ast.op_name(op)}")
+    raise Error(t"unknown operator {op}")
 
 
 # Strings, bytes and lists
@@ -395,12 +395,12 @@ def compare_values(a: Value, b: Value) raises -> Int:
     return compare(norm(a), norm(b))
 
 
-def holds_order(op: UInt8, c: Int) -> Bool:
-    if op == ast.LT:
+def holds_order(op: ast.Op, c: Int) -> Bool:
+    if op == .LT:
         return c < 0
-    if op == ast.LE:
+    if op == .LE:
         return c <= 0
-    if op == ast.GT:
+    if op == .GT:
         return c > 0
     return c >= 0
 
@@ -434,7 +434,7 @@ def qerr_add(a: Value, b: Value) -> Value:
     )
 
 
-def qerr_compare(op: UInt8, a: Value, b: Value) raises -> Bool:
+def qerr_compare(op: ast.Op, a: Value, b: Value) raises -> Bool:
     """Componentwise comparison of a qerr with a qerr or a number."""
     var pa = qerr_parts(a)
     var pb = qerr_parts(b)
@@ -444,17 +444,17 @@ def qerr_compare(op: UInt8, a: Value, b: Value) raises -> Bool:
     elif pb.steps < pa.steps:
         c = 1
     var equal = c == 0 and pa.nans == pb.nans
-    if op == ast.EQ:
+    if op == .EQ:
         return equal
-    if op == ast.NE:
+    if op == .NE:
         return not equal
     var below = c <= 0 and pa.nans <= pb.nans
     var above = c >= 0 and pa.nans >= pb.nans
-    if op == ast.LE:
+    if op == .LE:
         return below
-    if op == ast.GE:
+    if op == .GE:
         return above
-    return (below if op == ast.LT else above) and not equal
+    return (below if op == .LT else above) and not equal
 
 
 def term_of(v: Value) raises -> Value:
@@ -472,7 +472,7 @@ def add_term(total: Value, v: Value) raises -> Value:
         if not (total.kind == QERR and t.kind == QERR):
             raise Error(t"cannot add {show(t)} to the qerr {show(total)}")
         return qerr_add(total, t)
-    return arith(ast.ADD, total, t)
+    return arith(ast.Op.ADD, total, t)
 
 
 def larger(a: Value, b: Value) raises -> Value:

@@ -562,7 +562,7 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
             continue
         var node = info.kw_nodes[j]
         var choices = '"bits" | "ieee" | "nan_any"' if key == "float" else '"exact" | "ignore"'
-        if c.kind_of(node) != ast.STR or not _eq_mode_ok(c.text_of(node), key):
+        if c.kind_of(node) != .STR or not _eq_mode_ok(c.text_of(node), key):
             return _fail(c, "eq: " + key + "= must be one of " + choices, -1, key)
     var has_float = False
     for key in info.kw_keys:
