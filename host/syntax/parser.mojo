@@ -157,11 +157,16 @@ struct Parser:
             _ = self.expect_op(">")
 
     def mark(self) -> Span:
-        ref span = self.current().span
-        return Span(span.start, span.start, span.line, span.column)
+        """The empty span at the start of the current token."""
+        var span = self.current().span
+        span.end = span.start
+        return span
 
     def close(self, m: Span) -> Span:
-        return Span(m.start, max(self.last_end, m.start), m.line, m.column)
+        """The span from the mark `m` to the end of the last token."""
+        var span = m
+        span.end = max(self.last_end, m.start)
+        return span
 
     def empty_node(mut self, kind: NodeKind) -> Int:
         """A childless node of `kind`, zero-width at the end of the last token."""
@@ -882,9 +887,10 @@ def parse_into(mut ast: Ast, source: String, path: String) raises -> Int:
     var file = len(ast.files)
     for node in parsed.nodes[1:]:
         var children = [NIL if c == NIL else first + c - 1 for c in node.children]
-        ref span = node.span
-        var shifted = Span(span.start + start, span.end + start, span.line, span.column)
-        ast.nodes.append(Node(node.kind, node.op, shifted, node.text.copy(), children^, file))
+        var span = node.span
+        span.start += start
+        span.end += start
+        ast.nodes.append(Node(node.kind, node.op, span, node.text.copy(), children^, file))
     ast.source += source
     ast.files.append(File(path.copy(), start=start, root=first + parsed.root() - 1))
     return file

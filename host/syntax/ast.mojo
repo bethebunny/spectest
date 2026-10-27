@@ -75,7 +75,6 @@ Expressions
 """
 
 
-@fieldwise_init
 struct Span(Equatable, TrivialRegisterPassable, Writable):
     var start: Int
     """Byte offset of the first byte."""
@@ -86,6 +85,12 @@ struct Span(Equatable, TrivialRegisterPassable, Writable):
     var column: Int
     """1-based column of `start`, in code points."""
 
+    def __init__(out self, *, start: Int, end: Int, line: Int, column: Int):
+        self.start = start
+        self.end = end
+        self.line = line
+        self.column = column
+
     def __eq__(self, other: Self) -> Bool:
         return self.start == other.start and self.end == other.end
 
@@ -93,7 +98,7 @@ struct Span(Equatable, TrivialRegisterPassable, Writable):
         writer.write(self.line, ":", self.column)
 
 
-comptime NO_SPAN = Span(0, 0, 0, 0)
+comptime NO_SPAN = Span(start=0, end=0, line=0, column=0)
 
 comptime NIL = 0
 """The index of the EMPTY node."""
@@ -269,7 +274,6 @@ struct Node(Copyable):
     """The index in `Ast.files` of the file the node is in."""
 
 
-@fieldwise_init
 struct File(Copyable):
     """A file of the tree. Its text follows the previous file's in `Ast.source`."""
 
@@ -278,6 +282,11 @@ struct File(Copyable):
     """Where its text starts in `Ast.source`."""
     var root: Int
     """Its FILE or PRELUDE_FILE node, or NIL until the parser sets it."""
+
+    def __init__(out self, var path: String, *, start: Int, root: Int):
+        self.path = path^
+        self.start = start
+        self.root = root
 
 
 struct Ast(Movable):

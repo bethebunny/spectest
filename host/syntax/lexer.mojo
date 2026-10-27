@@ -192,14 +192,14 @@ struct _Lexer[origin: ImmOrigin]:
 
     def position(mut self, i: Int) -> Span:
         """The empty span at `i` on this line."""
-        return Span(i, i, self.line.number, self.column_at(i))
+        return Span(start=i, end=i, line=self.line.number, column=self.column_at(i))
 
     def error_at(self, span: Span, message: Some[Writable]) -> Error:
         return syntax_error(self.path, span, String(message))
 
     def span_at(mut self, i: Int) -> Span:
         """The span of the byte at `i` on this line."""
-        return Span(i, i + 1, self.line.number, self.column_at(i))
+        return Span(start=i, end=i + 1, line=self.line.number, column=self.column_at(i))
 
     def error(mut self, i: Int, message: Some[Writable]) -> Error:
         return self.error_at(self.span_at(i), message)
@@ -209,7 +209,8 @@ struct _Lexer[origin: ImmOrigin]:
         self.emit_text(kind, String(self.text[byte=start:end]), start=start, end=end)
 
     def emit_text(mut self, kind: TokenKind, var text: String, *, start: Int, end: Int):
-        var span = Span(start, end, self.line.number, self.column_at(start))
+        var span = self.position(start)
+        span.end = end
         var after = self.position(end)
         self.tokens.append(Token(kind, text^, span, after.column))
         self.logical.value().end = after
