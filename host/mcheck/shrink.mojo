@@ -145,6 +145,68 @@ def _pass_redistribute[P: Property](mut prop: P, mut st: _State) raises:
         i += 1
 
 
+def _pass_equal_values[P: Property](mut prop: P, mut st: _State) raises:
+    """Lower every choice holding one value together, by the largest steps that keep failing."""
+    var seen = List[UInt64]()
+    var i = 0
+    while i < len(st.best.values) and not st.exhausted():
+        var v = st.best.values[i]
+        i += 1
+        if v == 0:
+            continue
+        var done = False
+        for x in seen:
+            if x == v:
+                done = True
+        if done:
+            continue
+        seen.append(v)
+        var at = List[Int]()
+        for p in range(len(st.best.values)):
+            if st.best.values[p] == v:
+                at.append(p)
+        if len(at) < 2:
+            continue
+        var k = 63
+        while k >= 0 and not st.exhausted():
+            var step = UInt64(1) << UInt64(k)
+            while v >= step:
+                var cand = st.best.values.copy()
+                for p in at:
+                    cand[p] -= step
+                if not _attempt(prop, st, cand):
+                    break
+                if len(st.best.values) != len(cand) or st.best.values[at[0]] != v - step:
+                    k = -1
+                    break
+                v -= step
+            k -= 1
+
+
+def _pass_pairs[P: Property](mut prop: P, mut st: _State) raises:
+    """Lower two nearby choices by the same amount."""
+    var i = 0
+    while i < len(st.best.values) and not st.exhausted():
+        var j = i + 1
+        while j < len(st.best.values) and j <= i + 8 and not st.exhausted():
+            var k = 63
+            while k >= 0 and j < len(st.best.values) and not st.exhausted():
+                var step = UInt64(1) << UInt64(k)
+                while (
+                    j < len(st.best.values)
+                    and st.best.values[i] >= step
+                    and st.best.values[j] >= step
+                ):
+                    var cand = st.best.values.copy()
+                    cand[i] -= step
+                    cand[j] -= step
+                    if not _attempt(prop, st, cand):
+                        break
+                k -= 1
+            j += 1
+        i += 1
+
+
 def shrink[P: Property](
     mut prop: P, choices: Choices, property_id: Int, budget: Int
 ) raises -> Choices:
@@ -161,6 +223,8 @@ def shrink[P: Property](
         _pass_zero(prop, st)
         _pass_minimize(prop, st)
         _pass_redistribute(prop, st)
+        _pass_equal_values(prop, st)
+        _pass_pairs(prop, st)
         if not smaller(st.best.values, before):
             break
     return st.best.copy()

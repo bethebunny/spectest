@@ -16,7 +16,7 @@ from check.types import (
     ENUM as T_ENUM,
     RECORD as T_RECORD,
 )
-from mcheck.source import Source, Many
+from mcheck.source import Source, Many, MANY_LABEL
 from numeric.formats import format_by_id
 from wire.value import Value
 
@@ -59,17 +59,27 @@ def _draw_list(
     var items = List[Value]()
     if depth == 0 and is_flat(types, elem) and sizes.has_long(short, sizes.long_list):
         if src.draw_bool(sizes.long_share):
-            # A long list repeats up to 17 drawn values.
+            # A long list repeats up to 17 drawn values. Its length is drawn once, to
+            # steer generation; every element then carries its own continue flag, so
+            # deleting an element's span shortens the list (down to the long minimum).
+            var lo = sizes.long_lo(short)
             var palette = List[Value]()
-            var pal = Seq(1, sizes.long_lo(short))
+            var pal = Seq(0, lo)
             while pal.more(src):
                 palette.append(_draw(src, types, elem, sizes, depth + 1))
-            var n = src.draw_int(sizes.long_lo(short), sizes.long_list)
             if len(palette) == 0:
                 palette.append(_draw(src, types, elem, sizes, depth + 1))
-            var seq = Seq(n, exactly=True)
-            while seq.more(src):
+            var n = src.draw_int(lo, sizes.long_list)
+            while len(items) < sizes.long_list:
+                src.start_span(MANY_LABEL)
+                var more = src.draw_bool(1.0 if len(items) < n else 0.0)
+                if not more:
+                    src.stop_span()
+                    break
                 items.append(palette[Int(src.draw_below(UInt64(len(palette))))].copy())
+                src.stop_span()
+            if len(items) < lo:
+                src.reject()
             return Value.list(items^)
     var seq = Seq(0, short)
     while seq.more(src):
