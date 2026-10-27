@@ -172,7 +172,7 @@ struct SetCompiler(Movable):
 
     def diagnostic(self, ast: Ast, prefix: String = "") -> String:
         ref span = ast.nodes[self.error_node].span
-        return String(ast.path, ":", span, ": ", prefix, self.error_message)
+        return String(ast.path_of(self.error_node), ":", span, ": ", prefix, self.error_message)
 
     def type_named(self, name: String) -> Optional[Elem]:
         var found = scalar_elem(name)

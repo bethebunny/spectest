@@ -7,18 +7,38 @@ diagnostics, one `path:line:col: message` per line, in source order. Declaration
 that fail are skipped, so one mistake reports once.
 """
 
+from syntax import ast as sx
 from syntax.ast import Ast, Diagnostic
 from syntax.parser import parse_spec
 
 from check.decls import run
+from check.files import Files, resolve_files
 from check.spec import Spec
 from check.state import Checker
 from check.types import Types
 
 
 def check(var ast: Ast) raises -> Spec:
+    """Check a spec whose `use` and `prelude` files, if any, are read from the disk."""
+    return check_with(ast^, Files())
+
+
+def check_with(var ast: Ast, files: Files) raises -> Spec:
+    """Check a spec, reading the files it names (`use`, `prelude`) through `files`.
+    Each file is read once. A file that cannot be read or a cycle of `use` is an
+    error."""
     var name = ast.nodes[ast.root].text.copy()
+    var diags = List[Diagnostic]()
+    var order = resolve_files(ast, files, diags)
+    var decls = List[Int]()
+    for f in order:
+        for d in ast.nodes[ast.files[f].root].kids:
+            var k = ast.nodes[d].kind
+            if k != sx.USE and k != sx.PRELUDE:
+                decls.append(d)
     var c = Checker(Spec(name^, ast^, Types()))
+    c.decls = decls^
+    c.diags = diags^
     run(c)
     if len(c.diags) > 0:
         raise Error(diagnostics_text(c.diags))
@@ -30,8 +50,13 @@ def check(var ast: Ast) raises -> Spec:
 
 
 def check_source(source: String, path: String) raises -> Spec:
-    """Parse and check a spec file."""
+    """Parse and check a spec file; the files it names are read from the disk."""
     return check(parse_spec(source, path))
+
+
+def check_source_with(source: String, path: String, files: Files) raises -> Spec:
+    """Parse and check a spec file, reading the files it names through `files`."""
+    return check_with(parse_spec(source, path), files)
 
 
 def diagnostics_text(diags: List[Diagnostic]) -> String:

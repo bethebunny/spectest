@@ -241,18 +241,40 @@ struct Node(Copyable, Movable):
     var kids: List[Int]
 
 
+@fieldwise_init
+struct SourceFile(Copyable, Movable):
+    """One file of a tree: `parse_into` appends each file's source to `Ast.source` and
+    its nodes to `Ast.nodes`."""
+
+    var path: String
+    var source: String
+    """The file's own text."""
+    var offset: Int
+    """Where the text starts in `Ast.source`."""
+    var first_node: Int
+    """The file's first node; its nodes run up to the next file's first node."""
+    var root: Int
+    """The FILE or PRELUDE_FILE node; 0 until the parser sets it."""
+
+
 struct Ast(Movable):
     var nodes: List[Node]
     var source: String
+    """The text of every file, one after another; spans are byte offsets into it."""
     var path: String
+    """The path of the first file."""
     var root: Int
-    """The FILE or PRELUDE_FILE node; 0 until the parser sets it."""
+    """The first file's FILE or PRELUDE_FILE node; 0 until the parser sets it."""
+    var files: List[SourceFile]
+    """The first file is `files[0]`; `parse_into` adds the others."""
 
     def __init__(out self, var source: String, var path: String):
         self.nodes = List[Node]()
         self.source = source^
         self.path = path^
         self.root = 0
+        self.files = List[SourceFile]()
+        self.files.append(SourceFile(self.path.copy(), self.source.copy(), 0, 1, 0))
         self.nodes.append(Node(EMPTY, NO_OP, NO_SPAN, String(), List[Int]()))
 
     def add(
@@ -272,6 +294,28 @@ struct Ast(Movable):
 
     def kid(self, id: Int, k: Int) -> Int:
         return self.nodes[id].kids[k]
+
+    def file_of(self, id: Int) -> Int:
+        """The index in `files` of the file a node belongs to; node 0 belongs to the
+        first."""
+        var i = len(self.files) - 1
+        while i > 0:
+            if id >= self.files[i].first_node:
+                return i
+            i -= 1
+        return 0
+
+    def path_of(self, id: Int) -> String:
+        """The path of the file a node belongs to."""
+        return self.files[self.file_of(id)].path.copy()
+
+    def kind_of_file(self, id: Int) -> UInt8:
+        """FILE or PRELUDE_FILE: the kind of file a node belongs to."""
+        return self.nodes[self.files[self.file_of(id)].root].kind
+
+    def location(self, id: Int) -> String:
+        """`path:line:col` of a node, in its own file."""
+        return String(self.path_of(id), ":", self.nodes[id].span)
 
     def source_text(self, id: Int) -> String:
         """The node's source, verbatim: what a verdict quotes."""

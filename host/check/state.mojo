@@ -213,6 +213,8 @@ struct Ctx(Copyable, Movable):
 struct Checker:
     var spec: Spec
     var path: String
+    var decls: List[Int]
+    """The declarations to check, over every file: spec files first, then preludes."""
     var diags: List[Diagnostic]
     var poison: Int
     var ctx: Ctx
@@ -252,6 +254,7 @@ struct Checker:
 
     def __init__(out self, var spec: Spec):
         self.path = spec.ast.path.copy()
+        self.decls = List[Int]()
         self.spec = spec^
         self.diags = List[Diagnostic]()
         self.ctx = Ctx()
@@ -320,6 +323,13 @@ struct Checker:
     def line_of(self, n: Int) -> Int:
         return self.spec.ast.nodes[n].span.line
 
+    def decl_nodes(self) -> List[Int]:
+        """The declarations to check: those of every file read, or the first file's own
+        when none were listed."""
+        if len(self.decls) > 0:
+            return self.decls.copy()
+        return self.spec.ast.nodes[self.spec.ast.root].kids.copy()
+
     def source_of(self, n: Int) -> String:
         return self.spec.ast.source_text(n)
 
@@ -327,7 +337,7 @@ struct Checker:
 
     def error(mut self, node: Int, message: String):
         self.diags.append(
-            Diagnostic(self.path.copy(), self.spec.ast.nodes[node].span, message)
+            Diagnostic(self.spec.ast.path_of(node), self.spec.ast.nodes[node].span, message)
         )
 
     # -- types -----------------------------------------------------------------

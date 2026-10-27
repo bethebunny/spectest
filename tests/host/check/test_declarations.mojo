@@ -230,9 +230,9 @@ def test_type_clause_labels_cannot_take_a_member_id() raises:
     _ = ok("interface Q\n  observe n: int\n  new make() -> Q\n    ensures make: result.n == 0\n")
 
 
-def test_unsupported_declarations() raises:
-    fails("use \"other.spec\"\n", "use is not supported yet")
-    fails("prelude \"x.prelude\"\n", "prelude is not supported yet")
+def test_missing_files() raises:
+    fails("use \"other.spec\"\n", "cannot read use file other.spec")
+    fails("prelude \"x.prelude\"\n", "cannot read prelude file x.prelude")
 
 
 def test_result_is_not_available_before_the_call() raises:

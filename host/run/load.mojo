@@ -2,7 +2,8 @@
 
 from std.pathlib import Path
 
-from check.checker import check_source
+from check.checker import check_source_with
+from check.files import Files
 from check.spec import Spec
 from partitions.check import PartitionSets, compile_partitions
 from sets import SetContext
@@ -55,12 +56,20 @@ struct Loaded(Movable):
 
 
 def load_source(source: String, path: String) raises -> Loaded:
-    """Check `source` and compile its partitions. Raises with the diagnostics, one
-    `path:line:col: message` per line."""
-    var spec = check_source(source, path)
+    """Check `source`, reading the files it names from the disk next to it, and compile
+    its partitions. Raises with the diagnostics, one `path:line:col: message` per
+    line."""
+    return load_with(source, path, Files())
+
+
+def load_with(source: String, path: String, files: Files) raises -> Loaded:
+    """`load_source` reading the files the spec names through `files`. The hash covers
+    the text of every file read."""
+    var spec = check_source_with(source, path, files)
     var ctx = SetContext()
     var sets = compile_partitions(ctx, spec)
-    var hash = hex16(fnv(source)) + hex16(fnv(source, 0x84222325CBF29CE4))
+    var text = spec.ast.source.copy()
+    var hash = hex16(fnv(text)) + hex16(fnv(text, 0x84222325CBF29CE4))
     return Loaded(path, hash^, spec^, ctx^, sets^)
 
 

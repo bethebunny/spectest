@@ -61,7 +61,7 @@ def short(text: String, limit: Int) -> String:
 
 def location(spec: Spec, node: Int) -> String:
     ref span = spec.ast.nodes[node].span
-    return String(spec.ast.path, ":", span.line, ":", span.col)
+    return String(spec.ast.path_of(node), ":", span.line, ":", span.col)
 
 
 def located(spec: Spec, node: Int, message: String) -> String:

@@ -161,7 +161,7 @@ def compile_partitions(mut ctx: SetContext, spec: Spec) raises -> PartitionSets:
 
 
 def _diag(ast: Ast, node: Int, message: String) -> String:
-    return String(ast.path, ":", ast.nodes[node].span, ": ", message)
+    return String(ast.path_of(node), ":", ast.nodes[node].span, ": ", message)
 
 
 def _check_partition(
@@ -222,7 +222,7 @@ def _check_partition(
         if ctx.is_empty(s):
             warnings.append(
                 Diagnostic(
-                    ast.path,
+                    ast.path_of(cls.node),
                     ast.nodes[cls.node].span,
                     String(label, ": class ", cls.name, " is empty"),
                 )
@@ -280,7 +280,7 @@ def _check_partition(
         if not ctx.is_empty(s) and not ctx.is_empty(outside):
             warnings.append(
                 Diagnostic(
-                    ast.path,
+                    ast.path_of(cls.node),
                     ast.nodes[cls.node].span,
                     String(
                         label, ": class ", cls.name, " has ",

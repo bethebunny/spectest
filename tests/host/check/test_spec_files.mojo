@@ -347,14 +347,14 @@ def test_unknown_qualified_names() raises:
     )
 
 
-def test_other_files_are_not_supported_yet() raises:
+def test_other_files_must_exist() raises:
     fails_at(
-        'use "x"\nfn f()\n',
-        "t.spec:2:1: use is not supported yet: only one file is checked for now",
+        'use "no_such_dir/x.spec"\nfn f()\n',
+        "t.spec:2:1: cannot read use file no_such_dir/x.spec (no_such_dir/x.spec)",
     )
     fails_at(
         'prelude "x.prelude"\n',
-        "t.spec:2:1: prelude is not supported yet: only one file is checked for now",
+        "t.spec:2:1: cannot read prelude file x.prelude (x.prelude)",
     )
 
 

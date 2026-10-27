@@ -52,6 +52,14 @@ from check.typesyn import alias_type, ensure_const, model_tvar_types, record_typ
 # -- names ----------------------------------------------------------------------
 
 
+def _where(c: Checker, here: Int, other: Int) -> String:
+    """`line N` of `other`, with its file when that is not the file of `here`."""
+    var line = "line " + String(c.line_of(other))
+    if c.spec.ast.file_of(here) != c.spec.ast.file_of(other):
+        return c.spec.ast.path_of(other) + ", " + line
+    return line
+
+
 def declare(mut c: Checker, name: String, node: Int) -> Bool:
     if is_builtin_type_name(name):
         c.error(node, name + " is a built-in type and cannot be redeclared")
@@ -61,8 +69,8 @@ def declare(mut c: Checker, name: String, node: Int) -> Bool:
         c.error(
             node,
             name
-            + " is already declared at line "
-            + String(c.line_of(c.names.get(name).value())),
+            + " is already declared at "
+            + _where(c, node, c.names.get(name).value()),
         )
     else:
         c.names[name] = node
@@ -147,14 +155,9 @@ def _new_fn(
 
 
 def collect(mut c: Checker):
-    var root = c.spec.ast.root
-    for d in c.kids_of(root):
+    for d in c.decl_nodes():
         var k = c.kind_of(d)
-        if k == ast.USE or k == ast.PRELUDE:
-            var word = "use" if k == ast.USE else "prelude"
-            c.error(d, word + " is not supported yet: only one file is checked for now")
-            c.duplicate[d] = True
-        elif k == ast.ERROR:
+        if k == ast.ERROR:
             var name = c.text_of(d)
             if declare(c, name, d):
                 c.spec.errors.append(qualify_error(name))
@@ -213,6 +216,13 @@ def collect(mut c: Checker):
                     name + " is a prelude function and cannot be redefined",
                 )
                 c.duplicate[d] = True
+            elif (
+                name in c.names
+                and c.spec.ast.kind_of_file(c.names.get(name).value()) == ast.FILE
+                and c.spec.ast.kind_of_file(d) == ast.PRELUDE_FILE
+            ):
+                # A definition of the spec itself shadows the attached prelude's.
+                c.duplicate[d] = True
             elif declare(c, name, d):
                 c.spec.defs.append(
                     Def(name.copy(), d, tn^, tb^, List[Param](), 0, c.kid(d, 3))
@@ -222,7 +232,7 @@ def collect(mut c: Checker):
                 c.def_edges.append(List[Int]())
                 c.def_nodes.append(d)
     # Aliases and records resolve on first use; force them in declaration order.
-    for d in c.kids_of(root):
+    for d in c.decl_nodes():
         var k = c.kind_of(d)
         if c.duplicate[d]:
             continue
@@ -334,7 +344,7 @@ def _member_dup(mut c: Checker, members: List[String], name: String, node: Int, 
 
 
 def declare_signatures(mut c: Checker):
-    for d in c.kids_of(c.spec.ast.root):
+    for d in c.decl_nodes():
         if c.duplicate[d]:
             continue
         var k = c.kind_of(d)
@@ -543,7 +553,7 @@ def check_default(mut c: Checker, p: Param):
 
 
 def check_defaults(mut c: Checker):
-    for d in c.kids_of(c.spec.ast.root):
+    for d in c.decl_nodes():
         if c.duplicate[d]:
             continue
         var k = c.kind_of(d)
@@ -1367,7 +1377,7 @@ def run(mut c: Checker):
     collect(c)
     declare_signatures(c)
     check_defaults(c)
-    for d in c.kids_of(c.spec.ast.root):
+    for d in c.decl_nodes():
         if c.duplicate[d]:
             continue
         var k = c.kind_of(d)

@@ -11,6 +11,8 @@ covers its continuation lines.
 
 from syntax.ast import (
     Ast,
+    Node,
+    SourceFile,
     Span as SrcSpan,
     FILE,
     PRELUDE_FILE,
@@ -411,6 +413,7 @@ struct Parser:
             decls.append(self.parse_decl())
         var id = self.ast.add(FILE, self.close(m), text=name^, kids=decls^)
         self.ast.root = id
+        self.ast.files[0].root = id
         return id
 
     def parse_prelude_file(mut self) raises -> Int:
@@ -436,6 +439,7 @@ struct Parser:
                 )
         var id = self.ast.add(PRELUDE_FILE, self.close(m), kids=decls^)
         self.ast.root = id
+        self.ast.files[0].root = id
         return id
 
     def parse_decl(mut self) raises -> Int:
@@ -1240,3 +1244,37 @@ def parse_prelude(source: String, path: String) raises -> Ast:
     var parser = Parser(tokens^, source.copy(), path.copy())
     _ = parser.parse_prelude_file()
     return parser^.into_ast()
+
+
+def parse_into(mut ast: Ast, source: String, path: String) raises -> Int:
+    """Parse a spec file or a user prelude (told apart by a leading `spec`) and append
+    it to `ast` as another file: its nodes follow the existing ones and its source
+    follows `ast.source`. Spans keep byte offsets into the combined source and each
+    one's line and column stay the file's own. Returns the file's index in
+    `ast.files`. On a syntax error raises an `Error` like `parse_spec`."""
+    var tokens = tokenize(source, path)
+    var is_spec = False
+    for t in tokens:
+        if t.kind == T_NAME:
+            is_spec = t.text == "spec"
+            break
+        if t.kind != T_NEWLINE and t.kind != T_INDENT and t.kind != T_DEDENT:
+            break
+    var parser = Parser(tokens^, source.copy(), path.copy())
+    if is_spec:
+        _ = parser.parse_file()
+    else:
+        _ = parser.parse_prelude_file()
+    var sub = parser^.into_ast()
+    var n0 = len(ast.nodes)
+    var offset = ast.source.byte_length()
+    for i in range(1, len(sub.nodes)):
+        ref n = sub.nodes[i]
+        var kids = List[Int]()
+        for k in n.kids:
+            kids.append(0 if k == 0 else n0 + k - 1)
+        var span = SrcSpan(n.span.start + offset, n.span.end + offset, n.span.line, n.span.col)
+        ast.nodes.append(Node(n.kind, n.op, span, n.text.copy(), kids^))
+    ast.source += source
+    ast.files.append(SourceFile(path.copy(), source.copy(), offset, n0, n0 + sub.root - 1))
+    return len(ast.files) - 1
