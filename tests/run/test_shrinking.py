@@ -49,9 +49,9 @@ def test_a_list_spec_error_shrinks_the_list(spec):
     r = spec.run("runimpls.first_or_none", max_examples=300)
     errs = errors_of(r)
     assert errs, r.data
-    for message, example in errs:
-        assert example == "xs = [0, 0, 0, 0, 0]" or example.startswith("xs = ["), example
-        assert example.count(",") <= 4, example
+    # Every list shorter than six raises the same index error, up to its numbers, so
+    # the shrunk input is the empty list.
+    assert [example for _, example in errs] == ["xs = []"], errs
 
 
 def test_two_spec_error_messages_are_each_kept_and_shrunk(spec):
