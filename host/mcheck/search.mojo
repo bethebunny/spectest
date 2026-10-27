@@ -3,7 +3,7 @@
 from std.time import perf_counter_ns
 
 from .choices import Choices
-from .property import Property, Outcome, FAILED, SKIPPED
+from .property import Property, run_example, FAILED, SKIPPED
 from .settings import Settings
 from .shrink import shrink
 from .source import Source
@@ -36,15 +36,15 @@ struct SearchResult(Copyable, Movable):
     var elapsed_ns: Int
 
     def __init__(out self):
-        self.properties = List[PropertyResult]()
+        self.properties = []
         self.examples = 0
         self.invalid = 0
         self.elapsed_ns = 0
 
     def find(self, id: Int) -> Int:
         """Index of the result for property `id`, or -1."""
-        for i in range(len(self.properties)):
-            if self.properties[i].id == id:
+        for i, p in enumerate(self.properties):
+            if p.id == id:
                 return i
         return -1
 
@@ -56,42 +56,29 @@ struct SearchResult(Copyable, Movable):
         return i
 
     def all_failed(self) -> Bool:
-        if len(self.properties) == 0:
-            return False
-        for p in self.properties:
-            if not p.failed:
-                return False
-        return True
+        return len(self.properties) > 0 and all([p.failed for p in self.properties])
 
 
 def _run_one[P: Property](
     mut prop: P, mut src: Source, mut res: SearchResult
 ) raises -> Bool:
     """Run the example `src` is set up for and tally it. False when invalid."""
-    var out: Outcome
-    try:
-        out = prop.run(src)
-    except e:
-        if src.invalid:
-            res.invalid += 1
-            return False
-        raise e^
-    if out.is_invalid:
+    var out = run_example(prop, src)
+    if out is None:
         res.invalid += 1
         return False
     res.examples += 1
-    for k in range(len(out.ids)):
-        var s = res._slot(out.ids[k])
-        var r = out.results[k]
-        if r == FAILED:
-            res.properties[s].fails += 1
-            if not res.properties[s].failed:
-                res.properties[s].failed = True
-                res.properties[s].choices = src.rec.copy()
-        elif r == SKIPPED:
-            res.properties[s].skips += 1
+    for id, result in zip(out.value().ids, out.value().results):
+        ref p = res.properties[res._slot(id)]
+        if result == FAILED:
+            p.fails += 1
+            if not p.failed:
+                p.failed = True
+                p.choices = src.rec.copy()
+        elif result == SKIPPED:
+            p.skips += 1
         else:
-            res.properties[s].passes += 1
+            p.passes += 1
     return True
 
 
@@ -100,35 +87,30 @@ def search[P: Property](mut prop: P, settings: Settings) raises -> SearchResult:
 
     Each property keeps its first failure and is then shrunk on its own. Generation
     stops early once every property has failed, and after ten times `max_examples`
-    attempts in all, so a generator that rejects most examples cannot run forever.
+    attempts in all (so a generator that rejects most examples cannot run forever).
     """
     var t0 = perf_counter_ns()
     var res = SearchResult()
     var src = Source(settings.seed, settings.max_choices)
-    if settings.store_dir:
+    if settings.store_dir is not None:
         for key in settings.keys:
             var stored = store_load(settings.store_dir.value(), key)
-            if stored:
+            if stored is not None:
                 src.reset_replay(stored.value().values)
                 _ = _run_one(prop, src, res)
-    var cap = settings.max_examples * 10
     var attempts = 0
     var valid = 0
-    while valid < settings.max_examples and attempts < cap and not res.all_failed():
+    while valid < settings.max_examples and attempts < settings.max_examples * 10 and not res.all_failed():
         attempts += 1
         src.reset_generate()
         if _run_one(prop, src, res):
             valid += 1
-    for i in range(len(res.properties)):
-        if res.properties[i].failed:
-            var pid = res.properties[i].id
-            res.properties[i].choices = shrink(
-                prop, res.properties[i].choices, pid, settings.max_shrink_steps
-            )
-            if settings.store_dir and pid >= 0 and pid < len(settings.keys):
-                store_save(
-                    settings.store_dir.value(), settings.keys[pid], res.properties[i].choices
-                )
+    for ref p in res.properties:
+        if not p.failed:
+            continue
+        p.choices = shrink(prop, p.choices, p.id, settings.max_shrink_steps)
+        if settings.store_dir is not None and 0 <= p.id and p.id < len(settings.keys):
+            store_save(settings.store_dir.value(), settings.keys[p.id], p.choices)
     res.elapsed_ns = Int(perf_counter_ns() - t0)
     return res^
 
@@ -140,20 +122,15 @@ def enumerate_all[P: Property](
 
     Over `settings.max_exhaustive` indices, a uniform sample of that many indices
     (one random index from each equal stratum, in increasing order). A failure is the
-    smallest failing index, not shrunk.
+    smallest failing index (not shrunk).
     """
     var t0 = perf_counter_ns()
     var res = SearchResult()
     var src = Source(settings.seed, settings.max_choices)
-    var runs = n if n <= settings.max_exhaustive else settings.max_exhaustive
+    var runs = min(n, settings.max_exhaustive)
     for k in range(runs):
-        var index: UInt64
-        if runs == n:
-            index = UInt64(k)
-        else:
-            var lo = (k * n) // runs
-            var hi = ((k + 1) * n) // runs
-            index = UInt64(lo) + src.rng.below(UInt64(hi - lo))
+        var lo = k * n // runs
+        var index = UInt64(k) if runs == n else UInt64(lo) + src.rng.below(UInt64((k + 1) * n // runs - lo))
         src.reset_forced(index)
         _ = _run_one(prop, src, res)
     res.elapsed_ns = Int(perf_counter_ns() - t0)

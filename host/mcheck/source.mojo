@@ -25,7 +25,7 @@ def int_to_index(x: Int, lo: Int, hi: Int) -> UInt64:
     var a = int_anchor(lo, hi)
     var up = UInt64(hi) - UInt64(a)
     var down = UInt64(a) - UInt64(lo)
-    var m = up if up < down else down
+    var m = min(up, down)
     if x >= a:
         var u = UInt64(x) - UInt64(a)
         if u == 0:
@@ -44,7 +44,7 @@ def index_to_int(i: UInt64, lo: Int, hi: Int) -> Int:
     var a = int_anchor(lo, hi)
     var up = UInt64(hi) - UInt64(a)
     var down = UInt64(a) - UInt64(lo)
-    var m = up if up < down else down
+    var m = min(up, down)
     if i <= 2 * m:
         if i == 0:
             return a
@@ -78,13 +78,13 @@ struct Source(Movable):
     def __init__(out self, seed: UInt64, max_choices: Int = 10000):
         self.rng = Rng(seed)
         self.rec = Choices()
-        self.pre = List[UInt64]()
+        self.pre = []
         self.pos = 0
         self.extend = True
         self.max_choices = max_choices
         self.invalid = False
-        self.open_starts = List[Int]()
-        self.open_labels = List[Int]()
+        self.open_starts = []
+        self.open_labels = []
 
     def _reset(mut self):
         self.rec.clear()
@@ -102,14 +102,13 @@ struct Source(Movable):
     def reset_replay(mut self, values: List[UInt64]):
         """Start an example that replays `values` and is invalid past their end."""
         self._reset()
-        for v in values:
-            self.pre.append(v)
+        self.pre = values.copy()
         self.extend = False
 
     def reset_forced(mut self, first: UInt64):
         """Start an example whose first choice is `first`, then generates."""
         self._reset()
-        self.pre.append(first)
+        self.pre = [first]
         self.extend = True
 
     def fail(mut self) raises:
@@ -117,51 +116,39 @@ struct Source(Movable):
         raise Error(INVALID_MESSAGE)
 
     def reject(mut self) raises:
-        """Mark the example invalid."""
         self.fail()
 
-    def _replay(mut self, bound: UInt64) raises -> UInt64:
+    def _replayed(mut self, bound: UInt64) raises -> Optional[UInt64]:
+        """The next replayed choice, or none when the draw is to be generated."""
+        if len(self.rec.values) >= self.max_choices:
+            self.fail()
+        if self.pos >= len(self.pre):
+            if not self.extend:
+                self.fail()
+            return None
         var v = self.pre[self.pos]
         self.pos += 1
         if v > bound:
             self.fail()
         return v
 
-    def _check(mut self) raises:
-        if len(self.rec.values) >= self.max_choices:
-            self.fail()
-
-    def _can_generate(mut self) raises:
-        if not self.extend:
-            self.fail()
+    def _record(mut self, value: UInt64, bound: UInt64) -> UInt64:
+        self.rec.push(value, bound)
+        return value
 
     def draw_bits(mut self, n: Int) raises -> UInt64:
         """n uniform bits (0 to 64)."""
-        self._check()
         var bound = UInt64.MAX if n >= 64 else (UInt64(1) << UInt64(n)) - 1
-        var v: UInt64
-        if self.pos < len(self.pre):
-            v = self._replay(bound)
-        else:
-            self._can_generate()
-            v = self.rng.next() & bound
-        self.rec.push(v, bound)
-        return v
+        var replayed = self._replayed(bound)
+        return self._record(replayed.value() if replayed is not None else self.rng.next() & bound, bound)
 
     def draw_below(mut self, n: UInt64) raises -> UInt64:
         """Uniform in [0, n). Invalid when n is 0."""
         if n == 0:
             self.fail()
-        self._check()
         var bound = n - 1
-        var v: UInt64
-        if self.pos < len(self.pre):
-            v = self._replay(bound)
-        else:
-            self._can_generate()
-            v = 0 if bound == 0 else self.rng.below(n)
-        self.rec.push(v, bound)
-        return v
+        var replayed = self._replayed(bound)
+        return self._record(replayed.value() if replayed is not None else (UInt64(0) if bound == 0 else self.rng.below(n)), bound)
 
     def draw_choice(mut self, n: Int) raises -> Int:
         """An index in [0, n)."""
@@ -169,51 +156,25 @@ struct Source(Movable):
 
     def draw_bool(mut self, p: Float64 = 0.5) raises -> Bool:
         """True with probability p; shrinks toward False."""
-        self._check()
-        var v: UInt64
-        if self.pos < len(self.pre):
-            v = self._replay(1)
-        else:
-            self._can_generate()
-            v = 1 if self.rng.unit() < p else 0
-        self.rec.push(v, 1)
-        return v == 1
+        var replayed = self._replayed(1)
+        return self._record(replayed.value() if replayed is not None else (UInt64(1) if self.rng.unit() < p else UInt64(0)), 1) == 1
+
+    def _generate_int_index(mut self, lo: Int, hi: Int, bound: UInt64) -> UInt64:
+        var r = self.rng.next()
+        if r & 7 == 0:
+            var edge = [lo, hi, 0, 1, -1][(r >> 3) % 5]
+            if lo <= edge and edge <= hi:
+                return int_to_index(edge, lo, hi)
+        return self.rng.next() if bound == UInt64.MAX else self.rng.below(bound + 1)
 
     def draw_int(mut self, lo: Int, hi: Int) raises -> Int:
         """An Int64 in [lo, hi]; about 1 in 8 draws takes an edge (lo, hi, 0, 1, -1)."""
         if lo > hi:
             self.fail()
-        self._check()
         var bound = UInt64(hi) - UInt64(lo)
-        var idx: UInt64
-        if self.pos < len(self.pre):
-            idx = self._replay(bound)
-        else:
-            self._can_generate()
-            var r = self.rng.next()
-            idx = 0
-            var done = False
-            if r & 7 == 0:
-                var e = (r >> 3) % 5
-                var x = lo
-                if e == 1:
-                    x = hi
-                elif e == 2:
-                    x = 0
-                elif e == 3:
-                    x = 1
-                elif e == 4:
-                    x = -1
-                if lo <= x and x <= hi:
-                    idx = int_to_index(x, lo, hi)
-                    done = True
-            if not done:
-                if bound == UInt64.MAX:
-                    idx = self.rng.next()
-                else:
-                    idx = self.rng.below(bound + 1)
-        self.rec.push(idx, bound)
-        return index_to_int(idx, lo, hi)
+        var replayed = self._replayed(bound)
+        var index = self._record(replayed.value() if replayed is not None else self._generate_int_index(lo, hi, bound), bound)
+        return index_to_int(index, lo, hi)
 
     def start_span(mut self, label: Int = 0):
         self.open_starts.append(len(self.rec.values))
@@ -259,10 +220,7 @@ struct Many:
         if self.count >= self.max_size:
             return False
         src.start_span(MANY_LABEL)
-        var go = True
-        if self.count >= self.min_size:
-            go = src.draw_bool(self.p)
-        if not go:
+        if self.count >= self.min_size and not src.draw_bool(self.p):
             src.stop_span()
             return False
         self.open = True

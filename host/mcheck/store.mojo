@@ -7,39 +7,32 @@ from std.pathlib import Path
 from .choices import Choices, Span
 
 comptime HEADER = "mcheck-choices 1"
+comptime PLAIN = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+comptime HEX = "0123456789abcdef"
 
 
-def _file_name(dir: String, key: String) -> String:
+def file_name(dir: String, key: String, suffix: String) -> String:
+    """`dir`/`key` with every byte outside `PLAIN` escaped as `.` and two hex digits."""
     var name = String()
     for b in key.as_bytes():
         var c = Int(b)
-        var plain = (
-            (c >= ord("a") and c <= ord("z"))
-            or (c >= ord("A") and c <= ord("Z"))
-            or (c >= ord("0") and c <= ord("9"))
-            or c == ord("-")
-            or c == ord("_")
-        )
-        if plain:
-            name += chr(c)
-        else:
-            var hex = "0123456789abcdef"
-            name += "." + hex[byte = c // 16 : c // 16 + 1] + hex[byte = c % 16 : c % 16 + 1]
-    return dir + "/" + name + ".choices"
+        var hi, lo = c // 16, c % 16
+        name += chr(c) if chr(c) in PLAIN else String(".", HEX[byte=hi : hi + 1], HEX[byte=lo : lo + 1])
+    return String(dir, "/", name, suffix)
 
 
 def store_save(dir: String, key: String, choices: Choices) raises:
     makedirs(dir, exist_ok=True)
     var text = String(HEADER, "\n")
-    for i in range(len(choices.values)):
-        text += String("c ", Int(choices.values[i]), " ", Int(choices.bounds[i]), "\n")
+    for value, bound in zip(choices.values, choices.bounds):
+        text += String("c ", Int(value), " ", Int(bound), "\n")
     for s in choices.spans:
         text += String("s ", s.start, " ", s.end, " ", s.label, "\n")
-    Path(_file_name(dir, key)).write_text(text)
+    Path(file_name(dir, key, ".choices")).write_text(text)
 
 
 def store_load(dir: String, key: String) raises -> Optional[Choices]:
-    var path = _file_name(dir, key)
+    var path = file_name(dir, key, ".choices")
     if not exists(path):
         return None
     var lines = Path(path).read_text().split("\n")
@@ -48,8 +41,8 @@ def store_load(dir: String, key: String) raises -> Optional[Choices]:
     var out = Choices()
     for line in lines[1:]:
         var parts = line.split(" ")
-        if len(parts) == 3 and String(parts[0]) == "c":
+        if len(parts) == 3 and parts[0] == "c":
             out.push(UInt64(atol(parts[1])), UInt64(atol(parts[2])))
-        elif len(parts) == 4 and String(parts[0]) == "s":
+        elif len(parts) == 4 and parts[0] == "s":
             out.spans.append(Span(atol(parts[1]), atol(parts[2]), atol(parts[3])))
     return out^

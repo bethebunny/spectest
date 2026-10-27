@@ -21,20 +21,15 @@ struct Choices(Copyable, Movable):
     var spans: List[Span]
 
     def __init__(out self):
-        self.values = List[UInt64]()
-        self.bounds = List[UInt64]()
-        self.spans = List[Span]()
+        self.values = []
+        self.bounds = []
+        self.spans = []
 
     def __init__(out self, var values: List[UInt64]):
-        """Choices with unknown (maximal) bounds, as stored or hand-written."""
-        self.bounds = List[UInt64]()
-        for _ in range(len(values)):
-            self.bounds.append(UInt64.MAX)
+        """Choices with maximal bounds, as stored or hand-written."""
+        self.bounds = List[UInt64](length=len(values), fill=UInt64.MAX)
         self.values = values^
-        self.spans = List[Span]()
-
-    def __len__(self) -> Int:
-        return len(self.values)
+        self.spans = []
 
     def clear(mut self):
         self.values.clear()
