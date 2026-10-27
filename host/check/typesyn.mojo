@@ -150,12 +150,7 @@ def _named(mut c: Checker, node: Int, self_model: Int) -> Int:
 
 
 def model_tvar_types(mut c: Checker, model: Int) -> List[Int]:
-    var out = List[Int]()
-    var names = c.spec.models[model].tparams.copy()
-    var bounds = c.spec.models[model].bounds.copy()
-    for i in range(len(names)):
-        out.append(c.spec.types.typevar(names[i], bounds[i]))
-    return out^
+    return c.spec.types.typevars(c.spec.models[model].tparams, c.spec.models[model].bounds)
 
 
 def _model(

@@ -185,6 +185,9 @@ struct Types(Movable):
             info.names.append(bound)
         return self.intern(info^)
 
+    def typevars(mut self, names: List[String], bounds: List[String]) -> List[Int]:
+        return [self.typevar(name, bound) for name, bound in zip(names, bounds)]
+
     def fn_(mut self, params: List[Int], names: List[String], result: Int) -> Int:
         var info = _info(FN)
         info.args = params.copy()

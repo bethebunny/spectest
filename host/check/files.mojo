@@ -13,6 +13,8 @@ from syntax import ast as sx
 from syntax.ast import Ast, Diagnostic
 from syntax.parser import parse_into
 
+from check.state import index_of
+
 
 struct Files(Movable):
     """Where files come from: a table of in-memory texts first, then the disk."""
@@ -21,7 +23,7 @@ struct Files(Movable):
     var disk: Bool
 
     def __init__(out self, disk: Bool = True):
-        self.memory = Dict[String, String]()
+        self.memory = {}
         self.disk = disk
 
     def add(mut self, path: String, text: String):
@@ -29,7 +31,7 @@ struct Files(Movable):
 
     def read(self, path: String) raises -> String:
         var found = self.memory.get(path)
-        if found:
+        if found is not None:
             return found.value()
         if self.disk:
             return Path(path).read_text()
@@ -47,13 +49,7 @@ def normalize(path: String) -> String:
 
 def dir_of(path: String) -> String:
     """The directory part of `path` with its trailing slash, or ""."""
-    var bytes = path.as_bytes()
-    var i = len(bytes) - 1
-    while i >= 0:
-        if Int(bytes[i]) == ord("/"):
-            return String(path[byte = 0 : i + 1])
-        i -= 1
-    return String()
+    return String(path[byte = 0 : path.rfind("/") + 1])
 
 
 def join(base_file: String, name: String) -> String:
@@ -74,18 +70,11 @@ struct _Walk(Movable):
     var diags: List[Diagnostic]
 
     def __init__(out self):
-        self.keys = List[String]()
-        self.state = List[Int]()
-        self.stack = List[Int]()
-        self.order = List[Int]()
-        self.diags = List[Diagnostic]()
-
-
-def _key_index(w: _Walk, key: String) -> Int:
-    for i in range(len(w.keys)):
-        if w.keys[i] == key:
-            return i
-    return -1
+        self.keys = []
+        self.state = []
+        self.stack = []
+        self.order = []
+        self.diags = []
 
 
 def _is_prelude(ast: Ast, file: Int) -> Bool:
@@ -107,7 +96,7 @@ def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
         var name = ast.nodes[d].text.copy()
         var word = "use" if kind == sx.USE else "prelude"
         var key = join(ast.files[file].path, name)
-        var target = _key_index(w, key)
+        var target = index_of(w.keys, key)
         if target < 0:
             var text: String
             try:
@@ -119,14 +108,8 @@ def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
             w.keys.append(key^)
             w.state.append(0)
         elif w.state[target] == 1:
-            var chain = String()
-            var from_ = 0
-            for i in range(len(w.stack)):
-                if w.stack[i] == target:
-                    from_ = i
-            for i in range(from_, len(w.stack)):
-                chain += ast.files[w.stack[i]].path + " -> "
-            chain += ast.files[target].path
+            var files_in_cycle = [ast.files[f].path.copy() for f in w.stack[w.stack.index(target) :]]
+            var chain = " -> ".join(files_in_cycle + [ast.files[target].path.copy()])
             _report(w, ast, d, String(word, " cycle: ", chain))
             continue
         var wants_prelude = kind == sx.PRELUDE or _is_prelude(ast, file)
@@ -153,13 +136,5 @@ def resolve_files(mut ast: Ast, files: Files, mut diags: List[Diagnostic]) raise
     w.state.append(0)
     w.order.append(0)
     _visit(w, ast, files, 0)
-    for d in w.diags:
-        diags.append(d.copy())
-    var out = List[Int]()
-    for f in w.order:
-        if not _is_prelude(ast, f):
-            out.append(f)
-    for f in w.order:
-        if _is_prelude(ast, f):
-            out.append(f)
-    return out^
+    diags.extend(w.diags.copy())
+    return [f for f in w.order if not _is_prelude(ast, f)] + [f for f in w.order if _is_prelude(ast, f)]

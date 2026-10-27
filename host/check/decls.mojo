@@ -2,6 +2,8 @@
 rules of functions, models and interfaces, then the whole-file `run`.
 """
 
+from std.builtin.sort import sort
+
 from numeric.floats import exactly
 from numeric.formats import format_by_id
 from numeric.real import Real
@@ -46,7 +48,7 @@ from check.state import (
     is_reserved,
     qualify_error,
 )
-from check.typesyn import alias_type, ensure_const, model_tvar_types, record_type, resolve_type
+from check.typesyn import alias_type, ensure_const, record_type, resolve_type
 
 
 # -- names ----------------------------------------------------------------------
@@ -99,9 +101,7 @@ def tvars_of(
 
 def set_tvars(mut c: Checker, names: List[String], bounds: List[String]):
     c.ctx.tv_names = names.copy()
-    c.ctx.tv_types = List[Int]()
-    for i in range(len(names)):
-        c.ctx.tv_types.append(c.spec.types.typevar(names[i], bounds[i]))
+    c.ctx.tv_types = c.spec.types.typevars(names, bounds)
 
 
 def _has_modifies(c: Checker, decl: Int) -> Bool:
@@ -240,10 +240,7 @@ def _collect_model(mut c: Checker, d: Int):
     tvars_of(c, c.kid(d, 0), tn, tb)
     if not declare(c, name, d):
         return
-    var tvs = List[Int]()
-    for i in range(len(tn)):
-        tvs.append(c.spec.types.typevar(tn[i], tb[i]))
-    var t = c.spec.types.model(name.copy(), tvs, is_iface)
+    var t = c.spec.types.model(name.copy(), c.spec.types.typevars(tn, tb), is_iface)
     c.spec.models.append(
         Model(
             name.copy(),
@@ -406,11 +403,7 @@ def _declare_fn(mut c: Checker, d: Int):
     var allow_self = False
     var self_reported = False
     if len(pkids) > 0 and c.text_of(pkids[0]) == "self" and c.kid(pkids[0], 0) == 0:
-        var dot = -1
-        var bytes = name.as_bytes()
-        for i in range(len(bytes)):
-            if Int(bytes[i]) == ord("."):
-                dot = i
+        var dot = name.rfind(".")
         self_reported = True
         if dot < 0:
             c.error(
@@ -520,6 +513,12 @@ def check_default(mut c: Checker, p: Param):
             pass
 
 
+def _check_defaults(mut c: Checker, var params: List[Param]):
+    for p in params:
+        if p.default != 0:
+            check_default(c, p)
+
+
 def check_defaults(mut c: Checker):
     for d in c.decl_nodes():
         if c.duplicate[d]:
@@ -528,34 +527,20 @@ def check_defaults(mut c: Checker):
         if k == ast.FN:
             var pos = c.decl_pos[d]
             set_tvars(c, c.spec.fns[pos].tparams.copy(), c.spec.fns[pos].bounds.copy())
-            for p in c.spec.fns[pos].params.copy():
-                if p.default != 0:
-                    check_default(c, p)
+            _check_defaults(c, c.spec.fns[pos].params.copy())
         elif k == ast.DEF:
             var pos = c.decl_pos[d]
             set_tvars(c, c.spec.defs[pos].tparams.copy(), c.spec.defs[pos].bounds.copy())
-            for p in c.spec.defs[pos].params.copy():
-                if p.default != 0:
-                    check_default(c, p)
+            _check_defaults(c, c.spec.defs[pos].params.copy())
         elif k == ast.MODEL or k == ast.INTERFACE:
             var pos = c.decl_pos[d]
             set_tvars(c, c.spec.models[pos].tparams.copy(), c.spec.models[pos].bounds.copy())
             for i in range(len(c.spec.models[pos].observers)):
-                for p in c.spec.models[pos].observers[i].params.copy():
-                    if p.default != 0:
-                        check_default(c, p)
+                _check_defaults(c, c.spec.models[pos].observers[i].params.copy())
             for i in range(len(c.spec.models[pos].builds)):
-                for p in c.spec.models[pos].builds[i].params.copy():
-                    if p.default != 0:
-                        check_default(c, p)
-            for f in c.spec.models[pos].ctors.copy():
-                for p in c.spec.fns[f].params.copy():
-                    if p.default != 0:
-                        check_default(c, p)
-            for f in c.spec.models[pos].methods.copy():
-                for p in c.spec.fns[f].params.copy():
-                    if p.default != 0:
-                        check_default(c, p)
+                _check_defaults(c, c.spec.models[pos].builds[i].params.copy())
+            for f in c.spec.models[pos].ctors + c.spec.models[pos].methods.copy():
+                _check_defaults(c, c.spec.fns[f].params.copy())
         c.ctx = Ctx()
 
 
@@ -677,7 +662,8 @@ def check_freedoms(mut c: Checker, decl_id: String, clauses: List[Int]):
             for k in c.spec.ast.nodes[n].kids:
                 stack.append(k)
         # Source order: nodes in ascending position.
-        for n in sorted_ints(found^):
+        sort(found)
+        for n in found:
             var r = c.spec.resolutions.get(n)
             if not r:
                 continue
@@ -700,18 +686,6 @@ def check_freedoms(mut c: Checker, decl_id: String, clauses: List[Int]):
                     t"this clause observes {rname}, which {decl_id} declares {ast.op_name(c.op_of(nodes[j]))} "
                     t"(line {c.line_of(nodes[j])}): no clause may observe it",
                 )
-
-
-def sorted_ints(var xs: List[Int]) -> List[Int]:
-    # Insertion sort: clause trees are small.
-    for i in range(1, len(xs)):
-        var v = xs[i]
-        var j = i - 1
-        while j >= 0 and xs[j] > v:
-            xs[j + 1] = xs[j]
-            j -= 1
-        xs[j + 1] = v
-    return xs^
 
 
 # -- models and interfaces ---------------------------------------------------------
@@ -745,11 +719,7 @@ def check_model(mut c: Checker, d: Int):
         if c.spec.fns[f].kind != ast.FN or not c.spec.fns[f].name.startswith(prefix):
             continue
         var rest = String(c.spec.fns[f].name[byte = prefix.byte_length() :])
-        var dotted = False
-        for b in rest.as_bytes():
-            if Int(b) == ord("."):
-                dotted = True
-        if not dotted:
+        if "." not in rest:
             member_names.append(rest^)
             member_kinds.append("method" if c.spec.fns[f].receiver else "function")
     var clauses = List[Int]()
@@ -786,7 +756,6 @@ def check_model(mut c: Checker, d: Int):
         ctx.fields_of = pos
         ctx.allow_spec_fn = True
         ctx.no_result = "an invariant describes an object's state: there is no result"
-        ctx.no_old = "old(...) is only allowed in ensures"
         var saved = c.ctx.copy()
         c.ctx = ctx^
         var expr = c.spec.clauses[ci].expr
@@ -841,8 +810,7 @@ def _callable_ctx(mut c: Checker, fpos: Int) -> Ctx:
     var tn = c.spec.fns[fpos].tparams.copy()
     var tb = c.spec.fns[fpos].bounds.copy()
     ctx.tv_names = tn.copy()
-    for i in range(len(tn)):
-        ctx.tv_types.append(c.spec.types.typevar(tn[i], tb[i]))
+    ctx.tv_types = c.spec.types.typevars(tn, tb)
     var receiver = c.spec.fns[fpos].receiver
     var is_ctor = c.spec.fns[fpos].kind == ast.CTOR
     for i in range(len(c.spec.fns[fpos].params)):
@@ -927,13 +895,9 @@ def check_callable(mut c: Checker, fpos: Int, what: String):
             ctx.allow_spec_fn = True
             if op == ast.ENSURES:
                 ctx.allow_old = has_state
-                ctx.no_old = (
-                    "old(...) needs state that the call can change, but "
-                    + decl_id
-                    + " has no handle parameter or self"
+                ctx.no_old = String(
+                    "old(...) needs state that the call can change, but ", decl_id, " has no handle parameter or self"
                 )
-            else:
-                ctx.no_old = "old(...) is only allowed in ensures"
         var what_clause: String
         if op == ast.RAISES or op == ast.MAY_RAISE:
             what_clause = "the condition of " + String(ast.op_name(op))
@@ -1017,7 +981,6 @@ def _check_partition(
         ctx.class_nodes = cnodes.copy()
         ctx.class_types = ctypes.copy()
         ctx.no_result = "a partition class describes an input: there is no result"
-        ctx.no_old = "old(...) is only allowed in ensures"
         ctx.no_self = "self cannot appear in a partition class"
         c.ctx = ctx^
         if fixed:
@@ -1207,13 +1170,11 @@ def check_def(mut c: Checker, d: Int):
     var tn = c.spec.defs[pos].tparams.copy()
     var tb = c.spec.defs[pos].bounds.copy()
     ctx.tv_names = tn.copy()
-    for i in range(len(tn)):
-        ctx.tv_types.append(c.spec.types.typevar(tn[i], tb[i]))
+    ctx.tv_types = c.spec.types.typevars(tn, tb)
     for p in c.spec.defs[pos].params:
         ctx.param_names.append(p.name.copy())
         ctx.param_types.append(p.type)
     ctx.no_result = "a definition has no result: its value is the expression"
-    ctx.no_old = "old(...) is only allowed in ensures"
     ctx.no_self = "a definition has no self"
     c.ctx = ctx^
     c.cur_def = pos
@@ -1258,11 +1219,9 @@ def check_def_cycles(mut c: Checker):
                 for j in range(len(path)):
                     if path[j] == nxt:
                         from_index = j
-                var text = String()
                 var first = c.spec.defs[nxt].name.copy()
-                for j in range(from_index, len(path)):
-                    text += c.spec.defs[path[j]].name + " -> "
-                text += first
+                var cycle = [c.spec.defs[d].name.copy() for d in path[from_index:]]
+                var text = " -> ".join(cycle + [first.copy()])
                 var at = c.def_nodes[nxt]
                 if not reported[nxt]:
                     reported[nxt] = True
