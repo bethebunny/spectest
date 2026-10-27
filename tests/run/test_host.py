@@ -4,7 +4,6 @@ failures of the driver."""
 from __future__ import annotations
 
 import pytest
-
 from support import load
 
 SPEC = """\

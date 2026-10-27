@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import weakref
+from typing import ClassVar
 
 
 class Deque:
@@ -74,7 +75,7 @@ class RotateOffByOne(Deque):
 class Leaky(Deque):
     """Popping empties every other deque."""
 
-    _all: weakref.WeakSet = weakref.WeakSet()
+    _all: ClassVar[weakref.WeakSet] = weakref.WeakSet()
 
     def __init__(self, iterable=(), maxlen=None):
         super().__init__(iterable, maxlen)
@@ -98,7 +99,7 @@ class PeekMutates(Deque):
 class BreaksOther(Deque):
     """Appending also overfills every other deque past its bound."""
 
-    _all: weakref.WeakSet = weakref.WeakSet()
+    _all: ClassVar[weakref.WeakSet] = weakref.WeakSet()
 
     def __init__(self, iterable=(), maxlen=None):
         super().__init__(iterable, maxlen)

@@ -4,8 +4,6 @@ seeded bugs."""
 from __future__ import annotations
 
 import math
-import struct
-
 
 # -- Plain functions ---------------------------------------------------------
 

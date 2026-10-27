@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
-from spectest import _host
 from support import Loaded, write_spec
 
 PRELUDE = """\

@@ -4,7 +4,6 @@ calls."""
 from __future__ import annotations
 
 import pytest
-
 import runimpls
 from support import load
 

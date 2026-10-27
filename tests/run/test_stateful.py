@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 
 import pytest
-
 from support import load
 
 HEAD = """\

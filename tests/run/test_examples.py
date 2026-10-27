@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from support import Loaded
 
 ROOT = Path(__file__).resolve().parents[2]

@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 
 import pytest
-
 from support import load
 
 SPEC = """\
@@ -41,7 +40,7 @@ def test_a_spec_error_is_reported_with_a_shrunk_input(spec):
     r = spec.run("runimpls.ident", max_examples=300)
     errs = errors_of(r)
     assert len(errs) == 1, r.spec_errors()
-    message, example = errs[0]
+    _message, example = errs[0]
     assert example == "x = -1", errs
 
 
