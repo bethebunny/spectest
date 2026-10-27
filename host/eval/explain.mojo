@@ -10,7 +10,7 @@ from .core import ev, tkind, set_members
 from .env import Env, Run
 from .host import EvalHost
 from .numbers import elements, show
-from .text import short, source_text
+from .text import located, short, source_text
 
 
 comptime VALUE_CHARS = 300
@@ -54,6 +54,9 @@ struct Explainer(Movable):
     def full(self) -> Bool:
         return len(self.pairs) >= self.limit
 
+    def into_pairs(deinit self) -> List[Tuple[String, String]]:
+        return self.pairs^
+
     def has_seen(self, text: String) -> Bool:
         for s in self.seen:
             if s == text:
@@ -75,10 +78,13 @@ def outcome_of[
         return Outcome(ev(spec, e, env, run, host))
     except err:
         var skipped = run.skipped
+        var text = String(err)
+        if run.err_node >= 0:
+            text = located(spec, run.err_node, run.err_message)
         run.truncate(base)
         run.err_node = -1
         run.skipped = False
-        return Outcome(String("skipped: " if skipped else "error: ") + String(err))
+        return Outcome(String("skipped: " if skipped else "error: ") + text)
 
 
 def shown(o: Outcome) -> String:

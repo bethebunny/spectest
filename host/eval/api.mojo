@@ -203,17 +203,16 @@ def explain[
     It never raises."""
     var ex = Explainer(limit)
     ref c = spec.clauses[clause]
-    if c.expr == 0:
-        return ex.pairs^
-    var run = Run()
-    var value = outcome_of(spec, c.expr, env, run, host)
-    if not value.is_any_bool():
-        add_known(ex, spec, c.expr, value)
-    else:
-        walk(ex, spec, c.expr, value, env, run, host)
-        if len(ex.pairs) == 0:
+    if c.expr != 0:
+        var run = Run()
+        var value = outcome_of(spec, c.expr, env, run, host)
+        if not value.is_any_bool():
             add_known(ex, spec, c.expr, value)
-    return ex.pairs^
+        else:
+            walk(ex, spec, c.expr, value, env, run, host)
+            if len(ex.pairs) == 0:
+                add_known(ex, spec, c.expr, value)
+    return ex^.into_pairs()
 
 
 def class_holds[
