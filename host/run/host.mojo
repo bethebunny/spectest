@@ -19,6 +19,12 @@ from .load import Loaded
 
 
 comptime NO_TARGET = -2
+comptime TIMEOUT = "spectest.CallTimeout"
+"""The class of the error a driver returns for a call past its time limit."""
+
+
+def mentions_timeout(message: String) -> Bool:
+    return TIMEOUT in message
 
 
 def error_value(cls: String, message: String) -> Value:
@@ -159,11 +165,15 @@ struct RunHost(Builder, EvalHost):
         packed += args.copy()
         var key = Value.list(packed^)
         var found = self.memo.get(key)
+        var out: Value
         if found is not None:
-            return self.memo_result[found.value()].copy()
-        var out = self._planned(`fn`, args)
-        self.memo[key^] = len(self.memo_result)
-        self.memo_result.append(out.copy())
+            out = self.memo_result[found.value()].copy()
+        else:
+            out = self._planned(`fn`, args)
+            self.memo[key^] = len(self.memo_result)
+            self.memo_result.append(out.copy())
+        if out.kind == ERROR and out.name() == TIMEOUT:
+            raise Error(String("planned call of ", self.loaded[].spec.fns[`fn`].name, " raised ", TIMEOUT, ": ", out.text()))
         return out^
 
     def _planned(mut self, f: Int, args: List[Value]) raises -> Value:

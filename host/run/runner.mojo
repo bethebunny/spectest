@@ -46,7 +46,7 @@ from wire.value import ERROR, HANDLE, LIST, MAP, OPTION, RECORD, STRING, TUPLE, 
 
 from .aggregate import run_aggregate
 from .decode import decode, describe
-from .host import RunHost
+from .host import TIMEOUT, RunHost, mentions_timeout
 from .load import Loaded, fnv
 from .options import RunOptions
 from .util import (
@@ -68,6 +68,7 @@ comptime V_PASS = 0
 comptime V_FAIL = 1
 comptime V_SKIP = 2
 comptime V_ERROR = 3
+comptime V_TIMEOUT = 4
 
 comptime K_COND = 0
 comptime K_RAISES = 1
@@ -137,6 +138,8 @@ struct Prop(Property, Movable):
     var tf: List[Int]
     var ts: List[Int]
     var te: List[Int]
+    var tt: List[Int]
+    """Examples left inconclusive by a call past its time limit."""
     var causes: List[Int]
     var cov: List[Int]
     var fail_seen: List[Bool]
@@ -172,6 +175,8 @@ struct Prop(Property, Movable):
     var live_names: List[String]
     var live_text: List[String]
     var self_name: String
+    var timed_out: Bool
+    """Whether the last `examine` ended on a call past its time limit."""
     var last_ran: Bool
     """Whether the last `examine` made the call."""
     var last_reply: Value
@@ -194,6 +199,7 @@ struct Prop(Property, Movable):
         self.live_names = []
         self.live_text = []
         self.self_name = ""
+        self.timed_out = False
         self.last_ran = False
         self.last_reply = Value.none()
         self.last_result = Value.none()
@@ -234,6 +240,7 @@ struct Prop(Property, Movable):
         self.tf = []
         self.ts = []
         self.te = []
+        self.tt = []
         self.causes = []
         self.cov = []
         self.fail_seen = []
@@ -315,6 +322,7 @@ struct Prop(Property, Movable):
         self.tf = [0 for _ in range(n)]
         self.ts = [0 for _ in range(n)]
         self.te = [0 for _ in range(n)]
+        self.tt = [0 for _ in range(n)]
         self.fail_seen = [False for _ in range(n)]
         self.replayed = [False for _ in range(n)]
         self.vkind = [V_PASS for _ in range(n)]
@@ -415,6 +423,8 @@ struct Prop(Property, Movable):
         try:
             args = self.draw(src)
         except e:
+            if mentions_timeout(String(e)):
+                return self._inconclusive_all(counting)
             if src.invalid and counting and src.extend:
                 self.unrep_skips += 1
             raise e^
@@ -450,6 +460,8 @@ struct Prop(Property, Movable):
 
     def _spec_error_all(mut self, message: String, counting: Bool, args: List[Value]) -> Outcome:
         var out = Outcome()
+        if mentions_timeout(message):
+            return self._inconclusive_all(counting)
         for i in range(len(self.infos)):
             self.vkind[i] = V_ERROR
             self.vnote[i] = message.copy()
@@ -458,6 +470,17 @@ struct Prop(Property, Movable):
             for i in range(len(self.infos)):
                 self.te[i] += 1
                 self._note_spec_error(i, message, args)
+        return out^
+
+    def _inconclusive_all(mut self, counting: Bool) -> Outcome:
+        """The example judged nothing: a call ran past its time limit."""
+        var out = Outcome()
+        self.timed_out = True
+        for i in range(len(self.infos)):
+            self.vkind[i] = V_TIMEOUT
+            out.add(i, SKIPPED)
+            if counting:
+                self.tt[i] += 1
         return out^
 
     def _note_spec_error(mut self, i: Int, message: String, args: List[Value]):
@@ -565,6 +588,7 @@ struct Prop(Property, Movable):
         ref spec = self.loaded[].spec
         ref func = spec.fns[self.f]
         var n = len(self.infos)
+        self.timed_out = False
         for i in range(n):
             self.vkind[i] = V_PASS
             self.vnote[i] = String()
@@ -650,6 +674,8 @@ struct Prop(Property, Movable):
                 cond_msg.append(located(spec, j.node, j.message) if j.node > 0 else j.message.copy())
         # The call.
         var reply = self.host.call(self.f, args)
+        if reply.kind == ERROR and reply.name() == TIMEOUT:
+            return self._inconclusive_all(counting)
         var raised = reply.kind == ERROR
         self.last_ran = True
         self.last_reply = reply.copy()
@@ -775,7 +801,7 @@ struct Prop(Property, Movable):
         self.vnote[i] = cause
 
     def _error(mut self, i: Int, message: String):
-        self.vkind[i] = V_ERROR
+        self.vkind[i] = V_TIMEOUT if mentions_timeout(message) else V_ERROR
         self.vnote[i] = message
 
     def _judge_clause(
@@ -977,6 +1003,8 @@ struct Prop(Property, Movable):
             elif v == V_SKIP:
                 self.ts[i] += 1
                 self.causes[i * N_CAUSES + cause_index(self.vnote[i])] += 1
+            elif v == V_TIMEOUT:
+                self.tt[i] += 1
             else:
                 self.te[i] += 1
                 var message = self.vnote[i].copy()
@@ -1095,6 +1123,7 @@ struct Prop(Property, Movable):
         result.failed = self.tf[i]
         result.skipped = self.ts[i] + self.req_skips + self.unrep_skips
         result.spec_error = self.te[i]
+        result.inconclusive = self.tt[i]
         if failure:
             result.spec_error += 1
             result.spec_errors.append(failure.copy())

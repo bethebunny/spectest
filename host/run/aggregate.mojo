@@ -34,7 +34,7 @@ from syntax import ast
 from wire.format import format_value
 from wire.value import BOOL, QERR, Value
 
-from .host import RunHost
+from .host import RunHost, mentions_timeout
 from .options import RunOptions
 from .results import AggregateSummary, ClauseResult, Counterexample
 
@@ -261,7 +261,10 @@ def run_aggregate(
             result.counterexample = cx^
         result.aggregate = summary^
     except err:
-        result.spec_error = 1
-        result.spec_errors.append(String(err))
+        if mentions_timeout(String(err)):
+            result.inconclusive = 1
+        else:
+            result.spec_error = 1
+            result.spec_errors.append(String(err))
     result.duration = Float64(perf_counter_ns() - started) / 1e9
     return result^

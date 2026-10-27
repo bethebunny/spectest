@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import weakref
 from typing import ClassVar
 
@@ -51,6 +52,12 @@ class Deque:
 
     def peek(self):
         return self._items[-1]
+
+
+class StallsOnPop(Deque):
+    def pop(self):
+        threading.Event().wait(30)
+        return super().pop()
 
 
 class PopWrongEnd(Deque):

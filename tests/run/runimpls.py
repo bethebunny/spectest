@@ -4,8 +4,21 @@ seeded bugs."""
 from __future__ import annotations
 
 import math
+import threading
 
 # -- Plain functions ---------------------------------------------------------
+
+NEVER = threading.Event()
+
+
+def stall_at_seven(x):
+    if x == 7:
+        NEVER.wait(30)
+    return x
+
+
+def ident_u8(x):
+    return x
 
 
 def clamp(x, lo, hi):

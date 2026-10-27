@@ -26,7 +26,7 @@ from mcheck.source import Many, Source
 from syntax import ast
 from wire.value import ERROR, HANDLE, INT, Value
 
-from .host import RunHost
+from .host import RunHost, mentions_timeout
 from .load import Loaded, fnv
 from .options import RunOptions
 from .results import ClauseResult, Counterexample, RunResult
@@ -39,6 +39,7 @@ from .runner import (
     V_FAIL,
     V_PASS,
     V_SKIP,
+    V_TIMEOUT,
     Detail,
     Prop,
 )
@@ -100,6 +101,7 @@ struct InvTally(Movable):
     var tf: Int
     var ts: Int
     var te: Int
+    var tt: Int
     var fail_seen: Bool
     var replayed: Bool
     var errors: List[String]
@@ -113,6 +115,7 @@ struct InvTally(Movable):
         self.tf = 0
         self.ts = 0
         self.te = 0
+        self.tt = 0
         self.fail_seen = False
         self.replayed = False
         self.errors = []
@@ -374,6 +377,8 @@ struct Machine(Property):
             self._note(self.base[c] + i, v)
             if v == V_FAIL and focus == self.base[c] + i:
                 stop = True
+        if self.props[c].timed_out:
+            return True
         if not self.props[c].last_ran:
             return stop
         var name = String()
@@ -444,6 +449,8 @@ struct Machine(Property):
                             self.invs[q].replayed = True
                 elif verdict == V_SKIP:
                     self.invs[q].ts += 1
+                elif verdict == V_TIMEOUT:
+                    self.invs[q].tt += 1
                 else:
                     self.invs[q].te += 1
                     if note not in self.invs[q].errors and len(self.invs[q].errors) < KEPT_SPEC_ERRORS:
@@ -480,7 +487,7 @@ struct Machine(Property):
             if j.is_skip():
                 return V_SKIP
             note = located(spec, j.node, j.message) if j.node > 0 else j.message.copy()
-            return V_ERROR
+            return V_TIMEOUT if mentions_timeout(note) else V_ERROR
         return V_PASS
 
     def _capture_invariant(
@@ -557,6 +564,7 @@ struct Machine(Property):
             cr.failed = inv.tf
             cr.skipped = inv.ts
             cr.spec_error = inv.te
+            cr.inconclusive = inv.tt
             if failure:
                 cr.spec_error += 1
                 cr.spec_errors.append(failure.copy())
