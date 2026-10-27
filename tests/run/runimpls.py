@@ -240,3 +240,24 @@ def ident_generic(x):
 
 def ident_generic_bug(x):
     return x if x != 3 else 4
+
+
+# -- Constants, identity and reading expressions ---------------------------------
+
+LIMIT = 100
+
+
+def clip_to_limit(x):
+    return min(x, LIMIT)
+
+
+def same_box(b):
+    return b
+
+
+def new_box(items):
+    return Box(items)
+
+
+def pick_first(a, b):
+    return a

@@ -7,20 +7,7 @@ from wire.value import Value
 
 from .load import Loaded
 from .results import Obj, strings
-
-
-def _models_in(types: ty.Types, t: Int, mut out: List[String]):
-    ref info = types.info(t)
-    if info.kind == ty.MODEL:
-        if not info.signed:
-            for n in out:
-                if n == info.name:
-                    return
-            out.append(info.name.copy())
-        return
-    if info.kind == ty.LIST or info.kind == ty.OPTION or info.kind == ty.TUPLE or info.kind == ty.MAP or info.kind == ty.RECORD:
-        for a in info.args:
-            _models_in(types, a, out)
+from .util import collect_models
 
 
 def _item(
@@ -98,13 +85,13 @@ def items_of(loaded: Loaded) raises -> List[Value]:
                 )
             )
         var models = List[String]()
-        _models_in(spec.types, func.result, models)
+        collect_models(spec.types, func.result, models)
         for p in func.params:
             for n in func.clauses:
                 if spec.clauses[n].kind == ast.MODIFIES:
                     for q in spec.clauses[n].names:
                         if q == p.name:
-                            _models_in(spec.types, p.type, models)
+                            collect_models(spec.types, p.type, models)
         for name in models:
             var m = spec.model_named(name)
             if not m:

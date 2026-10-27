@@ -45,6 +45,18 @@ from .decode import decode, describe
 from .host import RunHost
 from .load import Loaded, fnv
 from .options import RunOptions
+from .util import (
+    N_CAUSES,
+    cause_index,
+    cause_name,
+    collect_models,
+    contains_name,
+    handles_of,
+    names_text,
+    norm_name,
+    parse_type,
+    type_has_model,
+)
 from .results import ClauseResult, Counterexample, RunResult
 
 
@@ -61,53 +73,10 @@ comptime K_ANY_RAISES = 4
 comptime K_FRAME = 5
 comptime K_INVARIANT = 6
 
-comptime N_CAUSES = 8
 comptime SHRINK_SOURCE = 1 << 30
 """mcheck's shrinker replays through a source with this many choices at most; a
 source with a smaller limit belongs to the search proper, whose examples are counted."""
 comptime KEPT_SPEC_ERRORS = 20
-
-
-def cause_index(cause: String) -> Int:
-    if cause == "requires":
-        return 0
-    if cause == "raised":
-        return 1
-    if cause == "raise due":
-        return 2
-    if cause == "wrong type":
-        return 3
-    if cause == "unrepresentable":
-        return 4
-    if cause == "rejected":
-        return 5
-    if cause == "planned call":
-        return 6
-    return 7
-
-
-def cause_name(i: Int) -> String:
-    if i == 0:
-        return "requires"
-    if i == 1:
-        return "raised"
-    if i == 2:
-        return "raise due"
-    if i == 3:
-        return "wrong type"
-    if i == 4:
-        return "unrepresentable"
-    if i == 5:
-        return "rejected"
-    if i == 6:
-        return "planned call"
-    return "other"
-
-
-def norm_name(name: String) -> String:
-    if name.startswith("builtins."):
-        return String(name[byte = 9 :])
-    return name.copy()
 
 
 @fieldwise_init
@@ -132,63 +101,6 @@ struct Detail(Copyable, Movable):
     def __init__(out self):
         self.present = False
         self.cx = Counterexample()
-
-
-def _type_has_model(types: ty.Types, t: Int) -> Bool:
-    ref info = types.info(t)
-    if info.kind == ty.MODEL:
-        return True
-    if info.kind == ty.LIST or info.kind == ty.OPTION or info.kind == ty.TUPLE or info.kind == ty.MAP or info.kind == ty.RECORD:
-        for a in info.args:
-            if _type_has_model(types, a):
-                return True
-    return False
-
-
-def _collect_models(types: ty.Types, t: Int, mut out: List[String]):
-    ref info = types.info(t)
-    if info.kind == ty.MODEL:
-        if not info.signed:
-            for n in out:
-                if n == info.name:
-                    return
-            out.append(info.name.copy())
-        return
-    if info.kind == ty.LIST or info.kind == ty.OPTION or info.kind == ty.TUPLE or info.kind == ty.MAP or info.kind == ty.RECORD:
-        for a in info.args:
-            _collect_models(types, a, out)
-
-
-def _handles_of(types: ty.Types, v: Value, t: Int, model: String, mut out: List[Value]):
-    """The handles of model `model` inside `v`, a value of type `t`."""
-    ref info = types.info(t)
-    if info.kind == ty.MODEL:
-        if info.name == model and v.kind == HANDLE:
-            out.append(v.copy())
-        return
-    if (info.kind == ty.LIST and (v.kind == LIST)) or (info.kind == ty.OPTION and v.kind == OPTION):
-        for i in range(v.count()):
-            _handles_of(types, v.item(i), info.args[0], model, out)
-    elif info.kind == ty.TUPLE and v.kind == TUPLE and v.count() == len(info.args):
-        for i in range(v.count()):
-            _handles_of(types, v.item(i), info.args[i], model, out)
-    elif info.kind == ty.MAP and v.kind == MAP:
-        for i in range(v.count()):
-            _handles_of(types, v.item(2 * i), info.args[0], model, out)
-            _handles_of(types, v.item(2 * i + 1), info.args[1], model, out)
-
-
-def parse_type(text: String, mut types: ty.Types) raises -> Int:
-    """A type as an instantiation writes it: a scalar name, or `list<T>`, `option<T>`."""
-    var s = String(text.strip())
-    var found = types.scalar(s)
-    if found:
-        return found.value()
-    if s.startswith("list<") and s.endswith(">"):
-        return types.list_of(parse_type(String(s[byte = 5 : s.byte_length() - 1]), types))
-    if s.startswith("option<") and s.endswith(">"):
-        return types.option_of(parse_type(String(s[byte = 7 : s.byte_length() - 1]), types))
-    raise Error(String("the instantiation names a type that is not a scalar, list or option: ", text))
 
 
 struct Prop(Property):
@@ -283,7 +195,7 @@ struct Prop(Property):
         self.modified = List[String]()
         self.checked = List[Int]()
         self.errors = loaded.spec.errors.copy()
-        self.result_has_model = _type_has_model(loaded.spec.types, self.rtype)
+        self.result_has_model = type_has_model(loaded.spec.types, self.rtype)
         self.domain = 0
         self.cov_start = List[Int]()
         self.cov_names = List[String]()
@@ -362,11 +274,11 @@ struct Prop(Property):
             self.infos.append(PropInfo(K_FRAME, -1, decl + "#frame", String("built-in: ", func.name, " leaves ", names, " unchanged (no modifies clause)"), "frame", -1))
         # Invariants of the models the function returns or modifies.
         var models = List[String]()
-        _collect_models(spec.types, self.rtype, models)
+        collect_models(spec.types, self.rtype, models)
         for i in range(len(func.params)):
             for n in self.modified:
                 if n == func.params[i].name:
-                    _collect_models(spec.types, self.ptypes[i], models)
+                    collect_models(spec.types, self.ptypes[i], models)
         for name in models:
             var m = spec.model_named(name)
             if not m:
@@ -845,7 +757,7 @@ struct Prop(Property):
         if raised:
             did = String("raised ", reply.name(), ": ", reply.text())
         if conds[k] == 1:
-            if raised and _contains(must, mapped):
+            if raised and contains_name(must, mapped):
                 return
             self.vkind[i] = V_FAIL
             self.vnote[i] = String(cl.error, " was due (", source_text(spec, cl.expr) if cl.expr != 0 else String("always"), " holds), but the call ", did)
@@ -853,7 +765,7 @@ struct Prop(Property):
         if len(must) > 0:
             self._skip(i, "raise due")
             return
-        if raised and mapped == cl.error and not _contains(may, mapped):
+        if raised and mapped == cl.error and not contains_name(may, mapped):
             self.vkind[i] = V_FAIL
             self.vnote[i] = String("the call raised ", cl.error, " although ", source_text(spec, cl.expr) if cl.expr != 0 else String("always"), " is false")
 
@@ -875,7 +787,7 @@ struct Prop(Property):
             self.vkind[i] = V_FAIL
             self.vnote[i] = String("no raises or may_raise admits ", reply.name(), ": ", reply.text())
             return
-        if _contains(must, mapped) or _contains(may, mapped):
+        if contains_name(must, mapped) or contains_name(may, mapped):
             return
         for c in self.cond_clauses:
             if spec.clauses[c].kind == ast.RAISES and spec.clauses[c].error == mapped:
@@ -908,13 +820,13 @@ struct Prop(Property):
         if not self.result_has_model:
             return
         var models = List[String]()
-        _collect_models(spec.types, self.rtype, models)
+        collect_models(spec.types, self.rtype, models)
         for name in models:
             var m = spec.model_named(name)
             if not m:
                 continue
             var hs = List[Value]()
-            _handles_of(spec.types, result, self.rtype, name, hs)
+            handles_of(spec.types, result, self.rtype, name, hs)
             for h in hs:
                 for oi in range(len(spec.models[m.value()].observers)):
                     if len(spec.models[m.value()].observers[oi].params) > 0:
@@ -948,7 +860,7 @@ struct Prop(Property):
         var where = List[String]()
         if not no_result:
             var found = List[Value]()
-            _handles_of(spec.types, result, self.rtype, name, found)
+            handles_of(spec.types, result, self.rtype, name, found)
             for h in found:
                 hs.append(h.copy())
                 where.append(String("result"))
@@ -956,7 +868,7 @@ struct Prop(Property):
             for q in self.modified:
                 if q == func.params[p].name:
                     var found = List[Value]()
-                    _handles_of(spec.types, args[p], self.ptypes[p], name, found)
+                    handles_of(spec.types, args[p], self.ptypes[p], name, found)
                     for h in found:
                         hs.append(h.copy())
                         where.append(func.params[p].name.copy())
@@ -1091,42 +1003,12 @@ struct Prop(Property):
                 d.expl_source.append(String(ast.op_name(cl.kind), " ", cl.error, " when ", source_text(spec, cl.expr) if cl.expr != 0 else String("true")))
                 d.expl_value.append(String("true") if conds[k] == 1 else (String("false") if conds[k] == 0 else String("error: ", cond_msg[k])))
             d.expl_source.append("errors that must be raised (R)")
-            d.expl_value.append(_names(must))
+            d.expl_value.append(names_text(must))
             d.expl_source.append("errors that may be raised (M)")
-            d.expl_value.append(_names(may))
+            d.expl_value.append(names_text(may))
         d.reproduce = String("seed=", self.seed, " decl=", self.decl, " clause=", self.infos[i].id)
         self.details[i].present = True
         self.details[i].cx = d^
-
-
-def _contains(items: List[String], name: String) -> Bool:
-    for n in items:
-        if norm_name(n) == norm_name(name):
-            return True
-    return False
-
-
-def _names(items: List[String]) -> String:
-    var sorted_names = List[String]()
-    for n in items:
-        var seen = False
-        for m in sorted_names:
-            if m == n:
-                seen = True
-        if not seen:
-            sorted_names.append(n)
-    # Insertion sort: there are few.
-    for a in range(1, len(sorted_names)):
-        var v = sorted_names[a]
-        var b = a - 1
-        while b >= 0 and sorted_names[b] > v:
-            sorted_names[b + 1] = sorted_names[b]
-            b -= 1
-        sorted_names[b + 1] = v
-    var out = String("{")
-    for k in range(len(sorted_names)):
-        out += (", " if k else "") + sorted_names[k]
-    return out + "}"
 
 
 # The driver of a run
