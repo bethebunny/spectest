@@ -26,86 +26,84 @@ comptime K_DEFAULT = 102
 comptime K_DEF = 103
 comptime K_OBSERVER = 104
 
-comptime RESERVED = ("old", "result", "self", "mp", "cr")
 comptime BUILTIN_TYPE_NAMES = (
     "f16 bf16 f32 f64 i8 i16 i32 i64 u8 u16 u32 u64 bool int real string bytes unit"
     " set list map option"
 )
+comptime FLOAT_SET_NAMES = "nan inf zero subnormal normal finite positive negative all"
 
 
-def is_reserved(name: StringSlice) -> Bool:
-    return (
-        name == "old"
-        or name == "result"
-        or name == "self"
-        or name == "mp"
-        or name == "cr"
-    )
+def index_of(names: List[String], name: StringSlice) -> Int:
+    """The first position of `name` in `names`, or -1."""
+    for i in range(len(names)):
+        if names[i] == name:
+            return i
+    return -1
 
 
-def is_builtin_type_name(name: StringSlice) -> Bool:
-    for word in BUILTIN_TYPE_NAMES.split(" "):
+def is_word_in(name: StringSlice, words: StringSlice) -> Bool:
+    """Whether `name` is one of the space-separated `words`."""
+    for word in words.split(" "):
         if word == name:
             return True
     return False
 
 
+def is_reserved(name: StringSlice) -> Bool:
+    return is_word_in(name, "old result self mp cr")
+
+
+def is_builtin_type_name(name: StringSlice) -> Bool:
+    return is_word_in(name, BUILTIN_TYPE_NAMES)
+
+
 def type_hint(name: StringSlice) -> String:
-    if name == "float" or name == "double":
-        return "f64"
-    if name == "str" or name == "String":
-        return "string"
-    if name == "integer" or name == "Int":
-        return "int"
-    if name == "boolean" or name == "Bool":
-        return "bool"
-    if name == "List":
-        return "list"
-    if name == "Map" or name == "dict":
-        return "map"
-    if name == "Option":
-        return "option"
-    return String()
+    match name:
+        case "float" | "double":
+            return "f64"
+        case "str" | "String":
+            return "string"
+        case "integer" | "Int":
+            return "int"
+        case "boolean" | "Bool":
+            return "bool"
+        case "List":
+            return "list"
+        case "Map" | "dict":
+            return "map"
+        case "Option":
+            return "option"
+        case _:
+            return String()
 
 
 def float_set_name(name: StringSlice) -> Bool:
-    return (
-        name == "nan"
-        or name == "inf"
-        or name == "zero"
-        or name == "subnormal"
-        or name == "normal"
-        or name == "finite"
-        or name == "positive"
-        or name == "negative"
-        or name == "all"
-    )
+    return is_word_in(name, FLOAT_SET_NAMES)
 
 
 def classifier_hint(name: StringSlice) -> String:
-    if name == "nan":
-        return "is_nan(x)"
-    if name == "inf":
-        return "is_inf(x)"
-    if name == "zero":
-        return "is_zero(x)"
-    if name == "subnormal":
-        return "is_subnormal(x)"
-    if name == "finite":
-        return "is_finite(x)"
-    if name == "negative":
-        return "signbit(x)"
-    if name == "positive":
-        return "not signbit(x)"
-    return String()
+    match name:
+        case "nan":
+            return "is_nan(x)"
+        case "inf":
+            return "is_inf(x)"
+        case "zero":
+            return "is_zero(x)"
+        case "subnormal":
+            return "is_subnormal(x)"
+        case "finite":
+            return "is_finite(x)"
+        case "negative":
+            return "signbit(x)"
+        case "positive":
+            return "not signbit(x)"
+        case _:
+            return String()
 
 
 def qualify_error(name: String) -> String:
     """`ValueError` is `builtins.ValueError`; a dotted name is already qualified."""
-    for b in name.as_bytes():
-        if Int(b) == ord("."):
-            return name.copy()
-    return "builtins." + name
+    return name.copy() if "." in name else "builtins." + name
 
 
 struct Ctx(Copyable, Movable):
@@ -149,10 +147,10 @@ struct Ctx(Copyable, Movable):
     def __init__(out self):
         self.kind = 0
         self.decl = String()
-        self.tv_names = List[String]()
-        self.tv_types = List[Int]()
-        self.param_names = List[String]()
-        self.param_types = List[Int]()
+        self.tv_names = []
+        self.tv_types = []
+        self.param_names = []
+        self.param_types = []
         self.has_result = False
         self.result = 0
         self.no_result = "result is not available here"
@@ -163,56 +161,42 @@ struct Ctx(Copyable, Movable):
         self.allow_old = False
         self.no_old = "old(...) is only allowed in ensures"
         self.allow_spec_fn = False
-        self.class_names = List[String]()
-        self.class_nodes = List[Int]()
-        self.class_types = List[Int]()
+        self.class_names = []
+        self.class_nodes = []
+        self.class_types = []
         self.only_param = String()
-        self.loc_names = List[String]()
-        self.loc_types = List[Int]()
-        self.loc_binders = List[Int]()
+        self.loc_names = []
+        self.loc_types = []
+        self.loc_binders = []
         self.in_old = False
         self.old_scope = 0
-        self.hidden_names = List[String]()
-        self.hidden_msgs = List[String]()
+        self.hidden_names = []
+        self.hidden_msgs = []
         self.aggregate_top = 0
         self.extern_result = -1
 
     def tv_index(self, name: String) -> Int:
-        for i in range(len(self.tv_names)):
-            if self.tv_names[i] == name:
-                return i
-        return -1
+        return index_of(self.tv_names, name)
 
     def param_index(self, name: String) -> Int:
-        for i in range(len(self.param_names)):
-            if self.param_names[i] == name:
-                return i
-        return -1
+        return index_of(self.param_names, name)
 
     def class_index(self, name: String) -> Int:
-        for i in range(len(self.class_names)):
-            if self.class_names[i] == name:
-                return i
-        return -1
-
-    def local_index(self, name: String) -> Int:
-        var i = len(self.loc_names) - 1
-        while i >= 0:
-            if self.loc_names[i] == name:
-                return i
-            i -= 1
-        return -1
+        return index_of(self.class_names, name)
 
     def hidden_index(self, name: String) -> Int:
-        for i in range(len(self.hidden_names)):
-            if self.hidden_names[i] == name:
+        return index_of(self.hidden_names, name)
+
+    def local_index(self, name: String) -> Int:
+        """The innermost binding of `name`."""
+        for i in reversed(range(len(self.loc_names))):
+            if self.loc_names[i] == name:
                 return i
         return -1
 
 
 struct Checker:
     var spec: Spec
-    var path: String
     var decls: List[Int]
     """The declarations to check, over every file: spec files first, then preludes."""
     var diags: List[Diagnostic]
@@ -253,42 +237,37 @@ struct Checker:
     var qerr_: Int
 
     def __init__(out self, var spec: Spec):
-        self.path = spec.ast.path.copy()
-        self.decls = List[Int]()
+        self.decls = []
         self.spec = spec^
-        self.diags = List[Diagnostic]()
+        self.diags = []
         self.ctx = Ctx()
-        self.names = Dict[String, Int]()
+        self.names = {}
         self.duplicate = List[Bool](length=len(self.spec.ast.nodes), fill=False)
-        self.fn_index = Dict[String, Int]()
-        self.def_index = Dict[String, Int]()
-        self.model_index = Dict[String, Int]()
-        self.const_index = Dict[String, Int]()
-        self.enum_index = Dict[String, Int]()
-        self.record_nodes = Dict[String, Int]()
-        self.record_types = Dict[String, Int]()
-        self.alias_nodes = Dict[String, Int]()
-        self.active = List[String]()
-        self.prelude_ids = Dict[String, Int]()
-        self.prelude_sigs = List[PreludeSig]()
-        self.scalars = Dict[String, Int]()
-        self.fn_modifies = List[Bool]()
+        self.fn_index = {}
+        self.def_index = {}
+        self.model_index = {}
+        self.const_index = {}
+        self.enum_index = {}
+        self.record_nodes = {}
+        self.record_types = {}
+        self.alias_nodes = {}
+        self.active = []
+        self.prelude_ids = {}
+        self.prelude_sigs = []
+        self.scalars = {}
+        self.fn_modifies = []
         self.decl_pos = List[Int](length=len(self.spec.ast.nodes), fill=-1)
-        self.clause_ids = Dict[String, Int]()
-        self.def_edges = List[List[Int]]()
-        self.def_nodes = List[Int]()
+        self.clause_ids = {}
+        self.def_edges = []
+        self.def_nodes = []
         self.cur_def = -1
         self.sig_msg = String()
         self.sig_arg = -1
         self.sig_key = String()
-        var k = 0
-        for word in NAMES.split(" "):
+        for k, word in enumerate(NAMES.split(" ")):
             self.prelude_ids[String(word)] = k
             self.prelude_sigs.append(make_sig(String(word)))
-            k += 1
-        self.poison = self.spec.types.intern(
-            ty.TypeInfo(ty.ANY, 0, False, "poison", List[Int](), List[String]())
-        )
+        self.poison = self.spec.types.intern(ty.TypeInfo(ty.ANY, 0, False, "poison", [], []))
         self.unit = self.spec.types.unit()
         self.bool_ = self.spec.types.bool_()
         self.int_ = self.spec.types.int_()
@@ -326,19 +305,16 @@ struct Checker:
     def decl_nodes(self) -> List[Int]:
         """The declarations to check: those of every file read, or the first file's own
         when none were listed."""
-        if len(self.decls) > 0:
-            return self.decls.copy()
-        return self.spec.ast.nodes[self.spec.ast.root].kids.copy()
+        return self.decls.copy() if self.decls else self.spec.ast.nodes[self.spec.ast.root].kids.copy()
 
     def source_of(self, n: Int) -> String:
         return self.spec.ast.source_text(n)
 
     # -- reporting -------------------------------------------------------------
 
-    def error(mut self, node: Int, message: String):
-        self.diags.append(
-            Diagnostic(self.spec.ast.path_of(node), self.spec.ast.nodes[node].span, message)
-        )
+    def error(mut self, node: Int, message: Some[Writable]):
+        var span = self.spec.ast.nodes[node].span
+        self.diags.append(Diagnostic(self.spec.ast.path_of(node), span, String(message)))
 
     # -- types -----------------------------------------------------------------
 
@@ -370,34 +346,21 @@ struct Checker:
     def scalar(mut self, name: String) -> Int:
         """The built-in scalar type a one-word name denotes, or -1."""
         var found = self.scalars.get(name)
-        if found:
+        if found is not None:
             return found.value()
         var t = self.spec.types.scalar(name)
-        var id = t.value() if t else -1
+        var id = t.value() if t is not None else -1
         self.scalars[name] = id
         return id
 
     def components(self, t: Int) -> List[Int]:
-        var k = self.tkind(t)
-        if (
-            k == ty.LIST
-            or k == ty.OPTION
-            or k == ty.SET
-            or k == ty.MAP
-            or k == ty.TUPLE
-            or k == ty.RECORD
-            or k == ty.MODEL
-        ):
-            return self.spec.types.infos[t].args.copy()
-        return List[Int]()
+        var shared = self.tkind(t) in (ty.LIST, ty.OPTION, ty.SET, ty.MAP, ty.TUPLE, ty.RECORD, ty.MODEL)
+        return self.spec.types.infos[t].args.copy() if shared else []
 
     def contains_kind(self, t: Int, kind: UInt8) -> Bool:
         if self.tkind(t) == kind:
             return True
-        for c in self.components(t):
-            if self.contains_kind(c, kind):
-                return True
-        return False
+        return any([self.contains_kind(c, kind) for c in self.components(t)])
 
     def contains_model(self, t: Int) -> Bool:
         return self.contains_kind(t, ty.MODEL)
@@ -445,9 +408,9 @@ struct Checker:
             var ys = self.spec.types.infos[b].args.copy()
             if len(xs) != len(ys):
                 return NO_TYPE
-            var out = List[Int]()
-            for i in range(len(xs)):
-                var j = self.join(xs[i], ys[i])
+            var out: List[Int] = []
+            for x, y in zip(xs, ys):
+                var j = self.join(x, y)
                 if j < 0:
                     return NO_TYPE
                 out.append(j)
@@ -462,14 +425,8 @@ struct Checker:
         if k == ty.FLOAT or k == ty.MODEL or k == ty.SET or k == ty.FN:
             return t
         if k == ty.TYPEVAR:
-            return NO_TYPE if len(self.spec.types.infos[t].names) > 0 else t
-        if (
-            k == ty.LIST
-            or k == ty.OPTION
-            or k == ty.MAP
-            or k == ty.TUPLE
-            or k == ty.RECORD
-        ):
+            return t if not self.spec.types.infos[t].names else NO_TYPE
+        if k in (ty.LIST, ty.OPTION, ty.MAP, ty.TUPLE, ty.RECORD):
             for c in self.components(t):
                 var bad = self.non_eq_part(c)
                 if bad >= 0:
@@ -484,10 +441,7 @@ struct Checker:
         if k == ty.LIST:
             return self.ordered(self.arg(t, 0))
         if k == ty.TUPLE:
-            for e in self.spec.types.infos[t].args:
-                if not self.ordered(e):
-                    return False
-            return True
+            return all([self.ordered(e) for e in self.spec.types.infos[t].args])
         return self.spec.types.has_total_order(t)
 
     def satisfies(self, t: Int, bound: String) -> Bool:
@@ -516,33 +470,22 @@ struct Checker:
 
     def constants_of(self, scalar: Int) -> List[String]:
         var k = self.tkind(scalar)
-        var out = List[String]()
+        var out: List[String] = ["all"] if k == ty.BOOL else []
         if k == ty.FLOAT:
-            out.append("min")
-            out.append("max")
-            for w in "nan inf zero subnormal normal finite positive negative all".split(" "):
-                out.append(String(w))
-            out.append("range(a, b)")
-            out.append('pattern("...")')
+            out = ["min", "max"]
+            out.extend([String(w) for w in FLOAT_SET_NAMES.split(" ")])
         elif k == ty.FIXED_INT:
-            out.append("min")
-            out.append("max")
-            out.append("all")
-            out.append("range(a, b)")
-            out.append('pattern("...")')
-        elif k == ty.BOOL:
-            out.append("all")
+            out = ["min", "max", "all"]
+        if k == ty.FLOAT or k == ty.FIXED_INT:
+            out.extend(["range(a, b)", 'pattern("...")'])
         return out^
 
     def has_set_constructor(self, scalar: Int, attr: String) -> Bool:
-        if attr != "range" and attr != "pattern":
-            return False
-        var k = self.tkind(scalar)
-        return k == ty.FLOAT or k == ty.FIXED_INT
+        return is_word_in(attr, "range pattern") and self.tkind(scalar) in (ty.FLOAT, ty.FIXED_INT)
 
     def contains_float(mut self, t: Int) -> Bool:
         """Whether values of type t hold floats, looking through model fields."""
-        return self._contains_float(t, List[Int]())
+        return self._contains_float(t, [])
 
     def _contains_float(mut self, t: Int, seen: List[Int]) -> Bool:
         var k = self.tkind(t)
@@ -552,28 +495,21 @@ struct Checker:
             var pos = self.model_pos_of_type(t)
             if pos < 0:
                 return False
-            for s in seen:
-                if s == pos:
-                    return False
+            if pos in seen:
+                return False
             var inner = seen.copy()
             inner.append(pos)
             for i in range(len(self.spec.models[pos].observers)):
-                if len(self.spec.models[pos].observers[i].params) > 0:
-                    continue
-                var ot = self.observer_type(t, pos, i)
-                if self._contains_float(ot, inner):
+                if not self.spec.models[pos].observers[i].params and self._contains_float(self.observer_type(t, pos, i), inner):
                     return True
             return False
-        for c in self.components(t):
-            if self._contains_float(c, seen):
-                return True
-        return False
+        return any([self._contains_float(c, seen) for c in self.components(t)])
 
     # -- models ----------------------------------------------------------------
 
     def model_pos_of_type(self, t: Int) -> Int:
         var found = self.model_index.get(self.spec.types.infos[t].name)
-        return found.value() if found else -1
+        return found.value() if found is not None else -1
 
     def observer_pos(self, model: Int, name: String) -> Int:
         for i in range(len(self.spec.models[model].observers)):
@@ -582,19 +518,14 @@ struct Checker:
         return -1
 
     def observer_names(self, model: Int) -> String:
-        var out = String()
-        for i in range(len(self.spec.models[model].observers)):
-            out += ", " if i else ""
-            out += self.spec.models[model].observers[i].name
-        return out if len(self.spec.models[model].observers) else String("none")
+        var names = [o.name.copy() for o in self.spec.models[model].observers]
+        return ", ".join(names) if names else "none"
 
     def observer_type(mut self, mt: Int, model: Int, obs: Int) -> Int:
         var declared = self.spec.models[model].observers[obs].type
         var tparams = self.spec.models[model].tparams.copy()
-        if len(tparams) == 0:
-            return declared
         var args = self.spec.types.infos[mt].args.copy()
-        if len(args) != len(tparams):
+        if not tparams or len(args) != len(tparams):
             return declared
         return self.spec.types.substitute(declared, tparams, args)
 
@@ -610,9 +541,8 @@ struct Checker:
                 return None
         if k == ast.UNARY and self.op_of(n) == ast.NEG:
             var inner = self.literal_value(self.kid(n, 0))
-            if inner:
+            if inner is not None:
                 return -inner.value()
-            return None
         return None
 
     # -- resolutions -----------------------------------------------------------
