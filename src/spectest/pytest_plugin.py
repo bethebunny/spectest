@@ -535,7 +535,7 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
 
 def pytest_report_teststatus(report: pytest.TestReport, config: pytest.Config) -> Any:
     if report.when == "call" and getattr(report, "spectest_outcome", None) == "error":
-        return "failed", "E", ("SPEC ERROR", {"red": True, "bold": True})
+        return "error", "E", ("SPEC ERROR", {"red": True, "bold": True})
     return None
 
 
@@ -814,8 +814,9 @@ class _SpecCollector(pytest.Collector):
             **parse_module_mappings(config.getoption("spectest_module") or []),
         }
         host = _load_host()
+        self.driver = Driver(module_map=mapping)
         try:
-            self.handle = host.load(str(self.spec_path), Driver(module_map=mapping))
+            self.handle = host.load(str(self.spec_path), self.driver)
         except Exception as exc:
             raise self.CollectError(
                 f"spectest: cannot load {self.spec_path.name}:\n{exc}"
@@ -948,8 +949,19 @@ class SpecClauseItem(pytest.Item):
         if self.instantiation:
             run["instantiation"] = dict(self.instantiation)
         if examples := options.examples.get(self.entry["decl"]):
-            run["examples"] = [dict(e) for e in examples]
+            run["examples"] = [
+                {param: self.example_wire(param, value) for param, value in e.items()}
+                for e in examples
+            ]
         return run
+
+    def example_wire(self, param: str, value: Any) -> Any:
+        try:
+            return self.owner.driver.wire(value)
+        except ValueError as exc:
+            raise pytest.UsageError(
+                f"examples for {self.entry['decl']}, parameter {param}: {exc}"
+            ) from exc
 
     def declaration_run(self) -> dict[str, Any]:
         """The result of this item's declaration, run once per instantiation per process."""
