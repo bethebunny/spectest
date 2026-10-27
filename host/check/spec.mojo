@@ -52,6 +52,10 @@ comptime R_CONST: UInt8 = 16
 """A declared library constant: index = position in Spec.consts."""
 comptime R_QERR_PART: UInt8 = 17
 """`e.steps` or `e.nans` on a qerr: name = the part."""
+comptime R_EXTERN: UInt8 = 18
+"""A call of a qualified callable the spec doesn't declare, in an observer's reading
+expression (`= builtins.list(self)`): name = the qualified callable. The call has the
+observer's declared type."""
 
 
 @fieldwise_init
