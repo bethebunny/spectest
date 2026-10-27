@@ -32,6 +32,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from spectest.driver import Driver
+from spectest.specs import SpecCheck, check
+
 if TYPE_CHECKING:
     from spectest.runtime.report import ClauseResult, Report
     from spectest.runtime.runner import Item as SpecItem
@@ -757,19 +760,21 @@ def _is_check(obj: Any) -> bool:
 
 def parse_module_mappings(values: Iterable[str]) -> dict[str, str]:
     """The ``--spectest-module NAME=REPLACEMENT`` options as a mapping."""
-    out: dict[str, str] = {}
+    mapping: dict[str, str] = {}
     for value in values:
         name, sep, replacement = value.partition("=")
         if not sep or not name.strip() or not replacement.strip():
-            raise pytest.UsageError(f"--spectest-module {value!r}: expected NAME=REPLACEMENT")
-        out[name.strip()] = replacement.strip()
-    return out
+            raise pytest.UsageError(
+                f"--spectest-module {value!r}: expected NAME=REPLACEMENT"
+            )
+        mapping[name.strip()] = replacement.strip()
+    return mapping
 
 
 def spec_clause_name(clause_id: str, decl: str, instantiation: dict[str, str]) -> str:
     """The printed name of a clause: the instantiation follows the declaration's name
-    (``sort[T=i64].ordered``, ``math.cos[T=f64]#type``). For a one-part declaration this is
-    v1's ``clause_name``."""
+    (``sort[T=i64].ordered``, ``math.cos[T=f64]#type``). A one-part declaration is named as in v1."""
+    # runtime imports hypothesis, which takes seconds
     from spectest.runtime.report import clause_name, inst_text
 
     if not instantiation:
@@ -792,64 +797,64 @@ def _load_host() -> Any:
     return host
 
 
-class _SpecCollectorMixin:
+def _first_set(*values: Any) -> Any:
+    return next((v for v in values if v is not None), None)
+
+
+class _SpecCollector(pytest.Collector):
     """Loads a spec through the host and makes one item per clause and instantiation."""
 
     spec_path: Path
-    options: Any  # spectest.specs.SpecCheck
+    options: SpecCheck
 
     def collect(self) -> Iterator[pytest.Item]:
-        from spectest.driver import Driver
-        collector: pytest.Collector = self  # type: ignore[assignment]
-        config = collector.config
-        state = config.stash[STATE]
+        config = self.config
+        mapping = {
+            **self.options.modules,
+            **parse_module_mappings(config.getoption("spectest_module") or []),
+        }
         host = _load_host()
-        mapping = dict(self.options.modules)
-        mapping.update(parse_module_mappings(config.getoption("spectest_module") or []))
         try:
-            handle = host.load(str(self.spec_path), Driver(module_map=mapping))
+            self.handle = host.load(str(self.spec_path), Driver(module_map=mapping))
         except Exception as exc:
-            raise collector.CollectError(
+            raise self.CollectError(
                 f"spectest: cannot load {self.spec_path.name}:\n{exc}"
             ) from exc
-        state.loaded.append((host, handle))
-        self.handle = handle
+        config.stash[STATE].loaded.append((host, self.handle))
         self.spec_hash = hashlib.sha256(self.spec_path.read_bytes()).hexdigest()[:16]
-        expect_fail = self.options.expect_fail
-        group_base = collector.nodeid
-        for entry in host.items(handle):
-            decl = entry["decl"]
-            tparams = list(entry.get("tparams") or [])
-            if not tparams:
-                insts: list[dict[str, str] | None] = [{}]
-            else:
-                given = self.options.instantiations.get(decl)
-                insts = list(given) if given else [None]
-            for inst in insts:
-                name = spec_clause_name(entry["clause_id"], decl, inst or {})
+        for entry in host.items(self.handle):
+            decl, clause_id = entry["decl"], entry["clause_id"]
+            for inst in self.instantiations(entry):
+                name = spec_clause_name(clause_id, decl, inst or {})
                 item = SpecClauseItem.from_parent(
-                    collector,
+                    self,
                     name=name,
                     entry=entry,
                     instantiation=inst,
                     owner=self,
-                    expected_fail=entry["clause_id"] in expect_fail or name in expect_fail,
+                    expected_fail=clause_id in self.options.expect_fail
+                    or name in self.options.expect_fail,
                 )
-                key = f"{group_base}::{spec_clause_name(decl, decl, inst or {})}"
-                item.add_marker(pytest.mark.xdist_group(name=key))
+                group = f"{self.nodeid}::{spec_clause_name(decl, decl, inst or {})}"
+                item.add_marker(pytest.mark.xdist_group(name=group))
                 yield item
 
+    def instantiations(self, entry: dict[str, Any]) -> list[dict[str, str] | None]:
+        """The instantiations to run; None stands for a generic declaration given none."""
+        if not entry.get("tparams"):
+            return [{}]
+        return list(self.options.instantiations.get(entry["decl"]) or [None])
+
     def repr_failure(self, excinfo: pytest.ExceptionInfo[BaseException]) -> Any:
-        collector: pytest.Collector = self  # type: ignore[assignment]
-        if isinstance(excinfo.value, collector.CollectError):
+        if isinstance(excinfo.value, self.CollectError):
             return str(excinfo.value.args[0])
-        return super().repr_failure(excinfo)  # type: ignore[misc]
+        return super().repr_failure(excinfo)
 
 
-class CheckCollector(_SpecCollectorMixin, pytest.Collector):
+class CheckCollector(_SpecCollector):
     """The items of one ``spectest.check`` object bound in a test module."""
 
-    def __init__(self, *, check_obj: Any, **kwargs: Any) -> None:
+    def __init__(self, *, check_obj: SpecCheck, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.options = check_obj
         self.spec_path = (Path(str(self.path)).parent / check_obj.path).resolve()
@@ -858,13 +863,11 @@ class CheckCollector(_SpecCollectorMixin, pytest.Collector):
         return self.path, None, self.name
 
 
-class SpecFile(_SpecCollectorMixin, pytest.File):
+class SpecFile(_SpecCollector, pytest.File):
     """A ``.spec`` file named on the command line, run with default options."""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        from spectest.specs import check
-
         self.spec_path = Path(str(self.path))
         self.options = check(self.spec_path.name)
 
@@ -877,7 +880,7 @@ class SpecClauseItem(pytest.Item):
         *,
         entry: dict[str, Any],
         instantiation: dict[str, str] | None,
-        owner: Any,
+        owner: _SpecCollector,
         expected_fail: bool,
         **kwargs: Any,
     ) -> None:
@@ -897,8 +900,7 @@ class SpecClauseItem(pytest.Item):
         return {self.entry["clause_id"]: self.name}
 
     def reproduce(self) -> str:
-        seed = self.config.stash[STATE].seed
-        return f"uv run pytest '{self.nodeid}' --spectest-seed={seed}"
+        return f"uv run pytest '{self.nodeid}' --spectest-seed={self.config.stash[STATE].seed}"
 
     def payload(self) -> dict[str, Any]:
         spec = self.owner.spec_path
@@ -906,8 +908,14 @@ class SpecClauseItem(pytest.Item):
             "nodeid": self.nodeid,
             "index": self.spectest_index,
             "conformance": self.parent.nodeid if self.parent is not None else "",
-            "outcome": self.spectest_outcome or "skipped",
-            "spec": {"name": spec.stem, "hash": self.owner.spec_hash, "path": str(spec)},
+            "outcome": "skipped"
+            if self.spectest_outcome is None
+            else self.spectest_outcome,
+            "spec": {
+                "name": spec.stem,
+                "hash": self.owner.spec_hash,
+                "path": str(spec),
+            },
             "imported": package_versions([], recorded=True),
             "bound": {},
             "results": [dataclasses.asdict(r) for r in self.results],
@@ -916,58 +924,68 @@ class SpecClauseItem(pytest.Item):
     def run_options(self) -> dict[str, Any]:
         config = self.config
         state = config.stash[STATE]
-        opts = self.owner.options
+        options = self.owner.options
         budgets = PROFILES[state.profile]
-        strength = "full" if (config.getoption("ci", False) or _explicit_ci(config)) else "dev"
-        out: dict[str, Any] = {
-            "seed": opts.seed if opts.seed is not None else state.seed,
-            "store": str(state.store) if state.store is not None else None,
-            "strength": strength,
+        full = config.getoption("ci", False) or _explicit_ci(config)
+        run: dict[str, Any] = {
+            "seed": _first_set(options.seed, state.seed),
+            "store": None if state.store is None else str(state.store),
+            "strength": "full" if full else "dev",
         }
-        max_examples = config.getoption("spectest_max_examples")
-        if max_examples is None:
-            max_examples = opts.max_examples
-        if max_examples is None:
-            max_examples = budgets.get("max_examples")
+        max_examples = _first_set(
+            config.getoption("spectest_max_examples"),
+            options.max_examples,
+            budgets.get("max_examples"),
+        )
         if max_examples is not None:
-            out["max_examples"] = max_examples
-        limit = config.getoption("spectest_exhaustive_limit")
-        if limit is None:
-            limit = budgets.get("exhaustive_limit")
-        if limit is not None:
-            out["exhaustive_limit"] = limit
-        decl = self.entry["decl"]
+            run["max_examples"] = max_examples
+        exhaustive_limit = _first_set(
+            config.getoption("spectest_exhaustive_limit"),
+            budgets.get("exhaustive_limit"),
+        )
+        if exhaustive_limit is not None:
+            run["exhaustive_limit"] = exhaustive_limit
         if self.instantiation:
-            out["instantiation"] = dict(self.instantiation)
-        examples = opts.examples.get(decl)
-        if examples:
-            out["examples"] = [dict(e) for e in examples]
-        return out
+            run["instantiation"] = dict(self.instantiation)
+        if examples := options.examples.get(self.entry["decl"]):
+            run["examples"] = [dict(e) for e in examples]
+        return run
 
     def declaration_run(self) -> dict[str, Any]:
         """The result of this item's declaration, run once per instantiation per process."""
-        state = self.config.stash[STATE]
-        inst = spec_clause_name(self.entry["decl"], self.entry["decl"], self.instantiation or {})
-        key = (self.owner.handle, self.entry["decl"], inst)
-        run = state.runs.get(key)
-        if run is None:
-            host = _load_host()
-            run = host.run(self.owner.handle, self.entry["decl"], self.run_options())
-            state.runs[key] = run
-        return run
+        runs = self.config.stash[STATE].runs
+        decl = self.entry["decl"]
+        key = (
+            self.owner.handle,
+            decl,
+            spec_clause_name(decl, decl, self.instantiation or {}),
+        )
+        if key not in runs:
+            runs[key] = _load_host().run(self.owner.handle, decl, self.run_options())
+        return runs[key]
 
     def result(self) -> ClauseResult:
         from spectest.runtime.report import ClauseResult
 
-        run = self.declaration_run()
         clause_id = self.entry["clause_id"]
-        found = next((c for c in run.get("clauses", []) if c.get("clause_id") == clause_id), None)
-        data = dict(found) if found is not None else {
-            "clause_id": clause_id,
-            "clause_text": self.entry.get("text", ""),
-            "kind": self.entry.get("kind", ""),
-            "decl": self.entry["decl"],
-        }
+        found = next(
+            (
+                c
+                for c in self.declaration_run().get("clauses", [])
+                if c.get("clause_id") == clause_id
+            ),
+            None,
+        )
+        data = (
+            dict(found)
+            if found is not None
+            else {
+                "clause_id": clause_id,
+                "clause_text": self.entry.get("text", ""),
+                "kind": self.entry.get("kind", ""),
+                "decl": self.entry["decl"],
+            }
+        )
         data["item_id"] = self.nodeid
         data["instantiation"] = dict(self.instantiation or {})
         data["expected_fail"] = self.expected_fail
@@ -975,57 +993,62 @@ class SpecClauseItem(pytest.Item):
         return ClauseResult.from_dict(data)
 
     def runtest(self) -> None:
+        decl = self.entry["decl"]
         if self.instantiation is None:
             tparams = ", ".join(self.entry.get("tparams") or [])
             self.spectest_outcome = "error"
             raise SpecErrorOutcome(
-                f"SPEC ERROR (the test's fault)\n{self.entry['decl']} is generic ({tparams}): "
-                f"add instantiations={{{self.entry['decl']!r}: [{{...}}]}} to spectest.check "
+                f"SPEC ERROR (the test's fault)\n{decl} is generic ({tparams}): "
+                f"add instantiations={{{decl!r}: [{{...}}]}} to spectest.check "
                 "to say which types to run it with"
             )
-        state = self.config.stash[STATE]
-        self.results = [self.result()]
+        self.results = [result := self.result()]
         self.done = True
-        state.ran.append(self)  # type: ignore[arg-type]
-        outcome = self.results[0].outcome
+        self.config.stash[STATE].ran.append(self)  # type: ignore[arg-type]
         runxfail = bool(getattr(self.config.option, "runxfail", False))
-        if runxfail and outcome == "xfailed":
-            outcome = "failed"
-        elif runxfail and outcome == "xpassed":
-            outcome = "passed"
+        outcome = result.outcome
+        if runxfail:
+            outcome = {"xfailed": "failed", "xpassed": "passed"}.get(outcome, outcome)
         self.spectest_outcome = outcome
-        result = self.results[0]
-        if outcome == "failed":
-            shown = result
-            if runxfail and result.expected_fail:
-                shown = dataclasses.replace(result, expected_fail=False)
-            raise SpectestOutcome(_texts([shown]))
-        if outcome == "error":
-            raise SpecErrorOutcome(
-                "SPEC ERROR (the spec's or the binding's fault)\n" + _texts([result])
-            )
-        if outcome == "xfailed":
-            pytest.xfail(one_line(result))
-        if outcome == "xpassed":
-            raise SpectestOutcome(
-                f"[XPASS(strict)] expected to fail: {self.name}, but no example failed\n"
-                + _texts([result])
-            )
-        if outcome == "inconclusive":
-            pytest.skip(f"inconclusive: {_reason(self.results)}")
-        if outcome == "skipped":
-            pytest.skip(f"no example applied: {_reason(self.results)}")
+        match outcome:
+            case "failed":
+                shown = (
+                    dataclasses.replace(result, expected_fail=False)
+                    if runxfail and result.expected_fail
+                    else result
+                )
+                raise SpectestOutcome(_texts([shown]))
+            case "error":
+                raise SpecErrorOutcome(
+                    f"SPEC ERROR (the spec's or the binding's fault)\n{_texts([result])}"
+                )
+            case "xfailed":
+                pytest.xfail(one_line(result))
+            case "xpassed":
+                raise SpectestOutcome(
+                    f"[XPASS(strict)] expected to fail: {self.name}, but no example failed\n"
+                    f"{_texts([result])}"
+                )
+            case "inconclusive":
+                pytest.skip(f"inconclusive: {_reason(self.results)}")
+            case "skipped":
+                pytest.skip(f"no example applied: {_reason(self.results)}")
 
-    def repr_failure(self, excinfo: pytest.ExceptionInfo[BaseException], style: Any = None) -> Any:
+    def repr_failure(
+        self, excinfo: pytest.ExceptionInfo[BaseException], style: Any = None
+    ) -> Any:
         if isinstance(excinfo.value, SpectestOutcome):
             return excinfo.value.text
         return super().repr_failure(excinfo, style=style)
 
     def reportinfo(self) -> tuple[Any, int | None, str]:
         """The clause's own spec file and line: a clause of a used spec is in that file."""
-        file = self.entry.get("file")
-        line = self.entry.get("line")
-        return (Path(file) if file else self.path), (line - 1 if line else None), f"spectest {self.name}"
+        file, line = self.entry.get("file"), self.entry.get("line")
+        return (
+            self.path if file is None else Path(file),
+            None if line is None else line - 1,
+            f"spectest {self.name}",
+        )
 
 
 def _explicit_ci(config: pytest.Config) -> bool:
