@@ -216,11 +216,9 @@ comptime _OP_NAMES = (
 
 
 def _nth_word(words: StaticString, n: Int) -> StaticString:
-    var k = 0
-    for word in words.split(" "):
+    for k, word in enumerate(words.split(" ")):
         if k == n:
             return word
-        k += 1
     return "?"
 
 
@@ -230,6 +228,14 @@ def kind_name(kind: UInt8) -> StaticString:
 
 def op_name(op: UInt8) -> StaticString:
     return _nth_word(_OP_NAMES, Int(op))
+
+
+def op_named(text: String, *, first: UInt8, last: UInt8) -> UInt8:
+    """The op from `first` to `last` (inclusive) named `text`, or `NO_OP`."""
+    for k, word in enumerate(_OP_NAMES.split(" ")):
+        if Int(first) <= k <= Int(last) and word == text:
+            return UInt8(k)
+    return NO_OP
 
 
 @fieldwise_init
@@ -243,16 +249,14 @@ struct Node(Copyable, Movable):
 
 @fieldwise_init
 struct SourceFile(Copyable, Movable):
-    """One file of a tree: `parse_into` appends each file's source to `Ast.source` and
-    its nodes to `Ast.nodes`."""
+    """One file of a tree (`parse_into` appends each file's source and nodes to the `Ast`)."""
 
     var path: String
     var source: String
-    """The file's own text."""
     var offset: Int
     """Where the text starts in `Ast.source`."""
     var first_node: Int
-    """The file's first node; its nodes run up to the next file's first node."""
+    """Its nodes run up to the next file's first node."""
     var root: Int
     """The FILE or PRELUDE_FILE node; 0 until the parser sets it."""
 
@@ -296,13 +300,10 @@ struct Ast(Movable):
         return self.nodes[id].kids[k]
 
     def file_of(self, id: Int) -> Int:
-        """The index in `files` of the file a node belongs to; node 0 belongs to the
-        first."""
-        var i = len(self.files) - 1
-        while i > 0:
+        """The index in `files` of the file a node belongs to (node 0 is in the first)."""
+        for i in reversed(range(1, len(self.files))):
             if id >= self.files[i].first_node:
                 return i
-            i -= 1
         return 0
 
     def path_of(self, id: Int) -> String:
@@ -310,7 +311,7 @@ struct Ast(Movable):
         return self.files[self.file_of(id)].path.copy()
 
     def kind_of_file(self, id: Int) -> UInt8:
-        """FILE or PRELUDE_FILE: the kind of file a node belongs to."""
+        """FILE or PRELUDE_FILE, for the file a node belongs to."""
         return self.nodes[self.files[self.file_of(id)].root].kind
 
     def location(self, id: Int) -> String:
@@ -318,7 +319,7 @@ struct Ast(Movable):
         return String(self.path_of(id), ":", self.nodes[id].span)
 
     def source_text(self, id: Int) -> String:
-        """The node's source, verbatim: what a verdict quotes."""
+        """The node's source, verbatim."""
         ref span = self.nodes[id].span
         return String(self.source[byte = span.start : span.end])
 

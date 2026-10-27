@@ -10,6 +10,7 @@ lines. `perf` takes the rest of its line raw.
 """
 
 from syntax.ast import Span as SrcSpan, Diagnostic
+from syntax.chars import is_digit, is_hex, is_alpha, is_alnum, is_space, hex_value
 
 comptime T_NAME: UInt8 = 0
 comptime T_NUMBER: UInt8 = 1
@@ -26,8 +27,8 @@ comptime T_EOF: UInt8 = 8
 struct Token(Copyable, Movable):
     var kind: UInt8
     var text: String
-    """Names and operators: the text. Strings: the decoded value. Perf: the stripped
-    rest of the line. Numbers: the literal."""
+    """Names and operators: the text. Strings: the decoded value. Perf: the stripped rest
+    of the line. Numbers: the literal."""
     var start: Int
     var end: Int
     var line: Int
@@ -37,61 +38,91 @@ struct Token(Copyable, Movable):
     def span(self) -> SrcSpan:
         return SrcSpan(self.start, self.end, self.line, self.col)
 
+    def is_op(self, op: StaticString) -> Bool:
+        return self.kind == T_OP and self.text == op
+
 
 def syntax_error(path: String, span: SrcSpan, message: String) -> Error:
-    """An `Error` whose message is the diagnostic text `path:line:col: message`."""
+    """An `Error` whose message is `path:line:col: message`."""
     return Error(String(Diagnostic(path.copy(), span, message.copy())))
 
 
-def _is_digit(c: Int) -> Bool:
-    return c >= 48 and c <= 57
+def _at(src: Span[Byte, _], i: Int, end: Int) -> Int:
+    """The byte at `i`, or 0 at or past `end`."""
+    return Int(src[i]) if i < end else 0
 
 
-def _is_hex(c: Int) -> Bool:
-    return (c >= 48 and c <= 57) or (c >= 97 and c <= 102) or (c >= 65 and c <= 70)
+def _text(src: Span[Byte, _], a: Int, b: Int) -> String:
+    return String(unsafe_from_utf8=src[a:b])
 
 
-def _is_alpha(c: Int) -> Bool:
-    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+def _char_width(lead: Int) -> Int:
+    """The bytes in a UTF-8 character that starts with `lead`."""
+    return 4 if lead >= 0xF0 else (3 if lead >= 0xE0 else (2 if lead >= 0xC0 else 1))
 
 
-def _is_alnum(c: Int) -> Bool:
-    return _is_alpha(c) or _is_digit(c)
+def _char_at(src: Span[Byte, _], i: Int, end: Int) -> String:
+    return _text(src, i, min(i + _char_width(Int(src[i])), end))
 
 
-def _is_space(c: Int) -> Bool:
-    return c == 32 or c == 9 or c == 11 or c == 12
+comptime _TWO_CHAR_OPS = "-> == != <= << >= >> // **"
+comptime _ONE_CHAR_OPS = "<>=+-*/%|&()[]{},:."
+comptime _OPENERS = "fn new method model interface partition"
 
 
-def _hex_value(c: Int) -> Int:
-    if c >= 97:
-        return c - 87
-    if c >= 65:
-        return c - 55
-    return c - 48
+def _in(c: Int, chars: StaticString) -> Bool:
+    return chr(c) in chars
 
 
-def _starts_with(src: Span[Byte, _], i: Int, end: Int, word: StaticString) -> Bool:
-    var w = word.as_bytes()
-    if i + len(w) > end:
+def _digits(src: Span[Byte, _], i: Int, end: Int, *, hex: Bool) -> Int:
+    """End of the run `d(_?d)*` of digits starting at `i`, or `i` if it starts with none."""
+    var j = i
+    while True:
+        var c = _at(src, j, end)
+        if is_hex(c) if hex else is_digit(c):
+            j += 1
+        elif j > i and c == ord("_") and (is_hex(_at(src, j + 1, end)) if hex else is_digit(_at(src, j + 1, end))):
+            j += 1
+        else:
+            return j
+
+
+def _exponent(src: Span[Byte, _], i: Int, end: Int, marks: StaticString) -> Int:
+    """End of an exponent (a mark, an optional sign and digits) at `i`, or `i` if none."""
+    if not _in(_at(src, i, end), marks):
+        return i
+    var first = i + (2 if _in(_at(src, i + 1, end), "+-") else 1)
+    var j = first
+    while is_digit(_at(src, j, end)):
+        j += 1
+    return j if j > first else i
+
+
+def _opens(src: Span[Byte, _], i: Int, end: Int, word: String) -> Bool:
+    """Whether `word` and then a name start at `i`."""
+    var j = i + word.byte_length()
+    if _text(src, i, min(j, end)) != word or not is_space(_at(src, j, end)):
         return False
-    for k in range(len(w)):
-        if src[i + k] != w[k]:
-            return False
-    return True
+    while is_space(_at(src, j, end)):
+        j += 1
+    return is_alpha(_at(src, j, end))
 
 
+def _is_opener(src: Span[Byte, _], i: Int, end: Int) -> Bool:
+    return any([_opens(src, i, end, String(word)) for word in _OPENERS.split(" ")])
+
+
+def _is_perf(src: Span[Byte, _], i: Int, end: Int) -> Bool:
+    var after = _at(src, i + 4, end)
+    return _text(src, i, min(i + 4, end)) == "perf" and (i + 4 == end or is_space(after) or after == 13)
+
+
+@fieldwise_init
 struct _Bracket(Copyable, Movable):
     var open: Int
     var line: Int
     var col: Int
     var start: Int
-
-    def __init__(out self, open: Int, line: Int, col: Int, start: Int):
-        self.open = open
-        self.line = line
-        self.col = col
-        self.start = start
 
 
 struct Lexer:
@@ -130,10 +161,12 @@ struct Lexer:
         self.cp_off = 0
         self.cp_col = 1
 
+    def block_indent(self) -> Int:
+        return self.stack[len(self.stack) - 1]
+
     def col_at(mut self, src: Span[Byte, _], pos: Int) -> Int:
-        """1-based column, in code points, of byte offset `pos` on the current line.
-        Offsets are asked in increasing order within a line."""
-        if pos < self.cp_off:
+        """1-based column, in code points, of byte offset `pos` on the current line."""
+        if pos < self.cp_off:  # offsets within a line are asked in increasing order
             self.cp_off = self.line_start
             self.cp_col = 1
         var col = self.cp_col
@@ -144,8 +177,8 @@ struct Lexer:
         self.cp_col = col
         return col
 
-    def error(self, line: Int, col: Int, start: Int, message: String) -> Error:
-        return syntax_error(self.path, SrcSpan(start, start + 1, line, col), message)
+    def error(self, line: Int, col: Int, start: Int, message: Some[Writable]) -> Error:
+        return syntax_error(self.path, SrcSpan(start, start + 1, line, col), String(message))
 
     def emit(mut self, kind: UInt8, var text: String, start: Int, end: Int, col: Int, end_col: Int):
         self.tokens.append(Token(kind, text^, start, end, self.line_no, col, end_col))
@@ -165,13 +198,11 @@ struct Lexer:
         var ln = 0
         while True:
             var end = pos
-            while end < n and src[end] != 10:
+            while end < n and Int(src[end]) != ord("\n"):
                 end += 1
             ln += 1
             last_line_start = pos
-            var stop = end
-            if stop > pos and src[stop - 1] == 13:
-                stop -= 1
+            var stop = end - 1 if end > pos and Int(src[end - 1]) == 13 else end
             last_line_end = stop
             self.line_no = ln
             self.line_start = pos
@@ -183,9 +214,7 @@ struct Lexer:
             pos = end + 1
         if len(self.brackets) > 0:
             ref b = self.brackets[len(self.brackets) - 1]
-            raise self.error(
-                b.line, b.col, b.start, "'" + chr(b.open) + "' is never closed"
-            )
+            raise self.error(b.line, b.col, b.start, t"'{chr(b.open)}' is never closed")
         self.line_no = ln
         self.line_start = last_line_start
         self.cp_off = last_line_start
@@ -201,49 +230,22 @@ struct Lexer:
         self.tokens = List[Token]()
         return out^
 
-    def opens(self, src: Span[Byte, _], i: Int, end: Int, word: StaticString) -> Bool:
-        if not _starts_with(src, i, end, word):
-            return False
-        var j = i + word.byte_length()
-        if j < end and _is_space(Int(src[j])):
-            while j < end and _is_space(Int(src[j])):
-                j += 1
-            return j < end and _is_alpha(Int(src[j]))
-        return False
-
-    def is_opener(self, src: Span[Byte, _], i: Int, end: Int) -> Bool:
-        return (
-            self.opens(src, i, end, "fn")
-            or self.opens(src, i, end, "new")
-            or self.opens(src, i, end, "method")
-            or self.opens(src, i, end, "model")
-            or self.opens(src, i, end, "interface")
-            or self.opens(src, i, end, "partition")
-        )
-
-    def is_perf(self, src: Span[Byte, _], i: Int, end: Int) -> Bool:
-        if not _starts_with(src, i, end, "perf"):
-            return False
-        return i + 4 == end or _is_space(Int(src[i + 4])) or Int(src[i + 4]) == 13
-
     def line(mut self, src: Span[Byte, _], start: Int, end: Int) raises:
         var i = start
-        while i < end and (src[i] == 32 or src[i] == 9):
+        while _at(src, i, end) == ord(" ") or _at(src, i, end) == ord("\t"):
             i += 1
         var indent = i - start
         var blank = i >= end
         if not blank:
-            # A tab anywhere in the leading whitespace.
             for k in range(start, i):
-                if src[k] == 9:
+                if Int(src[k]) == ord("\t"):
                     raise self.error(
-                        self.line_no, k - start + 1, k,
-                        "tab in indentation: indent with spaces",
+                        self.line_no, k - start + 1, k, "tab in indentation: indent with spaces"
                     )
         if len(self.brackets) > 0:
             self.scan(src, i, end)
             return
-        if blank or src[i] == 35:
+        if blank or Int(src[i]) == ord("#"):
             return
         if self.has_cur and not self.cur_opener and indent > self.cur_indent:
             if self.cur_perf:
@@ -254,24 +256,23 @@ struct Lexer:
         var col = indent + 1
         if self.has_cur:
             self.emit_layout(T_NEWLINE, "\n", self.last_end, self.last_line, self.last_col)
-        if self.has_cur and self.cur_opener and indent > self.stack[len(self.stack) - 1]:
+        if self.has_cur and self.cur_opener and indent > self.block_indent():
             self.stack.append(indent)
             self.emit_layout(T_INDENT, "", i, self.line_no, col)
-        elif indent > self.stack[len(self.stack) - 1]:
+        elif indent > self.block_indent():
             raise self.error(self.line_no, col, i, "unexpected indentation")
         else:
-            while indent < self.stack[len(self.stack) - 1]:
+            while indent < self.block_indent():
                 _ = self.stack.pop()
                 self.emit_layout(T_DEDENT, "", i, self.line_no, col)
-            if indent != self.stack[len(self.stack) - 1]:
+            if indent != self.block_indent():
                 raise self.error(
-                    self.line_no, col, i,
-                    "indentation does not match any enclosing block",
+                    self.line_no, col, i, "indentation does not match any enclosing block"
                 )
-        var perf = self.is_perf(src, i, end)
+        var perf = _is_perf(src, i, end)
         self.has_cur = True
         self.cur_indent = indent
-        self.cur_opener = self.is_opener(src, i, end)
+        self.cur_opener = _is_opener(src, i, end)
         self.cur_perf = perf
         self.last_line = self.line_no
         self.last_end = i
@@ -284,10 +285,10 @@ struct Lexer:
 
     def perf_text(mut self, src: Span[Byte, _], start: Int, end: Int) raises:
         var a = start
-        while a < end and _is_space(Int(src[a])):
+        while is_space(_at(src, a, end)):
             a += 1
         var b = end
-        while b > a and _is_space(Int(src[b - 1])):
+        while b > a and is_space(Int(src[b - 1])):
             b -= 1
         if a >= b:
             return
@@ -299,173 +300,87 @@ struct Lexer:
         var i = begin
         while i < end:
             var c = Int(src[i])
-            if c == 32 or c == 9:
+            if c == ord(" ") or c == ord("\t"):
                 i += 1
-                continue
-            if c == 35:
+            elif c == ord("#"):
                 return
-            if c == 34:
+            elif c == ord('"'):
                 i = self.string(src, i, end)
-                continue
-            if _is_digit(c):
+            elif is_digit(c):
                 i = self.number(src, i, end)
-                continue
-            if _is_alpha(c):
+            elif is_alpha(c):
                 var j = i + 1
-                while j < end and _is_alnum(Int(src[j])):
+                while is_alnum(_at(src, j, end)):
                     j += 1
                 var col = self.col_at(src, i)
                 self.emit(T_NAME, _text(src, i, j), i, j, col, col + (j - i))
                 i = j
-                continue
-            var width = 1
-            if i + 1 < end:
-                var d = Int(src[i + 1])
-                if (
-                    (c == 45 and d == 62)
-                    or (c == 61 and d == 61)
-                    or (c == 33 and d == 61)
-                    or (c == 60 and (d == 61 or d == 60))
-                    or (c == 62 and (d == 61 or d == 62))
-                    or (c == 47 and d == 47)
-                    or (c == 42 and d == 42)
-                ):
-                    width = 2
-            if width == 1 and not (
-                c == 60 or c == 62 or c == 61 or c == 43 or c == 45 or c == 42
-                or c == 47 or c == 37 or c == 124 or c == 38 or c == 40
-                or c == 41 or c == 91 or c == 93 or c == 123 or c == 125
-                or c == 44 or c == 58 or c == 46
-            ):
-                var col = self.col_at(src, i)
-                var n = 1
-                if c >= 0xF0:
-                    n = 4
-                elif c >= 0xE0:
-                    n = 3
-                elif c >= 0xC0:
-                    n = 2
-                var shown = _text(src, i, min(i + n, end))
-                raise self.error(
-                    self.line_no, col, i, "unexpected character '" + shown + "'"
-                )
-            var col = self.col_at(src, i)
-            if c == 40 or c == 91 or c == 123:
-                self.brackets.append(_Bracket(c, self.line_no, col, i))
-            elif c == 41 or c == 93 or c == 125:
-                if len(self.brackets) == 0:
-                    raise self.error(
-                        self.line_no, col, i, "unmatched '" + chr(c) + "'"
-                    )
-                var opened = self.brackets.pop()
-                var want = 40 if c == 41 else (91 if c == 93 else 123)
-                if opened.open != want:
-                    raise self.error(
-                        self.line_no, col, i,
-                        "'" + chr(c) + "' does not match '" + chr(opened.open)
-                        + "' at " + String(opened.line) + ":" + String(opened.col),
-                    )
-            self.emit(
-                T_OP, _text(src, i, i + width), i, i + width, col, col + width
-            )
-            i += width
-
-    def digits(self, src: Span[Byte, _], i: Int, end: Int, hex: Bool) -> Int:
-        """End of `d(_?d)*` starting at `i` (which holds a digit), or `i` if none."""
-        var j = i
-        if j >= end:
-            return i
-        var c = Int(src[j])
-        if not (_is_hex(c) if hex else _is_digit(c)):
-            return i
-        j += 1
-        while j < end:
-            c = Int(src[j])
-            if _is_hex(c) if hex else _is_digit(c):
-                j += 1
-            elif c == 95 and j + 1 < end and (
-                _is_hex(Int(src[j + 1])) if hex else _is_digit(Int(src[j + 1]))
-            ):
-                j += 2
             else:
-                break
-        return j
+                i = self.operator(src, i, end)
+
+    def operator(mut self, src: Span[Byte, _], i: Int, end: Int) raises -> Int:
+        var c = Int(src[i])
+        var col = self.col_at(src, i)
+        var pair = _text(src, i, min(i + 2, end))
+        var width = 2 if pair.byte_length() == 2 and " " not in pair and pair in _TWO_CHAR_OPS else 1
+        if width == 1 and not (c < 128 and _in(c, _ONE_CHAR_OPS)):
+            raise self.error(
+                self.line_no, col, i, t"unexpected character '{_char_at(src, i, end)}'"
+            )
+        if _in(c, "([{"):
+            self.brackets.append(_Bracket(c, self.line_no, col, i))
+        elif _in(c, ")]}"):
+            if len(self.brackets) == 0:
+                raise self.error(self.line_no, col, i, t"unmatched '{chr(c)}'")
+            var opened = self.brackets.pop()
+            if String("([{").find(chr(opened.open)) != String(")]}").find(chr(c)):
+                raise self.error(
+                    self.line_no, col, i,
+                    t"'{chr(c)}' does not match '{chr(opened.open)}' at {opened.line}:{opened.col}",
+                )
+        self.emit(T_OP, pair if width == 2 else _text(src, i, i + 1), i, i + width, col, col + width)
+        return i + width
 
     def number(mut self, src: Span[Byte, _], i: Int, end: Int) raises -> Int:
         var col = self.col_at(src, i)
-        var prev_dot = False
-        if len(self.tokens) > 0:
-            ref prev = self.tokens[len(self.tokens) - 1]
-            prev_dot = prev.kind == T_OP and prev.text == "."
-        if prev_dot:
-            var j = i
-            while j < end and _is_digit(Int(src[j])):
+        var j = i
+        var after_dot = len(self.tokens) > 0 and self.tokens[len(self.tokens) - 1].is_op(".")
+        if after_dot:
+            while is_digit(_at(src, j, end)):
                 j += 1
-            if j < end and (_is_alnum(Int(src[j]))):
+            if is_alnum(_at(src, j, end)):
+                raise self.error(
+                    self.line_no, col, i, "a tuple field is a decimal index, e.g. p.0"
+                )
+        elif _at(src, i, end) == ord("0") and _in(_at(src, i + 1, end), "xX"):
+            j = _digits(src, i + 2, end, hex=True)
+            if j == i + 2:
+                raise self.error(
+                    self.line_no, col, i, "hexadecimal literal needs digits after 0x"
+                )
+            var dotted = _at(src, j, end) == ord(".")
+            if dotted:
+                j = _digits(src, j + 1, end, hex=True)
+            var with_exponent = _exponent(src, j, end, "pP")
+            if dotted and with_exponent == j:
+                var text = _text(src, i, j)
                 raise self.error(
                     self.line_no, col, i,
-                    "a tuple field is a decimal index, e.g. p.0",
+                    t"hexadecimal float {text} needs a binary exponent, e.g. {text}p0",
                 )
-            self.emit(T_NUMBER, _text(src, i, j), i, j, col, col + (j - i))
-            return j
-        var j: Int
-        if (
-            i + 1 < end
-            and src[i] == 48
-            and (src[i + 1] == 120 or src[i + 1] == 88)
-        ):
-            var k = self.digits(src, i + 2, end, True)
-            if k == i + 2:
-                raise self.error(
-                    self.line_no, col, i,
-                    "hexadecimal literal needs digits after 0x",
-                )
-            var dotted = False
-            if k < end and src[k] == 46:
-                dotted = True
-                k += 1
-                k = self.digits(src, k, end, True)
-            var has_exp = False
-            if k < end and (src[k] == 112 or src[k] == 80):
-                var e = k + 1
-                if e < end and (src[e] == 43 or src[e] == 45):
-                    e += 1
-                var e2 = e
-                while e2 < end and _is_digit(Int(src[e2])):
-                    e2 += 1
-                if e2 > e:
-                    has_exp = True
-                    k = e2
-            if dotted and not has_exp:
-                var text = _text(src, i, k)
-                raise self.error(
-                    self.line_no, col, i,
-                    "hexadecimal float " + text
-                    + " needs a binary exponent, e.g. " + text + "p0",
-                )
-            j = k
+            j = with_exponent
         else:
-            j = self.digits(src, i, end, False)
-            if j < end and src[j] == 46:
-                var f = self.digits(src, j + 1, end, False)
-                if f > j + 1:
-                    j = f
-            if j < end and (src[j] == 101 or src[j] == 69):
-                var e = j + 1
-                if e < end and (src[e] == 43 or src[e] == 45):
-                    e += 1
-                var e2 = e
-                while e2 < end and _is_digit(Int(src[e2])):
-                    e2 += 1
-                if e2 > e:
-                    j = e2
-        if j < end and (_is_alnum(Int(src[j]))):
+            j = _digits(src, i, end, hex=False)
+            if _at(src, j, end) == ord("."):
+                var fraction = _digits(src, j + 1, end, hex=False)
+                j = fraction if fraction > j + 1 else j
+            j = _exponent(src, j, end, "eE")
+        if not after_dot and is_alnum(_at(src, j, end)):
             var stop = j
-            while stop < end and (_is_alnum(Int(src[stop])) or src[stop] == 46):
+            while is_alnum(_at(src, stop, end)) or _at(src, stop, end) == ord("."):
                 stop += 1
             raise self.error(
-                self.line_no, col, i,
-                "invalid numeric literal '" + _text(src, i, stop) + "'",
+                self.line_no, col, i, t"invalid numeric literal '{_text(src, i, stop)}'"
             )
         self.emit(T_NUMBER, _text(src, i, j), i, j, col, col + (j - i))
         return j
@@ -474,112 +389,70 @@ struct Lexer:
         var col = self.col_at(src, start)
         var i = start + 1
         var out = List[UInt8]()
+        var simple = {ord("n"): 10, ord("t"): 9, ord("r"): 13, ord("0"): 0, ord("\\"): 92, ord('"'): 34}
         while True:
             if i >= end:
                 raise self.error(self.line_no, col, start, "unterminated string")
             var c = Int(src[i])
-            if c == 34:
+            if c == ord('"'):
                 i += 1
                 break
-            if c != 92:
-                out.append(UInt8(c))
+            if c != ord("\\"):
+                out.append(src[i])
                 i += 1
                 continue
             if i + 1 >= end:
                 raise self.error(self.line_no, col, start, "unterminated string")
             var e = Int(src[i + 1])
             var ecol = self.col_at(src, i)
-            if e == 110:
-                out.append(10)
+            if e in simple:
+                out.append(UInt8(simple[e]))
                 i += 2
-            elif e == 116:
-                out.append(9)
-                i += 2
-            elif e == 114:
-                out.append(13)
-                i += 2
-            elif e == 48:
-                out.append(0)
-                i += 2
-            elif e == 92:
-                out.append(92)
-                i += 2
-            elif e == 34:
-                out.append(34)
-                i += 2
-            elif e == 120:
-                if not (
-                    i + 3 < end and _is_hex(Int(src[i + 2])) and _is_hex(Int(src[i + 3]))
-                ):
+            elif e == ord("x"):
+                var hi = _at(src, i + 2, end)
+                var lo = _at(src, i + 3, end)
+                if not (is_hex(hi) and is_hex(lo)):
                     raise self.error(self.line_no, ecol, i, "\\x needs two hex digits")
-                var code = _hex_value(Int(src[i + 2])) * 16 + _hex_value(Int(src[i + 3]))
-                _append_codepoint(out, code)
+                _append_codepoint(out, hex_value(hi) * 16 + hex_value(lo))
                 i += 4
-            elif e == 117:
+            elif e == ord("u"):
                 var code = 0
                 var next = i + 2
-                if next < end and src[next] == 123:
-                    var k = next + 1
-                    var count = 0
-                    while k < end and _is_hex(Int(src[k])) and count < 7:
-                        code = code * 16 + _hex_value(Int(src[k]))
-                        k += 1
-                        count += 1
-                    if count < 1 or count > 6 or k >= end or src[k] != 125:
+                var braced = _at(src, next, end) == ord("{")
+                var digits_end = next + 1 if braced else next
+                var count = 0
+                while is_hex(_at(src, digits_end, end)) and count < (7 if braced else 4):
+                    code = code * 16 + hex_value(_at(src, digits_end, end))
+                    digits_end += 1
+                    count += 1
+                if braced:
+                    if count < 1 or count > 6 or _at(src, digits_end, end) != ord("}"):
                         raise self.error(
                             self.line_no, ecol, i, "\\u needs {hex} or four hex digits"
                         )
-                    next = k + 1
-                else:
-                    if not (
-                        next + 3 < end
-                        and _is_hex(Int(src[next]))
-                        and _is_hex(Int(src[next + 1]))
-                        and _is_hex(Int(src[next + 2]))
-                        and _is_hex(Int(src[next + 3]))
-                    ):
-                        raise self.error(
-                            self.line_no, ecol, i, "\\u needs {hex} or four hex digits"
-                        )
-                    for k in range(4):
-                        code = code * 16 + _hex_value(Int(src[next + k]))
-                    next += 4
-                if code > 0x10FFFF or (code >= 0xD800 and code <= 0xDFFF):
+                    digits_end += 1
+                elif count < 4:
+                    raise self.error(
+                        self.line_no, ecol, i, "\\u needs {hex} or four hex digits"
+                    )
+                if code > 0x10FFFF or 0xD800 <= code <= 0xDFFF:
                     raise self.error(
                         self.line_no, ecol, i,
-                        "\\u" + String(hex(code))[byte=2:]
-                        + " is not a Unicode scalar value",
+                        t"\\u{String(hex(code))[byte=2:]} is not a Unicode scalar value",
                     )
                 _append_codepoint(out, code)
-                i = next
+                i = digits_end
             else:
-                # The escape's character may be multi-byte.
-                var n = 1
-                if e >= 0xF0:
-                    n = 4
-                elif e >= 0xE0:
-                    n = 3
-                elif e >= 0xC0:
-                    n = 2
                 raise self.error(
-                    self.line_no, ecol, i,
-                    "unknown escape \\" + _text(src, i + 1, min(i + 1 + n, end)),
+                    self.line_no, ecol, i, t"unknown escape \\{_char_at(src, i + 1, end)}"
                 )
         var end_col = self.col_at(src, i)
-        self.emit(
-            T_STRING, String(unsafe_from_utf8=Span(out)), start, i, col, end_col
-        )
+        self.emit(T_STRING, String(unsafe_from_utf8=Span(out)), start, i, col, end_col)
         return i
 
 
-def _text(src: Span[Byte, _], a: Int, b: Int) -> String:
-    return String(unsafe_from_utf8=src[a:b])
-
-
 def _append_codepoint(mut out: List[UInt8], code: Int):
-    var s = chr(code)
-    for b in s.as_bytes():
-        out.append(b)
+    out.extend(chr(code).as_bytes())
 
 
 def tokenize(source: String, path: String) raises -> List[Token]:
