@@ -4,7 +4,7 @@ instantiation types."""
 from std.builtin.sort import sort
 
 from check import types as ty
-from wire.value import HANDLE, LIST, MAP, OPTION, TUPLE, Value
+from wire.value import Value
 
 comptime N_CAUSES = 8
 
@@ -54,16 +54,16 @@ def handles_of(types: ty.Types, v: Value, t: Int, model: String, mut out: List[V
     """The handles of model `model` inside `v`, a value of type `t`."""
     ref info = types.info(t)
     if info.kind == ty.MODEL:
-        if info.name == model and v.kind == HANDLE:
+        if info.name == model and v.kind == .HANDLE:
             out.append(v.copy())
         return
-    if (info.kind == ty.LIST and (v.kind == LIST)) or (info.kind == ty.OPTION and v.kind == OPTION):
+    if (info.kind == ty.LIST and (v.kind == .LIST)) or (info.kind == ty.OPTION and v.kind == .OPTION):
         for i in range(v.count()):
             handles_of(types, v.item(i), info.args[0], model, out)
-    elif info.kind == ty.TUPLE and v.kind == TUPLE and v.count() == len(info.args):
+    elif info.kind == ty.TUPLE and v.kind == .TUPLE and v.count() == len(info.args):
         for i in range(v.count()):
             handles_of(types, v.item(i), info.args[i], model, out)
-    elif info.kind == ty.MAP and v.kind == MAP:
+    elif info.kind == ty.MAP and v.kind == .MAP:
         for i in range(v.count()):
             handles_of(types, v.item(2 * i), info.args[0], model, out)
             handles_of(types, v.item(2 * i + 1), info.args[1], model, out)

@@ -19,16 +19,7 @@ from bridge.capi import (
 )
 from bridge.convert import from_python, to_python
 from bridge.pyutil import Owned, checked, python_error, string_of, wire
-from wire.value import (
-    BOOL,
-    FLOAT,
-    INT,
-    LIST,
-    MAP,
-    OPTION,
-    STRING,
-    Value,
-)
+from wire.value import Value
 
 from .options import RunOptions
 
@@ -49,7 +40,7 @@ def _text(o: PyObjectPtr, what: String) raises -> String:
 
 def _int(o: PyObjectPtr, what: String) raises -> Int:
     var v = from_python(o)
-    if v.kind != INT or not v.small_int():
+    if v.kind != .INT or not v.small_int():
         raise Error(String("TypeError: ", what, " must be an int"))
     return v.small_int().value()
 
@@ -120,7 +111,7 @@ def result_to_python(v: Value) raises -> PyObjectPtr:
     """A result `Value` tree as Python: MAP with string keys as dict, LIST as list,
     an empty OPTION as None, an f64 FLOAT as float; scalars as themselves."""
     var kind = v.kind
-    if kind == MAP:
+    if kind == .MAP:
         var d = checked(PyDict_New())
         for i in range(v.count()):
             var item: PyObjectPtr
@@ -135,7 +126,7 @@ def result_to_python(v: Value) raises -> PyObjectPtr:
                 Py_DecRef(d)
                 raise python_error()
         return d
-    if kind == LIST:
+    if kind == .LIST:
         var n = v.count()
         var out = checked(PyList_New(n))
         for i in range(n):
@@ -147,7 +138,7 @@ def result_to_python(v: Value) raises -> PyObjectPtr:
                 raise e^
             _ = PyList_SetItem(out, i, item)
         return out
-    if kind == FLOAT:
+    if kind == .FLOAT:
         return checked(PyFloat_FromDouble(bitcast[DType.float64](v.float_bits())))
     return to_python(v)
 

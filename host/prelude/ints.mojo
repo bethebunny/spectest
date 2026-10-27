@@ -6,7 +6,7 @@ from numeric.bigint import BigInt
 from numeric.formats import FloatFormat
 from numeric.floats import exactly
 from prelude.util import fail, int_of, real_of
-from wire.value import Value, BYTES
+from wire.value import Value
 
 
 def _bound(bits: Int) -> BigInt:
@@ -38,7 +38,7 @@ def fits_float(x: Value, f: FloatFormat) raises -> Value:
 
 
 def le_uint(b: Value) raises -> Value:
-    if b.kind != BYTES:
+    if b.kind != .BYTES:
         raise fail("le_uint", t"expected bytes, got {b}")
     ref data = b.data()
     var acc = BigUInt(UInt64(0))

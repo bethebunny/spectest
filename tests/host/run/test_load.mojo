@@ -12,7 +12,7 @@ from run.results import (
     RunResult,
 )
 from wire.format import format_value
-from wire.value import MAP, LIST, Value
+from wire.value import Value
 
 comptime SPEC = """spec t
 
@@ -90,7 +90,7 @@ def test_items_list_the_judged_clauses_in_source_order() raises:
     var items = items_of(l)
     var ids = List[String]()
     for it in items:
-        assert_true(it.kind == MAP)
+        assert_true(it.kind == .MAP)
         var text = format_value(it)
         has(text, '"decl"')
         ids.append(text)
@@ -158,7 +158,7 @@ def test_results_convert_to_nested_maps() raises:
     agg.aggregate = summary^
     run.clauses.append(agg^)
     var v = run.to_value()
-    assert_true(v.kind == MAP)
+    assert_true(v.kind == .MAP)
     var text = format_value(v)
     has(text, '"decl": "pkg.f"')
     has(text, '"mode": "search"')

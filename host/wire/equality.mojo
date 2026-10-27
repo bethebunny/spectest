@@ -11,32 +11,24 @@ the int's value, so promotion never changes the answer.
 
 from std.hash import Hasher, default_hasher
 
-from wire import value as wv
-from wire.value import Value
+from wire.value import Kind, Value
 
 
 def _check_canonical(value: Value) raises:
-    if value.kind in [wv.FLOAT, wv.HANDLE, wv.ERROR]:
+    if value.kind in [Kind.FLOAT, Kind.HANDLE, Kind.ERROR]:
         raise Error(t"a {value.kind} has no canonical equality")
-    if value.kind in [wv.LIST, wv.TUPLE, wv.MAP, wv.OPTION, wv.RECORD]:
+    if value.kind in [Kind.LIST, Kind.TUPLE, Kind.MAP, Kind.OPTION, Kind.RECORD]:
         for item in value.items():
             _check_canonical(item)
 
 
-def _is_whole_real(real: Value, whole: Value) -> Bool:
-    var as_real = real.as_real()
-    return as_real.is_integer() and as_real.numerator == whole.as_bigint()
-
-
 def _eq(a: Value, b: Value, *, canonical: Bool) -> Bool:
     if a.kind != b.kind:
-        return canonical and (
-            (a.kind == wv.INT and b.kind == wv.REAL and _is_whole_real(b, a))
-            or (a.kind == wv.REAL and b.kind == wv.INT and _is_whole_real(a, b))
-        )
+        var numbers = a.kind in [Kind.INT, Kind.REAL] and b.kind in [Kind.INT, Kind.REAL]
+        return canonical and numbers and a.as_real() == b.as_real()
     if not a.has_equal_parts(b):
         return False
-    if a.kind in [wv.MAP, wv.RECORD]:
+    if a.kind.holds_pairs():
         return _pairs_match(a, b, canonical=canonical)
     for x, y in zip(a.items(), b.items()):
         if not _eq(x, y, canonical=canonical):
@@ -49,14 +41,8 @@ def _pairs_match(a: Value, b: Value, *, canonical: Bool) -> Bool:
     Keys are distinct within each side, so this is a bijection."""
     var b_pairs = b.pairs()
     for key, value in a.pairs():
-        var found = False
-        for other_key, other_value in b_pairs:
-            if _eq(key, other_key, canonical=canonical):
-                if not _eq(value, other_value, canonical=canonical):
-                    return False
-                found = True
-                break
-        if not found:
+        var partners = [v.copy() for k, v in b_pairs if _eq(key, k, canonical=canonical)]
+        if not partners or not _eq(value, partners[0], canonical=canonical):
             return False
     return True
 
@@ -73,7 +59,7 @@ def same(a: Value, b: Value) -> Bool:
 
 def hash_same(value: Value, mut hasher: Some[Hasher]):
     value.hash_parts(hasher)
-    if value.kind not in [wv.MAP, wv.RECORD]:
+    if not value.kind.holds_pairs():
         for item in value.items():
             hash_same(item, hasher)
         return
@@ -83,5 +69,12 @@ def hash_same(value: Value, mut hasher: Some[Hasher]):
         var pair_hasher = default_hasher()
         hash_same(key, pair_hasher)
         hash_same(item, pair_hasher)
-        total += UInt64(pair_hasher^.finish())
+        total += UInt64(pair_hasher.finish())
     total.__hash__(hasher)
+
+
+def same_hash(value: Value) -> UInt64:
+    """A hash that agrees with `same`."""
+    var hasher = default_hasher()
+    hash_same(value, hasher)
+    return UInt64(hasher.finish())

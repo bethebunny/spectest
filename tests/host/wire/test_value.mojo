@@ -3,7 +3,7 @@ from std.testing import assert_equal, assert_true, assert_false, assert_raises, 
 
 from numeric.bigint import BigInt
 from numeric.formats import F32, F64
-from wire.value import Value, BOOL, INT, FLOAT, LIST, MAP, OPTION, RECORD, ENUM
+from wire.value import Value
 
 
 def test_ints_are_canonical() raises:

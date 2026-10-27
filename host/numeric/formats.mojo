@@ -57,31 +57,19 @@ comptime F16 = FloatFormat(1, 5, 10)
 comptime BF16 = FloatFormat(2, 8, 7)
 comptime F32 = FloatFormat(3, 8, 23)
 comptime F64 = FloatFormat(4, 11, 52)
+comptime FORMATS: Array[FloatFormat, 4] = [F16, BF16, F32, F64]
+"""In order of id, from 1."""
 
 
 def format_by_id(id: UInt8) raises -> FloatFormat:
-    match Int(id):
-        case 1:
-            return F16
-        case 2:
-            return BF16
-        case 3:
-            return F32
-        case 4:
-            return F64
-        case _:
-            raise Error(t"no float format with id {id}")
+    var formats = materialize[FORMATS]()
+    if not 1 <= Int(id) <= len(formats):
+        raise Error(t"no float format with id {id}")
+    return formats[Int(id) - 1]
 
 
 def format_by_name(name: StringSlice) raises -> FloatFormat:
-    match name:
-        case "f16":
-            return F16
-        case "bf16":
-            return BF16
-        case "f32":
-            return F32
-        case "f64":
-            return F64
-        case _:
-            raise Error(t"no float format named {name}")
+    for format in materialize[FORMATS]():
+        if format.name() == name:
+            return format
+    raise Error(t"no float format named {name}")

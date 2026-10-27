@@ -43,7 +43,7 @@ from sets import BitSet
 from syntax import ast
 from syntax.chars import is_digit, is_word_char
 from wire.format import format_value
-from wire.value import ERROR, HANDLE, LIST, MAP, OPTION, RECORD, STRING, TUPLE, Value
+from wire.value import Value
 
 from .aggregate import run_aggregate
 from .decode import decode, describe
@@ -506,7 +506,7 @@ struct Prop(Property, Movable):
     def show(mut self, v: Value, t: Int) -> String:
         """A value for a counterexample: a handle by its observed fields."""
         try:
-            if v.kind == HANDLE:
+            if v.kind == .HANDLE:
                 ref spec = self.loaded[].spec
                 var m = spec.model_named(spec.types.info(t).name) if spec.types.kind(t) == ty.MODEL else Optional[Int]()
                 if m:
@@ -535,7 +535,7 @@ struct Prop(Property, Movable):
         ref spec = self.loaded[].spec
         var m = spec.model_named(spec.types.info(t).name)
         var items = List[Value]()
-        if m and v.kind == HANDLE:
+        if m and v.kind == .HANDLE:
             for oi in range(len(spec.models[m.value()].observers)):
                 if len(spec.models[m.value()].observers[oi].params) > 0:
                     continue
@@ -632,7 +632,7 @@ struct Prop(Property, Movable):
             for p in range(len(args)):
                 input_text.append(self.show(args[p], self.ptypes[p]))
         for i in self.checked:
-            if i >= len(args) or args[i].kind != HANDLE:
+            if i >= len(args) or args[i].kind != .HANDLE:
                 before.append(Value.none())
                 continue
             try:
@@ -649,7 +649,7 @@ struct Prop(Property, Movable):
             self.live_text.clear()
             own = "self" in self.modified
             for k in range(len(self.live)):
-                if own and len(args) > 0 and args[0].kind == HANDLE and self.live[k].handle_id() == args[0].handle_id():
+                if own and len(args) > 0 and args[0].kind == .HANDLE and self.live[k].handle_id() == args[0].handle_id():
                     continue
                 live_checked.append(k)
                 try:
@@ -675,9 +675,9 @@ struct Prop(Property, Movable):
                 cond_msg.append(located(spec, j.node, j.message) if j.node > 0 else j.message.copy())
         # The call.
         var reply = self.host.call(self.f, args)
-        if reply.kind == ERROR and reply.name() == TIMEOUT:
+        if reply.kind == .ERROR and reply.name() == TIMEOUT:
             return self._inconclusive_all(counting, args)
-        var raised = reply.kind == ERROR
+        var raised = reply.kind == .ERROR
         self.last_ran = True
         self.last_reply = reply.copy()
         self.last_result = Value.none()
@@ -747,7 +747,7 @@ struct Prop(Property, Movable):
                     else:
                         for q in range(len(self.checked)):
                             var pi = self.checked[q]
-                            if pi >= len(args) or args[pi].kind != HANDLE:
+                            if pi >= len(args) or args[pi].kind != .HANDLE:
                                 continue
                             try:
                                 var after = self.digest(args[pi], self.ptypes[pi])
@@ -1060,7 +1060,7 @@ struct Prop(Property, Movable):
         var afters = String()
         if not raised:
             for p in range(len(func.params)):
-                if func.params[p].name in self.modified and args[p].kind == HANDLE:
+                if func.params[p].name in self.modified and args[p].kind == .HANDLE:
                     afters += String("\n", func.params[p].name, " after = ", self.show(args[p], self.ptypes[p]))
         if afters:
             if spec.types.kind(self.rtype) == ty.UNIT:
@@ -1237,7 +1237,7 @@ def _example_args(mut prop: Prop, ex: Value) raises -> List[Value]:
     """The inputs of an explicit example, read against the parameter types."""
     ref spec = prop.loaded[].spec
     ref func = spec.fns[prop.f]
-    if ex.kind != MAP:
+    if ex.kind != .MAP:
         raise Error("an example is a map from parameter name to value")
     var args = List[Value]()
     var used = 0
@@ -1245,7 +1245,7 @@ def _example_args(mut prop: Prop, ex: Value) raises -> List[Value]:
         var found = -1
         for k in range(ex.count()):
             var key = ex.item(2 * k)
-            if key.kind == STRING and key.text() == func.params[i].name:
+            if key.kind == .STRING and key.text() == func.params[i].name:
                 found = k
         if found < 0:
             if func.params[i].default == 0:

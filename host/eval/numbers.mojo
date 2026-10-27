@@ -14,7 +14,7 @@ from syntax import ast
 from wire.equality import canonical_eq
 from wire.format import format_value
 from wire.order import compare
-from wire.value import Value, INT, FLOAT, STRING, BYTES, LIST, TUPLE, MAP, OPTION, ENUM, REAL, QERR
+from wire.value import Value
 
 
 comptime MAX_SHIFT = 1 << 24
@@ -30,11 +30,11 @@ def show(v: Value) -> String:
 
 
 def kind_text(v: Value) -> String:
-    if v.kind == LIST or v.kind == TUPLE:
+    if v.kind == .LIST or v.kind == .TUPLE:
         return String("a list of length ", v.count())
-    if v.kind == STRING:
+    if v.kind == .STRING:
         return String("a string of length ", v.text().byte_length())
-    if v.kind == BYTES:
+    if v.kind == .BYTES:
         return String("bytes of length ", len(v.data()))
     return show(v)
 
@@ -43,19 +43,19 @@ def kind_text(v: Value) -> String:
 
 
 def is_number(v: Value) -> Bool:
-    return v.kind == INT or v.kind == REAL or v.kind == FLOAT
+    return v.kind == .INT or v.kind == .REAL or v.kind == .FLOAT
 
 
 def real_of(v: Value) raises -> Real:
     """An INT, REAL or FLOAT as an extended real. Promoting a NaN is an error."""
-    if v.kind == INT:
+    if v.kind == .INT:
         return Real(v.as_bigint())
-    if v.kind == REAL:
+    if v.kind == .REAL:
         return Real(
             lowest_numerator=v.item(0).as_bigint(),
             lowest_denominator=v.item(1).as_bigint(),
         )
-    if v.kind == FLOAT:
+    if v.kind == .FLOAT:
         var f = format_by_id(v.float_format_id())
         if is_nan(f, v.float_bits()):
             raise Error("promoting a NaN to a real is an error")
@@ -65,29 +65,29 @@ def real_of(v: Value) raises -> Real:
 
 def promote(v: Value) raises -> Value:
     """A FLOAT as the REAL it denotes; INT and REAL unchanged."""
-    if v.kind == FLOAT:
+    if v.kind == .FLOAT:
         return real_value(real_of(v))
     return v.copy()
 
 
 def to_real_kind(v: Value) -> Value:
     """An INT as the REAL of the same value; every other value unchanged."""
-    if v.kind == INT:
+    if v.kind == .INT:
         return Value.real(v.as_bigint(), BigInt(1))
     return v.copy()
 
 
 def big_of(v: Value, what: String) raises -> BigInt:
     """An integer: an INT, or a REAL that is a whole number."""
-    if v.kind == INT:
+    if v.kind == .INT:
         return v.as_bigint()
-    if v.kind == REAL and v.item(1).as_bigint() == BigInt(1):
+    if v.kind == .REAL and v.item(1).as_bigint() == BigInt(1):
         return v.item(0).as_bigint()
     raise Error(t"{what} must be an integer, but it is {show(v)}")
 
 
 def index_of_value(v: Value, what: String) raises -> BigInt:
-    if v.kind != INT:
+    if v.kind != .INT:
         raise Error(t"{what} must be an integer, but it is {show(v)}")
     return v.as_bigint()
 
@@ -96,12 +96,12 @@ def index_of_value(v: Value, what: String) raises -> BigInt:
 
 
 def negate(v: Value) raises -> Value:
-    if v.kind == FLOAT:
+    if v.kind == .FLOAT:
         var f = format_by_id(v.float_format_id())
         return Value.float(f, v.float_bits() ^ f.sign_mask())
-    if v.kind == INT:
+    if v.kind == .INT:
         return Value.int(-v.as_bigint())
-    if v.kind == REAL:
+    if v.kind == .REAL:
         return real_value(-real_of(v))
     raise Error(t"unary - needs a number, but the operand is {show(v)}")
 
@@ -191,7 +191,7 @@ def arith(op: ast.Op, a: Value, b: Value) raises -> Value:
         var x = big_of(a, String(t"the left operand of {op}"))
         var y = big_of(b, String(t"the right operand of {op}"))
         return Value.int(_bitwise(x, y, op == .BITOR))
-    if a.kind == INT and b.kind == INT and op != .DIV:
+    if a.kind == .INT and b.kind == .INT and op != .DIV:
         var x = a.as_bigint()
         var y = b.as_bigint()
         if op == .ADD:
@@ -243,13 +243,13 @@ def codepoint_slice(s: String, a: Int, b: Int) -> String:
 
 
 def is_stringish(v: Value) -> Bool:
-    return v.kind == STRING or (v.kind == ENUM and v.name() == "")
+    return v.kind == .STRING or (v.kind == .ENUM and v.name() == "")
 
 
 def sequence_length(v: Value) -> Int:
-    if v.kind == STRING:
+    if v.kind == .STRING:
         return codepoint_count(v.text())
-    if v.kind == BYTES:
+    if v.kind == .BYTES:
         return len(v.data())
     return v.count()
 
@@ -262,9 +262,9 @@ def index_value(v: Value, i: Value) raises -> Value:
     if small is None or Int(small.value()) < 0 or Int(small.value()) >= n:
         raise Error(t"index {idx} is out of range for {kind_text(v)}")
     var k = Int(small.value())
-    if v.kind == BYTES:
+    if v.kind == .BYTES:
         return Value.int(Int(v.data()[k]))
-    if v.kind == LIST or v.kind == TUPLE:
+    if v.kind == .LIST or v.kind == .TUPLE:
         return v.item(k)
     return Value.string(codepoint_slice(v.text(), k, k + 1))
 
@@ -283,33 +283,33 @@ def slice_value(v: Value, a: Value, b: Value) raises -> Value:
         raise Error(
             t"slice [{a.as_bigint()}:{b.as_bigint()}] is out of range for {kind_text(v)} (need 0 <= a <= b <= len)"
         )
-    if v.kind == BYTES:
+    if v.kind == .BYTES:
         return Value.bytes(List(v.data()[lo:hi]))
-    if v.kind == LIST:
+    if v.kind == .LIST:
         return Value.list([v.item(i) for i in range(lo, hi)])
     return Value.string(codepoint_slice(v.text(), lo, hi))
 
 
 def concat(a: Value, b: Value) raises -> Optional[Value]:
     """`a + b` on lists, strings and bytes; None for other operands."""
-    if a.kind == LIST and b.kind == LIST:
+    if a.kind == .LIST and b.kind == .LIST:
         return Value.list([a.item(i) for i in range(a.count())] + [b.item(i) for i in range(b.count())])
     if is_stringish(a) and is_stringish(b):
         return Value.string(String(a.text(), b.text()))
-    if a.kind == BYTES and b.kind == BYTES:
+    if a.kind == .BYTES and b.kind == .BYTES:
         return Value.bytes(List(a.data()) + List(b.data()))
     return None
 
 
 def elements(v: Value, what: String) raises -> List[Value]:
     """What a comprehension ranges over."""
-    if v.kind == LIST or v.kind == TUPLE:
+    if v.kind == .LIST or v.kind == .TUPLE:
         return [v.item(i) for i in range(v.count())]
-    if v.kind == BYTES:
+    if v.kind == .BYTES:
         return [Value.int(Int(b)) for b in v.data()]
     if is_stringish(v):
         return [Value.string(String(cp)) for cp in v.text().codepoints()]
-    if v.kind == MAP:
+    if v.kind == .MAP:
         return [v.item(2 * i) for i in range(v.count())]
     raise Error(t"{what} ranges over a list, string, bytes or map, but got {show(v)}")
 
@@ -318,9 +318,9 @@ def elements(v: Value, what: String) raises -> List[Value]:
 
 
 def _has_literal(v: Value) -> Bool:
-    if v.kind == ENUM:
+    if v.kind == .ENUM:
         return v.name() == ""
-    if v.kind == LIST or v.kind == TUPLE or v.kind == OPTION or v.kind == MAP:
+    if v.kind == .LIST or v.kind == .TUPLE or v.kind == .OPTION or v.kind == .MAP:
         return any([_has_literal(v.item(i)) for i in range(v.item_count())])
     return False
 
@@ -329,14 +329,14 @@ def norm(v: Value) raises -> Value:
     """Members of a literal union read as the strings they are."""
     if not _has_literal(v):
         return v.copy()
-    if v.kind == ENUM:
+    if v.kind == .ENUM:
         return Value.string(v.text().copy())
     var items = [norm(v.item(i)) for i in range(v.item_count())]
-    if v.kind == LIST:
+    if v.kind == .LIST:
         return Value.list(items^)
-    if v.kind == TUPLE:
+    if v.kind == .TUPLE:
         return Value.tuple(items^)
-    if v.kind == OPTION:
+    if v.kind == .OPTION:
         return Value.some(items[0].copy()) if len(items) == 1 else Value.none()
     return Value.map(
         [items[i].copy() for i in range(0, len(items), 2)],
@@ -361,12 +361,12 @@ def contains_bytes(hay: List[UInt8], needle: List[UInt8]) -> Bool:
 
 def contains(container: Value, x: Value) raises -> Bool:
     """The language's `x in container`."""
-    if container.kind == LIST or container.kind == TUPLE:
+    if container.kind == .LIST or container.kind == .TUPLE:
         for i in range(container.count()):
             if values_equal(x, container.item(i)):
                 return True
         return False
-    if container.kind == MAP:
+    if container.kind == .MAP:
         for i in range(container.count()):
             if values_equal(x, container.item(2 * i)):
                 return True
@@ -375,11 +375,11 @@ def contains(container: Value, x: Value) raises -> Bool:
         if not is_stringish(x):
             raise Error(t"in on a string looks for a substring, not {show(x)}")
         return x.text() in container.text()
-    if container.kind == BYTES:
-        if x.kind == INT:
+    if container.kind == .BYTES:
+        if x.kind == .INT:
             var small = x.as_bigint().int64_or_none()
             return small is not None and Int(small.value()) in [Int(b) for b in container.data()]
-        if x.kind == BYTES:
+        if x.kind == .BYTES:
             return contains_bytes(container.data(), x.data())
         raise Error(t"in on bytes looks for a byte or a byte string, not {show(x)}")
     raise Error(t"in needs a list, map or string on the right, not {show(container)}")
@@ -420,7 +420,7 @@ struct QParts(Movable):
 
 def qerr_parts(v: Value) raises -> QParts:
     """(steps, nans) of a qerr; a number c reads as c + 0*nan."""
-    if v.kind == QERR:
+    if v.kind == .QERR:
         return QParts(Real(v.item(0).as_bigint()), v.item(1).as_bigint())
     if is_number(v):
         return QParts(real_of(v), BigInt(0))
@@ -459,29 +459,29 @@ def qerr_compare(op: ast.Op, a: Value, b: Value) raises -> Bool:
 
 def term_of(v: Value) raises -> Value:
     """A sum or max term: a qerr or a number (a float promotes; NaN is an error)."""
-    if v.kind == QERR or v.kind == INT or v.kind == REAL:
+    if v.kind == .QERR or v.kind == .INT or v.kind == .REAL:
         return v.copy()
-    if v.kind == FLOAT:
+    if v.kind == .FLOAT:
         return promote(v)
     raise Error(t"a term must be a number or a qerr, but it is {show(v)}")
 
 
 def add_term(total: Value, v: Value) raises -> Value:
     var t = term_of(v)
-    if total.kind == QERR or t.kind == QERR:
-        if not (total.kind == QERR and t.kind == QERR):
+    if total.kind == .QERR or t.kind == .QERR:
+        if not (total.kind == .QERR and t.kind == .QERR):
             raise Error(t"cannot add {show(t)} to the qerr {show(total)}")
         return qerr_add(total, t)
     return arith(ast.Op.ADD, total, t)
 
 
 def larger(a: Value, b: Value) raises -> Value:
-    if a.kind == QERR and b.kind == QERR:
+    if a.kind == .QERR and b.kind == .QERR:
         var sa = a.item(0).as_bigint()
         var sb = b.item(0).as_bigint()
         var na = a.item(1).as_bigint()
         var nb = b.item(1).as_bigint()
         return Value.qerr(sb.copy() if sa < sb else sa.copy(), nb.copy() if na < nb else na.copy())
-    if a.kind == QERR or b.kind == QERR:
+    if a.kind == .QERR or b.kind == .QERR:
         raise Error(t"cannot compare {show(a)} with {show(b)}")
     return b.copy() if compare(a, b) < 0 else a.copy()

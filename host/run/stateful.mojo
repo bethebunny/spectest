@@ -24,7 +24,7 @@ from mcheck.search import SearchResult, search
 from mcheck.settings import Settings
 from mcheck.source import Many, Source
 from syntax import ast
-from wire.value import ERROR, HANDLE, INT, Value
+from wire.value import Value
 
 from .host import RunHost
 from .load import Loaded, fnv
@@ -382,7 +382,7 @@ struct Machine(Property):
         if not self.props[c].last_ran:
             return stop
         var name = String()
-        if c < self.n_ctors and self.props[c].last_ok and self.props[c].last_result.kind == HANDLE:
+        if c < self.n_ctors and self.props[c].last_ok and self.props[c].last_result.kind == .HANDLE:
             name = String(self.prefix, len(live) + 1)
         if want_log:
             self.log.append(self._call_text(step, receiver, name))
@@ -417,7 +417,7 @@ struct Machine(Property):
         ref prop = self.props[step.callable]
         if is_ctor and name:
             return String(name, " = ", call)
-        if prop.last_reply.kind == ERROR:
+        if prop.last_reply.kind == .ERROR:
             return String(call, " raised ", prop.last_reply.name(), ": ", prop.last_reply.text())
         if not is_ctor and prop.last_ok and self.loaded[].spec.types.kind(prop.rtype) != ty.UNIT:
             return String(call, " -> ", prop.show(prop.last_result.copy(), prop.rtype))
@@ -626,7 +626,7 @@ struct Machine(Property):
                 continue
             var dependents = [other.sid for other in program if other.target == step.sid]
             for j in range(len(step.args)):
-                if step.args[j].kind != INT or step.args[j].small_int() is None:
+                if step.args[j].kind != .INT or step.args[j].small_int() is None:
                     continue
                 var v = step.args[j].small_int().value()
                 if v == 0:

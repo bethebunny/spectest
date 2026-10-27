@@ -3,7 +3,7 @@ converts arguments and results (docs/v2/protocol.md)."""
 
 from std.python._cpython import PyObjectPtr
 
-from wire.value import ERROR, INT, Value
+from wire.value import Value
 
 from .capi import Py_NewRef, PyDict_New, PyList_New, PyList_SetItem, PyObject_VectorcallMethod
 from .convert import from_python, to_python
@@ -40,10 +40,10 @@ struct DriverClient(Movable):
         the driver returns for a name that doesn't resolve."""
         var reply = self._invoke(wire()[].m_resolve, "resolve", [new_string(name)])
         var result = from_python(reply.ptr)
-        if result.is_(ERROR):
+        if result.kind == .ERROR:
             raise Error(result.text())
         var id = result.small_int()
-        if not result.is_(INT) or id is None:
+        if result.kind != .INT or id is None:
             raise Error("driver.resolve returned ", result)
         return id.value()
 

@@ -13,35 +13,18 @@ from numeric.formats import format_by_id
 from prelude.util import codepoint_count, fail, int_of, list_items
 from wire.equality import hash_same, same
 from wire.order import compare, is_ord
-from wire.value import (
-    Value,
-    BOOL,
-    INT,
-    FLOAT,
-    STRING,
-    BYTES,
-    LIST,
-    TUPLE,
-    MAP,
-    OPTION,
-    RECORD,
-    ENUM,
-    HANDLE,
-    ERROR,
-    REAL,
-    QERR,
-)
+from wire.value import Value
 
 comptime RANGE_LIMIT = 10_000_000
 
 
 def length(x: Value) raises -> Value:
     """Elements of a list, Unicode scalars of a string, bytes, or pairs of a map."""
-    if x.kind == LIST or x.kind == TUPLE or x.kind == MAP:
+    if x.kind == .LIST or x.kind == .TUPLE or x.kind == .MAP:
         return Value.int(x.count())
-    if x.kind == BYTES:
+    if x.kind == .BYTES:
         return Value.int(len(x.data()))
-    if x.kind == STRING:
+    if x.kind == .STRING:
         return Value.int(codepoint_count(x.text()))
     raise fail("len", t"expected a collection, got {x}")
 
@@ -175,13 +158,13 @@ def index_of(xs: Value, x: Value) raises -> Value:
 
 
 def keys(m: Value) raises -> Value:
-    if m.kind != MAP:
+    if m.kind != .MAP:
         raise fail("keys", t"expected a map, got {m}")
     return Value.list([m.item(2 * i) for i in range(m.count())])
 
 
 def values(m: Value) raises -> Value:
-    if m.kind != MAP:
+    if m.kind != .MAP:
         raise fail("values", t"expected a map, got {m}")
     return Value.list([m.item(2 * i + 1) for i in range(m.count())])
 
@@ -211,7 +194,7 @@ def some(x: Value) -> Value:
 
 
 def _option(o: Value, who: String) raises:
-    if o.kind != OPTION:
+    if o.kind != .OPTION:
         raise fail(who, t"expected an option, got {o}")
 
 
@@ -269,15 +252,15 @@ def _eq_unordered(a: Value, b: Value, mode: Int) raises -> Bool:
 
 def _eq(a: Value, b: Value, mode: Int, ignore_order: Bool) raises -> Bool:
     var k = a.kind
-    if k == HANDLE or k == ERROR or b.kind == HANDLE or b.kind == ERROR:
-        raise fail("eq", t"cannot compare {k if (k == HANDLE or k == ERROR) else b.kind} values")
-    if (k == INT or k == REAL) and (b.kind == INT or b.kind == REAL):
+    if k == .HANDLE or k == .ERROR or b.kind == .HANDLE or b.kind == .ERROR:
+        raise fail("eq", t"cannot compare {k if (k == .HANDLE or k == .ERROR) else b.kind} values")
+    if (k == .INT or k == .REAL) and (b.kind == .INT or b.kind == .REAL):
         return compare(a, b) == 0
     if k != b.kind:
         return False
-    if k == FLOAT:
+    if k == .FLOAT:
         return _eq_floats(a, b, mode)
-    if k == LIST or k == TUPLE:
+    if k == .LIST or k == .TUPLE:
         if a.count() != b.count():
             return False
         if ignore_order:
@@ -286,11 +269,11 @@ def _eq(a: Value, b: Value, mode: Int, ignore_order: Bool) raises -> Bool:
             if not _eq(a.item(i), b.item(i), mode, ignore_order):
                 return False
         return True
-    if k == OPTION:
+    if k == .OPTION:
         if a.count() != b.count():
             return False
         return a.count() == 0 or _eq(a.item(0), b.item(0), mode, ignore_order)
-    if k == MAP:
+    if k == .MAP:
         if a.count() != b.count():
             return False
         for i in range(a.count()):
@@ -304,7 +287,7 @@ def _eq(a: Value, b: Value, mode: Int, ignore_order: Bool) raises -> Bool:
             if not found:
                 return False
         return True
-    if k == RECORD:
+    if k == .RECORD:
         if a.name() != b.name() or a.count() != b.count():
             return False
         for i in range(a.item_count()):
@@ -321,7 +304,7 @@ def eq(a: Value, b: Value, float_mode: Optional[Value], order: Optional[Value]) 
     var mode = FLOAT_BITS
     if float_mode is not None:
         var m = float_mode.value().copy()
-        var text = m.text() if m.kind == STRING else ""
+        var text = m.text() if m.kind == .STRING else ""
         if text == "bits":
             mode = FLOAT_BITS
         elif text == "ieee":
@@ -333,7 +316,7 @@ def eq(a: Value, b: Value, float_mode: Optional[Value], order: Optional[Value]) 
     var ignore = False
     if order is not None:
         var o = order.value().copy()
-        var text = o.text() if o.kind == STRING else ""
+        var text = o.text() if o.kind == .STRING else ""
         if text == "ignore":
             ignore = True
         elif text != "exact":

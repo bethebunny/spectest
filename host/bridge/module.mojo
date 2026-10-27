@@ -18,7 +18,7 @@ from std.memory.alloc import unsafe_alloc
 from std.python._cpython import PyObjectPtr
 from std.time import perf_counter_ns
 
-from wire.value import LIST, Value
+from wire.value import Value
 
 from bridge.capi import (
     METH_FASTCALL,
@@ -120,7 +120,7 @@ def _argument(args: Int, i: Int) -> PyObjectPtr:
 
 def _values(list: PyObjectPtr) raises -> List[Value]:
     var v = from_python(list)
-    if not v.is_(LIST):
+    if v.kind != .LIST:
         raise Error("TypeError: args must be a list of wire objects")
     return [v.item(i) for i in range(v.count())]
 

@@ -6,7 +6,6 @@ from check.spec import Spec, R_OLD
 from partitions.compile import compile_set_aliased
 from sets import BitSet, SetContext
 from syntax import ast
-from wire import value as wv
 from wire.value import Value
 
 from .coerce import bits_of_value, fit
@@ -90,7 +89,7 @@ def judge[
     var run = Run()
     try:
         var v = ev(spec, c.expr, env, run, host)
-        if v.kind != wv.BOOL:
+        if v.kind != .BOOL:
             return Judgment(J_ERROR, String(t"the clause must evaluate to a bool, but it is {show(v)}"), c.expr)
         return Judgment(J_TRUE if v.as_bool() else J_FALSE)
     except err:
@@ -201,7 +200,7 @@ def class_holds[
                     var params = [Value.none() for _ in func.params]
                     params[part.param] = value.copy()
                     var held = evaluate(spec, expr, Env(params^), host)
-                    if held.kind != wv.BOOL:
+                    if held.kind != .BOOL:
                         raise Error(t"a predicate class must be a bool, but it is {show(held)}")
                     return held.as_bool()
                 var ctx = SetContext()

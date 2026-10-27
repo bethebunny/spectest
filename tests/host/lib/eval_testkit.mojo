@@ -8,7 +8,7 @@ from check.spec import Spec
 from numeric.bigint import BigInt
 from numeric.formats import F32, F64, FloatFormat
 from wire.format import format_value
-from wire.value import HANDLE, Value
+from wire.value import Value
 
 from eval.api import J_ERROR, J_FALSE, J_SKIP, J_TRUE, Judgment, evaluate, judge
 from eval.env import Env
@@ -60,7 +60,7 @@ struct Mock(EvalHost):
     ) raises -> Value:
         self.log.append(String("observe ", model, ".", observer, " ", len(args)))
         self.last_args = args.copy()
-        var of_handle = String(model, ".", observer, ".", Int(obj.handle_id()) if obj.kind == HANDLE else -2)
+        var of_handle = String(model, ".", observer, ".", Int(obj.handle_id()) if obj.kind == .HANDLE else -2)
         if of_handle in self.observed:
             return self.observed[of_handle].copy()
         var of_any = String(model, ".", observer, ".-1")

@@ -9,7 +9,7 @@ from numeric.bigint import BigInt
 from numeric.floats import exactly, is_nan, is_zero, round_to, signbit, to_real
 from numeric.formats import FloatFormat, format_by_id
 from numeric.real import Real
-from wire.value import Value, INT, FLOAT, LIST, TUPLE, MAP, OPTION, RECORD, REAL
+from wire.value import Value
 
 from .numbers import real_of, show, to_real_kind
 
@@ -41,9 +41,9 @@ def float_max(f: FloatFormat) -> UInt64:
 def _to_int(v: Value, width: Int, signed: Bool, what: String) raises -> Value:
     var type_name = String("i" if signed else "u", width)
     var n: BigInt
-    if v.kind == INT:
+    if v.kind == .INT:
         n = v.as_bigint()
-    elif v.kind == REAL and v.item(1).as_bigint() == BigInt(1):
+    elif v.kind == .REAL and v.item(1).as_bigint() == BigInt(1):
         n = v.item(0).as_bigint()
     else:
         raise Error(t"{what}: expected an integer for {type_name}, got {show(v)}")
@@ -58,7 +58,7 @@ def _inexact(what: String, v: Value, f: FloatFormat) -> Error:
 
 def _to_float(v: Value, f: FloatFormat, what: String) raises -> Value:
     var r: Real
-    if v.kind == FLOAT:
+    if v.kind == .FLOAT:
         var src = format_by_id(v.float_format_id())
         if src == f:
             return v.copy()
@@ -68,7 +68,7 @@ def _to_float(v: Value, f: FloatFormat, what: String) raises -> Value:
         if is_zero(src, bits):
             return Value.float(f, f.sign_mask() if signbit(src, bits) else UInt64(0))
         r = to_real(src, bits)
-    elif v.kind == INT or v.kind == REAL:
+    elif v.kind == .INT or v.kind == .REAL:
         r = real_of(v)
     else:
         raise Error(t"{what}: expected a number for {f}, got {show(v)}")
@@ -90,18 +90,18 @@ def coerce_arg(types: ty.Types, v: Value, t: Int, what: String) raises -> Value:
         return _to_int(v, info.bits, info.signed, what)
     if k == ty.FLOAT:
         return _to_float(v, format_by_id(UInt8(info.bits)), what)
-    if k == ty.LIST and v.kind == LIST:
+    if k == ty.LIST and v.kind == .LIST:
         return Value.list([coerce_arg(types, v.item(i), info.args[0], what) for i in range(v.count())])
-    if k == ty.OPTION and v.kind == OPTION:
+    if k == ty.OPTION and v.kind == .OPTION:
         return v.copy() if v.count() == 0 else Value.some(coerce_arg(types, v.item(0), info.args[0], what))
-    if k == ty.TUPLE and v.kind == TUPLE and v.count() == len(info.args):
+    if k == ty.TUPLE and v.kind == .TUPLE and v.count() == len(info.args):
         return Value.tuple([coerce_arg(types, v.item(i), info.args[i], what) for i in range(v.count())])
-    if k == ty.MAP and v.kind == MAP:
+    if k == ty.MAP and v.kind == .MAP:
         return Value.map(
             [coerce_arg(types, v.item(2 * i), info.args[0], what) for i in range(v.count())],
             [coerce_arg(types, v.item(2 * i + 1), info.args[1], what) for i in range(v.count())],
         )
-    if k == ty.RECORD and v.kind == RECORD:
+    if k == ty.RECORD and v.kind == .RECORD:
         var names: List[String] = []
         var vals: List[Value] = []
         for i in range(v.count()):
@@ -131,13 +131,13 @@ def fit(types: ty.Types, v: Value, t: Int) -> Value:
         return v.copy()
     ref info = types.info(t)
     try:
-        if k == ty.LIST and v.kind == LIST:
+        if k == ty.LIST and v.kind == .LIST:
             return Value.list([fit(types, v.item(i), info.args[0]) for i in range(v.count())])
-        if k == ty.OPTION and v.kind == OPTION and v.count() == 1:
+        if k == ty.OPTION and v.kind == .OPTION and v.count() == 1:
             return Value.some(fit(types, v.item(0), info.args[0]))
-        if k == ty.TUPLE and v.kind == TUPLE and v.count() == len(info.args):
+        if k == ty.TUPLE and v.kind == .TUPLE and v.count() == len(info.args):
             return Value.tuple([fit(types, v.item(i), info.args[i]) for i in range(v.count())])
-        if k == ty.MAP and v.kind == MAP:
+        if k == ty.MAP and v.kind == .MAP:
             return Value.map(
                 [fit(types, v.item(2 * i), info.args[0]) for i in range(v.count())],
                 [fit(types, v.item(2 * i + 1), info.args[1]) for i in range(v.count())],
@@ -178,11 +178,11 @@ def bits_of_value(types: ty.Types, t: Int, v: Value) raises -> UInt64:
     if info.kind == ty.BOOL:
         return UInt64(1) if v.as_bool() else UInt64(0)
     if info.kind == ty.FLOAT:
-        if v.kind != FLOAT:
+        if v.kind != .FLOAT:
             raise Error(t"expected a float, got {show(v)}")
         return v.float_bits()
     if info.kind == ty.FIXED_INT:
-        if v.kind != INT:
+        if v.kind != .INT:
             raise Error(t"expected an integer, got {show(v)}")
         var mask = ~UInt64(0) if info.bits == 64 else (UInt64(1) << UInt64(info.bits)) - 1
         var small = v.small_int()

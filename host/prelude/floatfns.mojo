@@ -20,7 +20,7 @@ from numeric.floats import (
 from numeric.formats import FloatFormat
 from numeric.real import Real
 from prelude.util import fail, float_of, real_of, real_value
-from wire.value import Value, FLOAT, QERR
+from wire.value import Value
 
 
 def classify(who: String, v: Value) raises -> Value:
@@ -87,7 +87,7 @@ def _ordinal(f: FloatFormat, bits: UInt64) -> Int:
 
 def _in_format(v: Value, f: FloatFormat) raises -> Value:
     var who = String("qe<", f, ">")
-    if v.kind == FLOAT:
+    if v.kind == .FLOAT:
         if v.float_format_id() != f.id:
             raise fail(who, t"compares {f} values, got a {float_of(v, who)}")
         return v.copy()
@@ -118,7 +118,7 @@ def qe(x_in: Value, y_in: Value, format: Optional[FloatFormat]) raises -> Value:
 
 
 def qerr_part(who: String, v: Value, index: Int) raises -> Value:
-    if v.kind != QERR:
+    if v.kind != .QERR:
         raise fail(who, t"expected a qerr, got {v}")
     return v.item(index)
 

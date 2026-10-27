@@ -15,7 +15,6 @@ from prelude import api
 from prelude.collections import eq as prelude_eq
 from sets import BitSet, SetContext
 from syntax import ast
-from wire import value as wv
 from wire.equality import same
 from wire.value import Value
 
@@ -100,13 +99,13 @@ def self_of(env: Env) raises -> Value:
 
 
 def want_bool(v: Value, what: String) raises -> Bool:
-    if v.kind != wv.BOOL:
+    if v.kind != .BOOL:
         raise Error(t"{what} must be a bool, but it is {show(v)}")
     return v.as_bool()
 
 
 def is_sequence(v: Value) -> Bool:
-    return v.kind == wv.LIST or v.kind == wv.STRING or v.kind == wv.BYTES or v.kind == wv.ENUM
+    return v.kind == .LIST or v.kind == .STRING or v.kind == .BYTES or v.kind == .ENUM
 
 
 def ev[
@@ -179,7 +178,7 @@ def ev_inner[
     if k == .INDEX:
         var v = ev(spec, n.children[0], env, run, host)
         var i = ev(spec, n.children[1], env, run, host)
-        if v.kind == wv.MAP:
+        if v.kind == .MAP:
             return map_lookup(v, i)
         if not is_sequence(v):
             raise Error(t"cannot index {show(v)}")
@@ -193,7 +192,7 @@ def ev_inner[
         return slice_value(v, lo, hi)
     if k == .TUPLE_INDEX:
         var v = ev(spec, n.children[0], env, run, host)
-        if v.kind != wv.TUPLE and v.kind != wv.LIST:
+        if v.kind != .TUPLE and v.kind != .LIST:
             raise Error(t".{n.text} needs a tuple, but the value is {show(v)}")
         var index = Int(n.text)
         if index < 0 or index >= v.count():
@@ -286,12 +285,12 @@ def ev_attr[
         return Value.float(f, top if r.name == "max" else top | f.sign_mask())
     if kind == sp.R_OBSERVER:
         var obj = ev(spec, n.children[0], env, run, host)
-        if obj.kind != wv.HANDLE:
+        if obj.kind != .HANDLE:
             raise Error(t"observer {n.text} needs a handle, but got {show(obj)}")
         return host.observe(obj, r.owner, r.index, [])
     if kind == sp.R_RECORD_FIELD:
         var rec = ev(spec, n.children[0], env, run, host)
-        if rec.kind != wv.RECORD:
+        if rec.kind != .RECORD:
             raise Error(t".{n.text} needs a record, but got {show(rec)}")
         for i in range(rec.count()):
             if rec.item(2 * i).text() == n.text:
@@ -299,7 +298,7 @@ def ev_attr[
         raise Error(t"record {rec.name()} has no field {n.text}")
     if kind == sp.R_QERR_PART:
         var q = ev(spec, n.children[0], env, run, host)
-        if q.kind != wv.QERR:
+        if q.kind != .QERR:
             raise Error(t".{n.text} needs a qerr, but got {show(q)}")
         return q.item(0 if n.text == "steps" else 1)
     if kind == sp.R_SET_CTOR:
@@ -327,7 +326,7 @@ def ev_binary[
         return Value.bool(set_contains(spec, n.children[1], ev(spec, n.children[0], env, run, host)))
     var a = ev(spec, n.children[0], env, run, host)
     var b = ev(spec, n.children[1], env, run, host)
-    var has_qerr = a.kind == wv.QERR or b.kind == wv.QERR
+    var has_qerr = a.kind == .QERR or b.kind == .QERR
     if op == .EQ or op == .NE:
         var equal: Bool
         if has_qerr:
@@ -343,7 +342,7 @@ def ev_binary[
         return Value.bool(contains(b, a))
     if op == .ADD:
         if has_qerr:
-            if a.kind == wv.QERR and b.kind == wv.QERR:
+            if a.kind == .QERR and b.kind == .QERR:
                 return qerr_add(a, b)
             raise Error(t"+ adds two qerr values, not {show(a)} and {show(b)}")
         var joined = concat(a, b)
@@ -510,7 +509,7 @@ def ev_call[
         var args = bind_args(spec, e, f.params, f.name, env, run, host)
         coerce_args(spec, args, f.params, f.name)
         var out = host.call_fn(r.index, args^)
-        if out.kind == wv.ERROR:
+        if out.kind == .ERROR:
             raise run.skip(e, String(t"the call of {f.name} raised {out.name()}: {out.text()}"))
         return fit(spec.types, out, spec.node_types[e])
     if kind == sp.R_DEF:
@@ -528,7 +527,7 @@ def ev_call[
             if spec.ast.nodes[callee].kind != .ATTR:
                 raise Error(t"observer call {r.name} has no handle")
             obj = ev(spec, spec.ast.nodes[callee].children[0], env, run, host)
-        if obj.kind != wv.HANDLE:
+        if obj.kind != .HANDLE:
             raise Error(t"observer {r.name} needs a handle, but got {show(obj)}")
         var what = String(spec.models[r.owner].name, ".", r.name)
         var args = bind_args(spec, e, obs.params, what, env, run, host)

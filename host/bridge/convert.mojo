@@ -11,9 +11,7 @@ from std.python._cpython import PyObjectPtr
 
 from numeric.bigint import BigInt
 from numeric.formats import format_by_id, format_by_name
-from wire.value import (
-    BOOL, BYTES, ENUM, ERROR, FLOAT, HANDLE, INT, LIST, MAP, OPTION, RECORD, STRING, TUPLE, Value,
-)
+from wire.value import Value
 
 from .capi import (
     Py_NewRef,
@@ -188,9 +186,9 @@ def _from_py(obj: PyObjectPtr, w: Pointer[Wire, MutUntrackedOrigin]) raises -> V
 
 def _to_py(value: Value, w: Pointer[Wire, MutUntrackedOrigin]) raises -> Owned:
     var kind = value.kind
-    if kind == BOOL:
+    if kind == .BOOL:
         return Owned(checked(PyBool_FromLong(value.as_bool())))
-    if kind == INT:
+    if kind == .INT:
         var small: Optional[Int]
         if (small := value.small_int()) is not None:
             return Owned(checked(PyLong_FromLongLong(Int64(small.value()))))
@@ -199,32 +197,32 @@ def _to_py(value: Value, w: Pointer[Wire, MutUntrackedOrigin]) raises -> Owned:
         var made = PyLong_FromString(Int(digits.unsafe_ptr()), 16)
         _ = len(digits)  # keeps the text alive through the call
         return Owned(checked(made))
-    if kind == FLOAT:
+    if kind == .FLOAT:
         var fmt = format_by_id(value.float_format_id())
         return call(w[].float_cls, [new_string(String(fmt.name())), new_u64(value.float_bits())])
-    if kind == STRING:
+    if kind == .STRING:
         return new_string(value.text())
-    if kind == BYTES:
+    if kind == .BYTES:
         ref data = value.data()
         return Owned(checked(PyBytes_FromStringAndSize(Int(data.unsafe_ptr()), len(data))))
-    if kind == LIST:
+    if kind == .LIST:
         var out = Owned(checked(PyList_New(value.count())))
         for i in range(value.count()):
             _ = PyList_SetItem(out.ptr, i, _to_py(value.item(i), w).take())
         return out^
-    if kind == TUPLE:
+    if kind == .TUPLE:
         return _tuple_of_items(value, w)
-    if kind == OPTION:
+    if kind == .OPTION:
         return Owned(Py_NewRef(w[].none)) if value.count() == 0 else _to_py(value.item(0), w)
-    if kind == MAP:
+    if kind == .MAP:
         return call(w[].map_cls, [_pairs(value, w)])
-    if kind == RECORD:
+    if kind == .RECORD:
         return call(w[].record_cls, [new_string(value.name()), _pairs(value, w)])
-    if kind == ENUM:
+    if kind == .ENUM:
         return call(w[].enum_cls, [new_string(value.name()), new_string(value.text())])
-    if kind == HANDLE:
+    if kind == .HANDLE:
         return call(w[].handle_cls, [new_u64(value.handle_id()), new_string(value.name())])
-    if kind == ERROR:
+    if kind == .ERROR:
         return call(
             w[].error_cls,
             [new_string(value.name()), _tuple_of_items(value, w), new_string(value.text())],

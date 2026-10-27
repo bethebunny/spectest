@@ -32,7 +32,7 @@ from partitions.compile import compile_set_aliased
 from sets import BitSet, SetContext
 from syntax import ast
 from wire.format import format_value
-from wire.value import BOOL, QERR, Value
+from wire.value import Value
 
 from .host import RunHost
 from .options import RunOptions
@@ -43,7 +43,7 @@ comptime WORST_LIMIT = 5
 
 def _rank_less(a: Value, b: Value) raises -> Bool:
     """Is term `a` smaller than term `b`? A qerr ranks by its NaN part, then its steps."""
-    if a.kind == QERR and b.kind == QERR:
+    if a.kind == .QERR and b.kind == .QERR:
         var na = a.item(1).as_bigint()
         var nb = b.item(1).as_bigint()
         if na != nb:
@@ -53,7 +53,7 @@ def _rank_less(a: Value, b: Value) raises -> Bool:
 
 
 def _is_zero(t: Value) raises -> Bool:
-    if t.kind == QERR:
+    if t.kind == .QERR:
         return t.item(0).as_bigint().is_zero() and t.item(1).as_bigint().is_zero()
     return compare_values(t, Value.int(0)) == 0
 
@@ -173,7 +173,7 @@ def run_aggregate(
                 raise Error(located(spec, node, run.err_message if run.err_node >= 0 else String(err)))
             evaluated += 1
             if kind == .ALL:
-                if term.kind != BOOL:
+                if term.kind != .BOOL:
                     raise Error(located(spec, body, String("the body of all(...) must be a bool, not ", show(term))))
                 if not term.as_bool():
                     failures += 1
@@ -182,7 +182,7 @@ def run_aggregate(
                         worst_terms.append(Value.bool(False))
                 continue
             var t = term_of(term)
-            if t.kind != QERR and compare_values(t, Value.int(0)) < 0:
+            if t.kind != .QERR and compare_values(t, Value.int(0)) < 0:
                 raise Error(
                     located(
                         spec,
@@ -234,12 +234,12 @@ def run_aggregate(
                     raise Error(located(spec, top, "max(...) over a set with no members has no value"))
                 value = Value.none()
             summary.bound = format_value(bound)
-            if value.kind == BOOL or (best is None and kind == .MAX):
+            if value.kind == .BOOL or (best is None and kind == .MAX):
                 holds = True
                 value_text = "none"
             else:
                 value_text = format_value(value)
-                if value.kind == QERR or bound.kind == QERR:
+                if value.kind == .QERR or bound.kind == .QERR:
                     holds = qerr_compare(op, value, bound)
                 else:
                     var c = compare_values(value, bound)

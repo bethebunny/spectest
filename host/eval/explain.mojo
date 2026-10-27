@@ -4,7 +4,6 @@ subexpressions that matter, following the failing structure."""
 from check import types as ty
 from check.spec import Spec, R_OLD
 from syntax import ast
-from wire import value as wv
 from wire.value import Value
 
 from .core import ev, tkind, set_members
@@ -36,10 +35,10 @@ struct Outcome(Copyable, Movable):
         self.note = note^
 
     def is_bool(self, want: Bool) -> Bool:
-        return self.ok and self.value.kind == wv.BOOL and self.value.as_bool() == want
+        return self.ok and self.value.kind == .BOOL and self.value.as_bool() == want
 
     def is_any_bool(self) -> Bool:
-        return self.ok and self.value.kind == wv.BOOL
+        return self.ok and self.value.kind == .BOOL
 
     def text(self) -> String:
         return self.note.copy() if not self.ok else show(self.value)

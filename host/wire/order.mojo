@@ -6,14 +6,17 @@ point, which is the byte order of their UTF-8; bytes by unsigned byte. Tuples an
 lists compare lexicographically, a proper prefix first. Every other kind raises.
 """
 
-from wire import value as wv
-from wire.value import Value
+from wire.value import Kind, Value
 
 
 def is_ord(value: Value) -> Bool:
-    if value.kind in [wv.BOOL, wv.INT, wv.REAL, wv.STRING, wv.BYTES]:
-        return True
-    return value.kind in [wv.LIST, wv.TUPLE] and all([is_ord(item) for item in value.items()])
+    match value.kind:
+        case .BOOL | .INT | .REAL | .STRING | .BYTES:
+            return True
+        case .LIST | .TUPLE:
+            return all([is_ord(item) for item in value.items()])
+        case _:
+            return False
 
 
 def _compare[T: Comparable](a: T, b: T) -> Int:
@@ -28,20 +31,22 @@ def _compare_bytes(a: Span[UInt8, _], b: Span[UInt8, _]) -> Int:
 
 
 def compare(a: Value, b: Value) raises -> Int:
-    if a.kind in [wv.INT, wv.REAL] and b.kind in [wv.INT, wv.REAL]:
+    if a.kind in [Kind.INT, Kind.REAL] and b.kind in [Kind.INT, Kind.REAL]:
         return _compare(a.as_real(), b.as_real())
     if a.kind != b.kind:
         raise Error(t"cannot order a {a.kind} against a {b.kind}")
-    if a.kind == wv.BOOL:
-        return _compare(Int(a.as_bool()), Int(b.as_bool()))
-    if a.kind == wv.STRING:
-        return _compare_bytes(a.text().as_bytes(), b.text().as_bytes())
-    if a.kind == wv.BYTES:
-        return _compare_bytes(Span(a.data()), Span(b.data()))
-    if a.kind in [wv.LIST, wv.TUPLE]:
-        for x, y in zip(a.items(), b.items()):
-            var c = compare(x, y)
-            if c != 0:
-                return c
-        return _compare(a.count(), b.count())
-    raise Error(t"a {a.kind} has no order")
+    match a.kind:
+        case .BOOL:
+            return _compare(Int(a.as_bool()), Int(b.as_bool()))
+        case .STRING:
+            return _compare(a.text(), b.text())
+        case .BYTES:
+            return _compare_bytes(a.data(), b.data())
+        case .LIST | .TUPLE:
+            for x, y in zip(a.items(), b.items()):
+                var c = compare(x, y)
+                if c != 0:
+                    return c
+            return _compare(a.count(), b.count())
+        case _:
+            raise Error(t"a {a.kind} has no order")

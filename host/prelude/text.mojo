@@ -5,7 +5,7 @@ No codec is involved, so a spec can judge one.
 
 from gen.scalars import append_utf8
 from prelude.util import fail, list_items
-from wire.value import Value, BYTES, STRING, INT
+from wire.value import Value
 
 
 def _lead_form(lead: Int) -> Optional[Tuple[Int, Int, Int]]:
@@ -28,7 +28,7 @@ def _lead_form(lead: Int) -> Optional[Tuple[Int, Int, Int]]:
 
 
 def valid_utf8(b: Value) raises -> Value:
-    if b.kind != BYTES:
+    if b.kind != .BYTES:
         raise fail("valid_utf8", t"expected bytes, got {b}")
     ref data = b.data()
     var n = len(data)
@@ -53,7 +53,7 @@ def valid_utf8(b: Value) raises -> Value:
 
 def codepoints(s: Value) raises -> Value:
     """The scalar values of a string, decoded by hand."""
-    if s.kind != STRING:
+    if s.kind != .STRING:
         raise fail("codepoints", t"expected a string, got {s}")
     var bytes = s.text().as_bytes()
     var out: List[Value] = []
@@ -83,7 +83,7 @@ def from_codepoints(cps: Value) raises -> Value:
     var items = list_items(cps, "from_codepoints")
     var data = List[UInt8](capacity=len(items))
     for item in items:
-        if item.kind != INT:
+        if item.kind != .INT:
             raise fail("from_codepoints", t"expected an integer, got {item}")
         var small = item.small_int()
         if small is None:

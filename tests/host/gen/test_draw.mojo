@@ -7,7 +7,7 @@ from mcheck.source import Source
 from numeric.bigint import BigInt
 from numeric.floats import is_nan, is_inf, is_zero, is_subnormal, is_normal
 from numeric.formats import format_by_id
-from wire.value import Value, BOOL, INT, FLOAT, STRING, BYTES, LIST, TUPLE, MAP, OPTION, RECORD, ENUM
+from wire.value import Value
 
 comptime N = 3000
 
@@ -25,7 +25,7 @@ def test_bool() raises:
     var yes = 0
     for _ in range(N):
         var v = draw(src, types, t, sizes)
-        assert_true(v.kind == BOOL)
+        assert_true(v.kind == .BOOL)
         yes += 1 if v.as_bool() else 0
     assert_true(yes > N // 3 and yes < 2 * N // 3)
 
@@ -42,7 +42,7 @@ def test_int_unbounded() raises:
     var small = 0
     for _ in range(N):
         var v = draw(src, types, t, sizes)
-        assert_true(v.kind == INT)
+        assert_true(v.kind == .INT)
         var s = v.small_int()
         if not s:
             big += 1
@@ -72,7 +72,7 @@ def check_fixed(width: Int, signed: Bool, seed: UInt64) raises:
     var saw_one = False
     for _ in range(N):
         var v = draw(src, types, t, sizes)
-        assert_true(v.kind == INT)
+        assert_true(v.kind == .INT)
         var x = v.as_bigint()
         assert_true(not (x < lo) and not (hi < x))
         saw_lo = saw_lo or x == lo
@@ -108,7 +108,7 @@ def check_float(format_id: UInt8, seed: UInt64) raises:
     var one = 0
     for _ in range(400):
         var v = draw(src, types, t, sizes)
-        assert_true(v.kind == FLOAT)
+        assert_true(v.kind == .FLOAT)
         assert_equal(Int(v.float_format_id()), Int(format_id))
         var b = v.float_bits()
         assert_true((b >> UInt64(f.width())) == 0 or f.width() == 64)
@@ -140,7 +140,7 @@ def test_strings() raises:
     var empty = 0
     for _ in range(N):
         var v = draw(src, types, t, sizes)
-        assert_true(v.kind == STRING)
+        assert_true(v.kind == .STRING)
         var n = 0
         for cp in v.text().codepoints():
             var c = Int(cp.to_u32())
@@ -166,7 +166,7 @@ def test_bytes() raises:
     var high = 0
     for _ in range(N):
         var v = draw(src, types, t, sizes)
-        assert_true(v.kind == BYTES)
+        assert_true(v.kind == .BYTES)
         var n = len(v.data())
         if n > 16:
             long += 1
@@ -186,7 +186,7 @@ def test_lists_and_long_share() raises:
     var seen_max = 0
     for _ in range(4000):
         var v = draw(src, types, t, sizes)
-        assert_true(v.kind == LIST)
+        assert_true(v.kind == .LIST)
         var n = v.count()
         if n > 8:
             long += 1
@@ -244,7 +244,7 @@ def test_maps_have_distinct_keys() raises:
     var biggest = 0
     for _ in range(N):
         var v = draw(src, types, t, sizes)
-        assert_true(v.kind == MAP)
+        assert_true(v.kind == .MAP)
         biggest = max(biggest, v.count())
         for i in range(v.count()):
             for j in range(i):
@@ -270,24 +270,24 @@ def test_tuple_option_literal_enum_record() raises:
     var greens = 0
     for _ in range(N):
         var v = draw(src, types, tup, sizes)
-        assert_true(v.kind == TUPLE and v.count() == 3)
-        assert_true(v.item(0).kind == BOOL and v.item(1).kind == STRING and v.item(2).kind == INT)
+        assert_true(v.kind == .TUPLE and v.count() == 3)
+        assert_true(v.item(0).kind == .BOOL and v.item(1).kind == .STRING and v.item(2).kind == .INT)
         var o = draw(src, types, opt, sizes)
-        assert_true(o.kind == OPTION)
+        assert_true(o.kind == .OPTION)
         nones += 1 if o.count() == 0 else 0
         var l = draw(src, types, lit, sizes)
-        assert_true(l.kind == ENUM and l.name() == "")
+        assert_true(l.kind == .ENUM and l.name() == "")
         var text = l.text()
         members[ord(text) - ord("a")] += 1
         var e = draw(src, types, en, sizes)
-        assert_true(e.kind == ENUM and e.name() == "m.Color")
+        assert_true(e.kind == .ENUM and e.name() == "m.Color")
         greens += 1 if e.text() == "Green" else 0
         var r = draw(src, types, rec, sizes)
-        assert_true(r.kind == RECORD and r.name() == "m.P" and r.count() == 2)
+        assert_true(r.kind == .RECORD and r.name() == "m.P" and r.count() == 2)
         assert_equal(r.item(0).text(), "x")
-        assert_true(r.item(1).kind == INT)
+        assert_true(r.item(1).kind == .INT)
         assert_equal(r.item(2).text(), "y")
-        assert_true(r.item(3).kind == BOOL)
+        assert_true(r.item(3).kind == .BOOL)
     assert_true(nones > 0 and nones < N // 2)
     for m in members:
         assert_true(m > N // 5)

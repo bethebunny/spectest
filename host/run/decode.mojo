@@ -12,31 +12,16 @@ from numeric.floats import exactly, is_nan, is_zero, round_to, signbit, to_real
 from numeric.formats import FloatFormat, format_by_id
 from .util import norm_name
 from wire.format import format_value
-from wire.value import (
-    BOOL,
-    BYTES,
-    ENUM,
-    ERROR,
-    FLOAT,
-    HANDLE,
-    INT,
-    LIST,
-    MAP,
-    OPTION,
-    RECORD,
-    STRING,
-    TUPLE,
-    Value,
-)
+from wire.value import Kind, Value
 
 
 def describe(v: Value) -> String:
     """A value for a mismatch message: its kind and, when short, its text."""
     try:
         var text = format_value(v)
-        return String(v.kind.name(), " ", text) if text.byte_length() <= 60 else String(v.kind.name())
+        return String(v.kind, " ", text) if text.byte_length() <= 60 else String(v.kind)
     except:
-        return String(v.kind.name())
+        return String(v.kind)
 
 
 def _mismatch(types: Types, t: Int, v: Value, path: String, extra: String = "") -> Error:
@@ -48,7 +33,7 @@ def _mismatch(types: Types, t: Int, v: Value, path: String, extra: String = "") 
 def _float(
     types: Types, v: Value, t: Int, f: FloatFormat, path: String
 ) raises -> Value:
-    if v.kind != FLOAT:
+    if v.kind != .FLOAT:
         raise _mismatch(types, t, v, path)
     var src = format_by_id(v.float_format_id())
     if src == f:
@@ -91,7 +76,7 @@ def _record(
     var found = [False for _ in info_names]
     for i in range(v.count()):
         var key = v.item(2 * i)
-        if v.kind == MAP and key.kind != STRING:
+        if v.kind == .MAP and key.kind != .STRING:
             raise _mismatch(types, t, v, path, "a field name is not a string")
         var name = key.text().copy()
         if name not in info_names:
@@ -113,12 +98,12 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
     if k == ty.UNIT:
         return Value.none()
     if k == ty.BOOL or k == ty.INT or k == ty.STRING or k == ty.BYTES:
-        var kind = BOOL if k == ty.BOOL else INT if k == ty.INT else STRING if k == ty.STRING else BYTES
+        var kind = Kind.BOOL if k == ty.BOOL else Kind.INT if k == ty.INT else Kind.STRING if k == ty.STRING else Kind.BYTES
         if v.kind != kind:
             raise _mismatch(types, t, v, path)
         return v.copy()
     if k == ty.FIXED_INT:
-        if v.kind != INT:
+        if v.kind != .INT:
             raise _mismatch(types, t, v, path)
         var n = v.as_bigint()
         if n < int_min(info.bits, info.signed) or int_max(info.bits, info.signed) < n:
@@ -136,21 +121,21 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
     if k == ty.FLOAT:
         return _float(types, v, t, format_by_id(UInt8(info.bits)), path)
     if k == ty.LIST:
-        if v.kind != LIST and v.kind != TUPLE:
+        if v.kind != .LIST and v.kind != .TUPLE:
             raise _mismatch(types, t, v, path)
         var items = List[Value](capacity=v.count())
         for i in range(v.count()):
             items.append(_decode(v.item(i), info.args[0], types, String(path, "[", i, "]")))
         return Value.list(items^)
     if k == ty.TUPLE:
-        if (v.kind != TUPLE and v.kind != LIST) or v.count() != len(info.args):
+        if (v.kind != .TUPLE and v.kind != .LIST) or v.count() != len(info.args):
             raise _mismatch(types, t, v, path)
         var items = List[Value](capacity=v.count())
         for i in range(v.count()):
             items.append(_decode(v.item(i), info.args[i], types, String(path, ".", i)))
         return Value.tuple(items^)
     if k == ty.MAP:
-        if v.kind != MAP:
+        if v.kind != .MAP:
             raise _mismatch(types, t, v, path)
         var keys = List[Value]()
         var vals = List[Value]()
@@ -159,30 +144,30 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
             vals.append(_decode(v.item(2 * i + 1), info.args[1], types, path + "{value}"))
         return Value.map(keys^, vals^)
     if k == ty.OPTION:
-        if v.kind == OPTION:
+        if v.kind == .OPTION:
             if v.count() == 0:
                 return Value.none()
             return Value.some(_decode(v.item(0), info.args[0], types, path))
         return Value.some(_decode(v, info.args[0], types, path))
     if k == ty.LITERAL or k == ty.ENUM:
-        if v.kind != STRING and v.kind != ENUM:
+        if v.kind != .STRING and v.kind != .ENUM:
             raise _mismatch(types, t, v, path)
         var member = v.text().copy()
         if k == ty.LITERAL:
             if member not in info.names:
                 raise _mismatch(types, t, v, path, "not a member of the union")
             return Value.enum(String(), member^)
-        if v.kind == ENUM and v.name() != "" and norm_name(v.name()) != norm_name(info.name):
+        if v.kind == .ENUM and v.name() != "" and norm_name(v.name()) != norm_name(info.name):
             raise _mismatch(types, t, v, path, String("an enum of ", v.name()))
         if member not in info.names:
             raise _mismatch(types, t, v, path, String(member, " is not a member"))
         return Value.enum(info.name.copy(), member^)
     if k == ty.RECORD:
-        if v.kind != RECORD and v.kind != MAP:
+        if v.kind != .RECORD and v.kind != .MAP:
             raise _mismatch(types, t, v, path)
         return _record(types, v, t, path, info.names, info.args)
     if k == ty.MODEL:
-        if v.kind != HANDLE:
+        if v.kind != .HANDLE:
             raise _mismatch(types, t, v, path)
         # A qualified model names a Python class; a handle of another class is not one.
         var cls = norm_name(v.name())

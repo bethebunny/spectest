@@ -3,7 +3,7 @@
 from check.spec import Spec
 from check.types import Types, MODEL as T_MODEL
 from mcheck.source import Source
-from wire.value import Kind, Value
+from wire.value import Value
 
 from .sizes import Sizes
 from .value import draw_value
@@ -24,20 +24,20 @@ comptime PARAM_SPAN = 1001
 
 def default_marker() -> Value:
     """Stands in `draw_args`' result for a parameter left to its default."""
-    return Value(Kind(0), word=1)
+    return Value(.INVALID, word=1)
 
 
 def not_drawn_marker() -> Value:
     """Stands in `draw_args`' result for a receiver, which the caller supplies."""
-    return Value(Kind(0), word=0)
+    return Value(.INVALID, word=0)
 
 
 def is_default(v: Value) -> Bool:
-    return v.kind == Kind(0) and v.word == 1
+    return v.kind == .INVALID and v.word == 1
 
 
 def is_not_drawn(v: Value) -> Bool:
-    return v.kind == Kind(0) and v.word == 0
+    return v.kind == .INVALID and v.word == 0
 
 
 def _model_args(mut spec: Spec, model: Int, t: Int, targs: List[Int]) -> Int:
