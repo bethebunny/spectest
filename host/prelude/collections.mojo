@@ -10,7 +10,7 @@ from std.hash import default_hasher
 from numeric.bigint import BigInt
 from numeric.floats import is_nan as fl_is_nan, to_real
 from numeric.formats import format_by_id
-from prelude.util import describe, fail, int_of, list_items
+from prelude.util import codepoint_count, fail, int_of, list_items
 from wire.equality import hash_same, same
 from wire.order import compare, is_ord
 from wire.value import (
@@ -42,18 +42,14 @@ def length(x: Value) raises -> Value:
     if x.kind == BYTES:
         return Value.int(len(x.data()))
     if x.kind == STRING:
-        var n = 0
-        for b in x.text().as_bytes():
-            if (Int(b) & 0xC0) != 0x80:
-                n += 1
-        return Value.int(n)
-    raise fail("len", "expected a collection, got " + describe(x))
+        return Value.int(codepoint_count(x.text()))
+    raise fail("len", t"expected a collection, got {x}")
 
 
 def _check_ordered(items: List[Value], who: String) raises:
-    for i in range(len(items)):
-        if not is_ord(items[i]):
-            raise fail(who, describe(items[i]) + " is not ordered (floats compare after real())")
+    for item in items:
+        if not is_ord(item):
+            raise fail(who, t"{item} is not ordered (floats compare after real())")
 
 
 def _cmp(a: Value, b: Value, who: String) raises -> Int:
@@ -121,20 +117,20 @@ def is_permutation(a: Value, b: Value) raises -> Value:
     if len(xs) != len(ys):
         return Value.bool(False)
     var buckets = Dict[UInt64, List[Int]]()
-    for j in range(len(ys)):
-        var key = _hash(ys[j])
+    for j, y in enumerate(ys):
+        var key = _hash(y)
         if key in buckets:
             buckets[key].append(j)
         else:
             buckets[key] = [j]
     var used = List[Bool](length=len(ys), fill=False)
-    for i in range(len(xs)):
-        var key = _hash(xs[i])
+    for x in xs:
+        var key = _hash(x)
         if key not in buckets:
             return Value.bool(False)
         var found = False
         for j in buckets[key]:
-            if not used[j] and same(xs[i], ys[j]):
+            if not used[j] and same(x, ys[j]):
                 used[j] = True
                 found = True
                 break
@@ -147,10 +143,10 @@ def is_subsequence(a: Value, b: Value) raises -> Value:
     var xs = list_items(a, "is_subsequence")
     var ys = list_items(b, "is_subsequence")
     var i = 0
-    for j in range(len(ys)):
+    for y in ys:
         if i == len(xs):
             break
-        if same(xs[i], ys[j]):
+        if same(xs[i], y):
             i += 1
     return Value.bool(i == len(xs))
 
@@ -158,11 +154,11 @@ def is_subsequence(a: Value, b: Value) raises -> Value:
 def distinct(xs: Value) raises -> Value:
     var items = list_items(xs, "distinct")
     var seen = Dict[UInt64, List[Int]]()
-    for i in range(len(items)):
-        var key = _hash(items[i])
+    for i, item in enumerate(items):
+        var key = _hash(item)
         if key in seen:
             for j in seen[key]:
-                if same(items[i], items[j]):
+                if same(item, items[j]):
                     return Value.bool(False)
             seen[key].append(i)
         else:
@@ -172,28 +168,22 @@ def distinct(xs: Value) raises -> Value:
 
 def index_of(xs: Value, x: Value) raises -> Value:
     var items = list_items(xs, "index_of")
-    for i in range(len(items)):
-        if same(items[i], x):
+    for i, item in enumerate(items):
+        if same(item, x):
             return Value.int(i)
-    raise fail("index_of", describe(x) + " is not in the list")
+    raise fail("index_of", t"{x} is not in the list")
 
 
 def keys(m: Value) raises -> Value:
     if m.kind != MAP:
-        raise fail("keys", "expected a map, got " + describe(m))
-    var out = List[Value](capacity=m.count())
-    for i in range(m.count()):
-        out.append(m.item(2 * i))
-    return Value.list(out^)
+        raise fail("keys", t"expected a map, got {m}")
+    return Value.list([m.item(2 * i) for i in range(m.count())])
 
 
 def values(m: Value) raises -> Value:
     if m.kind != MAP:
-        raise fail("values", "expected a map, got " + describe(m))
-    var out = List[Value](capacity=m.count())
-    for i in range(m.count()):
-        out.append(m.item(2 * i + 1))
-    return Value.list(out^)
+        raise fail("values", t"expected a map, got {m}")
+    return Value.list([m.item(2 * i + 1) for i in range(m.count())])
 
 
 def range_(a: Value, b: Value) raises -> Value:
@@ -201,12 +191,12 @@ def range_(a: Value, b: Value) raises -> Value:
     var lo = int_of(a, "range")
     var hi = int_of(b, "range")
     if hi - lo > BigInt(RANGE_LIMIT):
-        raise fail("range", "range(" + String(lo) + ", " + String(hi) + ") has more than " + String(RANGE_LIMIT) + " elements")
-    var out = List[Value]()
-    var small = a.small_int()
-    var hi_small = b.small_int()
-    if small and hi_small:
-        for k in range(small.value(), hi_small.value()):
+        raise fail("range", t"range({lo}, {hi}) has more than {RANGE_LIMIT} elements")
+    var out: List[Value] = []
+    var small_lo = a.small_int()
+    var small_hi = b.small_int()
+    if small_lo is not None and small_hi is not None:
+        for k in range(small_lo.value(), small_hi.value()):
             out.append(Value.int(k))
     else:
         var k = lo.copy()
@@ -222,7 +212,7 @@ def some(x: Value) -> Value:
 
 def _option(o: Value, who: String) raises:
     if o.kind != OPTION:
-        raise fail(who, "expected an option, got " + describe(o))
+        raise fail(who, t"expected an option, got {o}")
 
 
 def is_some(o: Value) raises -> Value:
@@ -241,8 +231,6 @@ def unwrap(o: Value) raises -> Value:
         raise fail("unwrap", "the option is none")
     return o.item(0)
 
-
-# eq with knobs
 
 comptime FLOAT_BITS = 0
 comptime FLOAT_IEEE = 1
@@ -282,7 +270,7 @@ def _eq_unordered(a: Value, b: Value, mode: Int) raises -> Bool:
 def _eq(a: Value, b: Value, mode: Int, ignore_order: Bool) raises -> Bool:
     var k = a.kind
     if k == HANDLE or k == ERROR or b.kind == HANDLE or b.kind == ERROR:
-        raise fail("eq", "cannot compare " + String(k if (k == HANDLE or k == ERROR) else b.kind) + " values")
+        raise fail("eq", t"cannot compare {k if (k == HANDLE or k == ERROR) else b.kind} values")
     if (k == INT or k == REAL) and (b.kind == INT or b.kind == REAL):
         return compare(a, b) == 0
     if k != b.kind:
@@ -331,23 +319,23 @@ def _eq(a: Value, b: Value, mode: Int, ignore_order: Bool) raises -> Bool:
 
 def eq(a: Value, b: Value, float_mode: Optional[Value], order: Optional[Value]) raises -> Value:
     var mode = FLOAT_BITS
-    if float_mode:
+    if float_mode is not None:
         var m = float_mode.value().copy()
-        if m.kind == STRING and m.text() == "bits":
+        var text = m.text() if m.kind == STRING else ""
+        if text == "bits":
             mode = FLOAT_BITS
-        elif m.kind == STRING and m.text() == "ieee":
+        elif text == "ieee":
             mode = FLOAT_IEEE
-        elif m.kind == STRING and m.text() == "nan_any":
+        elif text == "nan_any":
             mode = FLOAT_NAN_ANY
         else:
-            raise fail("eq", "float= must be one of bits, ieee, nan_any, got " + describe(m))
+            raise fail("eq", t"float= must be one of bits, ieee, nan_any, got {m}")
     var ignore = False
-    if order:
+    if order is not None:
         var o = order.value().copy()
-        if o.kind == STRING and o.text() == "exact":
-            ignore = False
-        elif o.kind == STRING and o.text() == "ignore":
+        var text = o.text() if o.kind == STRING else ""
+        if text == "ignore":
             ignore = True
-        else:
-            raise fail("eq", "order= must be one of exact, ignore, got " + describe(o))
+        elif text != "exact":
+            raise fail("eq", t"order= must be one of exact, ignore, got {o}")
     return Value.bool(_eq(a, b, mode, ignore))

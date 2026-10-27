@@ -19,14 +19,6 @@ comptime RNDN = Int32(0)
 comptime CELLS = 4
 """Cell 0 holds the argument, 1 the result, 2 and 3 temporaries."""
 
-comptime SQRT = 0
-comptime EXP = 1
-comptime LOG = 2
-comptime SIN = 3
-comptime COS = 4
-comptime TAN = 5
-comptime ATAN = 6
-
 
 def _try_open(path: String) -> Optional[OwnedDLHandle]:
     try:
@@ -37,12 +29,10 @@ def _try_open(path: String) -> Optional[OwnedDLHandle]:
 
 def bundled_library() -> Optional[String]:
     """The path of the MPFR copy gmpy2 ships in the virtual environment, if there is one."""
-    var roots = List[String]()
+    var roots: List[String] = [".venv", "../.venv"]
     var venv = getenv("VIRTUAL_ENV")
     if venv:
-        roots.append(venv)
-    roots.append(".venv")
-    roots.append("../.venv")
+        roots.insert(0, venv)
     for root in roots:
         for python in ["3.10", "3.11", "3.12", "3.13", "3.14"]:
             var dir = Path(root) / "lib" / ("python" + python) / "site-packages" / "gmpy2.libs"
@@ -60,10 +50,10 @@ def _open_library() raises -> OwnedDLHandle:
     if override:
         return OwnedDLHandle(override)
     var system = _try_open("libmpfr.so.6")
-    if system:
+    if system is not None:
         return system.take()
     var bundled = bundled_library()
-    if bundled:
+    if bundled is not None:
         return OwnedDLHandle(bundled.value())
     raise Error("mpfr: cannot load libmpfr.so.6 or the copy shipped with gmpy2")
 
@@ -99,7 +89,7 @@ struct Mpfr(Movable):
 
     def __init__(out self) raises:
         self.lib = _LIBRARY.get_or_create_ptr()
-        if not self.lib[].handle:
+        if self.lib[].handle is None:
             raise Error(self.lib[].error)
         self.cells = List[Int](length=4 * CELLS, fill=0)
         self.emin = Int(self.lib[].handle.value().call["mpfr_get_emin", Int](()))
@@ -190,14 +180,14 @@ struct Mpfr(Movable):
         """The exact value of a finite cell: limbs times a power of two."""
         if self.is_zero(cell):
             return Real()
-        var prec = self.cells[4 * cell]
+        var prec = self.precision(cell)
         var exp = self.cells[4 * cell + 2]
         var limbs = (prec + 63) // 64
         var ptr = Pointer[UInt64, MutUntrackedOrigin](unsafe_from_address=self.cells[4 * cell + 3])
         var magnitude = BigUInt(UInt64(0))
         for k in range(limbs - 1, -1, -1):
             magnitude = (magnitude << 64) | BigUInt(ptr[unsafe_offset=k])
-        # Drop the trailing zero bits: an odd numerator over a power of two is in lowest terms.
+        # dropping trailing zero bits leaves an odd numerator, so the power of two is in lowest terms
         var zeros = 0
         while not magnitude.bit(zeros):
             zeros += 1
@@ -214,23 +204,26 @@ struct Mpfr(Movable):
 
     # Operations
 
-    def apply(self, which: Int, rop: Int, op: Int) -> Int32:
-        """rop = f(op) at the precision of rop, rounded to nearest; the ternary value."""
+    def apply(self, function: String, rop: Int, op: Int) -> Int32:
+        """rop = function(op) at the precision of rop, rounded to nearest (the ternary value)."""
         var r = self.addr(rop)
         var x = self.addr(op)
-        if which == SQRT:
-            return self.lib[].handle.value().call["mpfr_sqrt", Int32](r, x, RNDN)
-        if which == EXP:
-            return self.lib[].handle.value().call["mpfr_exp", Int32](r, x, RNDN)
-        if which == LOG:
-            return self.lib[].handle.value().call["mpfr_log", Int32](r, x, RNDN)
-        if which == SIN:
-            return self.lib[].handle.value().call["mpfr_sin", Int32](r, x, RNDN)
-        if which == COS:
-            return self.lib[].handle.value().call["mpfr_cos", Int32](r, x, RNDN)
-        if which == TAN:
-            return self.lib[].handle.value().call["mpfr_tan", Int32](r, x, RNDN)
-        return self.lib[].handle.value().call["mpfr_atan", Int32](r, x, RNDN)
+        ref lib = self.lib[].handle.value()
+        match function:
+            case "sqrt":
+                return lib.call["mpfr_sqrt", Int32](r, x, RNDN)
+            case "exp":
+                return lib.call["mpfr_exp", Int32](r, x, RNDN)
+            case "log":
+                return lib.call["mpfr_log", Int32](r, x, RNDN)
+            case "sin":
+                return lib.call["mpfr_sin", Int32](r, x, RNDN)
+            case "cos":
+                return lib.call["mpfr_cos", Int32](r, x, RNDN)
+            case "tan":
+                return lib.call["mpfr_tan", Int32](r, x, RNDN)
+            case _:
+                return lib.call["mpfr_atan", Int32](r, x, RNDN)
 
     def subnormalize(self, cell: Int, ternary: Int32):
         _ = self.lib[].handle.value().call["mpfr_subnormalize", Int32](self.addr(cell), ternary, RNDN)

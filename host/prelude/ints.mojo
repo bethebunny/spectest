@@ -3,9 +3,8 @@
 from bigint import BigUInt
 
 from numeric.bigint import BigInt
-from numeric.formats import FloatFormat, format_by_id
+from numeric.formats import FloatFormat
 from numeric.floats import exactly
-from numeric.real import Real
 from prelude.util import fail, int_of, real_of
 from wire.value import Value, BYTES
 
@@ -26,25 +25,25 @@ def wrap(n: Value, bits: Int, signed: Bool) raises -> Value:
 def fits_int(x: Value, bits: Int, signed: Bool) raises -> Value:
     var name = String("i" if signed else "u", bits)
     var lo = -_bound(bits - 1) if signed else BigInt(0)
-    var hi = (_bound(bits - 1) - BigInt(1)) if signed else (_bound(bits) - BigInt(1))
-    var r = real_of(x, "fits<" + name + ">")
+    var hi = _bound(bits - 1 if signed else bits) - BigInt(1)
+    var r = real_of(x, String("fits<", name, ">"))
     if r.is_inf() or r.denominator != BigInt(1):
         return Value.bool(False)
     return Value.bool(not (r.numerator < lo) and not (hi < r.numerator))
 
 
 def fits_float(x: Value, f: FloatFormat) raises -> Value:
-    var r = real_of(x, "fits<" + String(f) + ">")
+    var r = real_of(x, String("fits<", f, ">"))
     return Value.bool(Bool(exactly(f, r)))
 
 
 def le_uint(b: Value) raises -> Value:
     if b.kind != BYTES:
-        raise fail("le_uint", "expected bytes, got " + String(b))
+        raise fail("le_uint", t"expected bytes, got {b}")
     ref data = b.data()
     var acc = BigUInt(UInt64(0))
     var i = len(data) - 1
-    # Seven bytes at a time keeps the number of big shifts down.
+    # seven bytes at a time keeps the big shifts few
     while i >= 0:
         var chunk = UInt64(0)
         var taken = 0

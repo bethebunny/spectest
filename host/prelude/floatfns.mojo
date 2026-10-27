@@ -19,25 +19,27 @@ from numeric.floats import (
 )
 from numeric.formats import FloatFormat
 from numeric.real import Real
-from prelude.util import fail, float_of, int_of, real_of, real_value, describe
+from prelude.util import fail, float_of, real_of, real_value
 from wire.value import Value, FLOAT, QERR
 
 
 def classify(who: String, v: Value) raises -> Value:
-    """`is_nan`, `is_inf`, `is_finite`, `is_zero`, `is_subnormal`, `signbit`."""
+    """The float predicate named `who` (`is_nan`, `signbit`, ...)."""
     var f = float_of(v, who)
     var bits = v.float_bits()
-    if who == "is_nan":
-        return Value.bool(fl_is_nan(f, bits))
-    if who == "is_inf":
-        return Value.bool(fl_is_inf(f, bits))
-    if who == "is_finite":
-        return Value.bool(fl_is_finite(f, bits))
-    if who == "is_zero":
-        return Value.bool(fl_is_zero(f, bits))
-    if who == "is_subnormal":
-        return Value.bool(fl_is_subnormal(f, bits))
-    return Value.bool(fl_signbit(f, bits))
+    match who:
+        case "is_nan":
+            return Value.bool(fl_is_nan(f, bits))
+        case "is_inf":
+            return Value.bool(fl_is_inf(f, bits))
+        case "is_finite":
+            return Value.bool(fl_is_finite(f, bits))
+        case "is_zero":
+            return Value.bool(fl_is_zero(f, bits))
+        case "is_subnormal":
+            return Value.bool(fl_is_subnormal(f, bits))
+        case _:
+            return Value.bool(fl_signbit(f, bits))
 
 
 def bits(v: Value) raises -> Value:
@@ -63,10 +65,8 @@ def _pow2(k: Int) -> Real:
 
 
 def ulp(f: FloatFormat, x: Value) raises -> Value:
-    """The spacing of the format in the binade of |x|: 2**(max(floor(log2|x|), emin) - p + 1).
-    ulp(0) is the smallest subnormal; magnitudes past the largest finite, and the
-    infinities, use the top binade."""
-    var r = real_of(x, "ulp<" + String(f) + ">")
+    """The spacing of the format in the binade of |x| (the top binade past the largest finite)."""
+    var r = real_of(x, String("ulp<", f, ">"))
     var emin = 1 - f.bias()
     var emax = f.bias()
     var e: Int
@@ -86,30 +86,29 @@ def _ordinal(f: FloatFormat, bits: UInt64) -> Int:
 
 
 def _in_format(v: Value, f: FloatFormat) raises -> Value:
-    var who = "qe<" + String(f) + ">"
+    var who = String("qe<", f, ">")
     if v.kind == FLOAT:
         if v.float_format_id() != f.id:
-            raise fail(who, "compares " + String(f) + " values, got a " + String(float_of(v, who)))
+            raise fail(who, t"compares {f} values, got a {float_of(v, who)}")
         return v.copy()
     var r = real_of(v, who)
     var exact = exactly(f, r)
-    if not exact:
-        raise fail(who, String(r) + " is not exactly representable as " + String(f))
+    if exact is None:
+        raise fail(who, t"{r} is not exactly representable as {f}")
     return Value.float(f, exact.value())
 
 
 def qe(x_in: Value, y_in: Value, format: Optional[FloatFormat]) raises -> Value:
-    """The quantized error: the number of values of the format in [min, max), signed zeros
-    one value, infinities counted; 1 nan when exactly one side is NaN."""
+    """The quantized error: the values of the format in [min, max) (signed zeros are one value)."""
     var x = x_in.copy()
     var y = y_in.copy()
-    if format:
+    if format is not None:
         x = _in_format(x, format.value())
         y = _in_format(y, format.value())
     var fx = float_of(x, "qe")
     var fy = float_of(y, "qe")
     if fx != fy:
-        raise fail("qe", "compares two values of one format, got " + String(fx) + " and " + String(fy))
+        raise fail("qe", t"compares two values of one format, got {fx} and {fy}")
     var x_nan = fl_is_nan(fx, x.float_bits())
     var y_nan = fl_is_nan(fx, y.float_bits())
     if x_nan or y_nan:
@@ -120,7 +119,7 @@ def qe(x_in: Value, y_in: Value, format: Optional[FloatFormat]) raises -> Value:
 
 def qerr_part(who: String, v: Value, index: Int) raises -> Value:
     if v.kind != QERR:
-        raise fail(who, "expected a qerr, got " + describe(v))
+        raise fail(who, t"expected a qerr, got {v}")
     return v.item(index)
 
 
@@ -137,5 +136,5 @@ def real(x: Value) raises -> Value:
 
 
 def round_float(f: FloatFormat, x: Value) raises -> Value:
-    var r = real_of(x, "round<" + String(f) + ">")
+    var r = real_of(x, String("round<", f, ">"))
     return Value.float(f, round_to(f, r))

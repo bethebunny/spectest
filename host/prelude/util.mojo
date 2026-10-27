@@ -4,57 +4,45 @@ from numeric.bigint import BigInt
 from numeric.floats import to_real
 from numeric.formats import FloatFormat, format_by_id
 from numeric.real import Real
-from wire.value import Value, Kind, INT, FLOAT, REAL, LIST, TUPLE
+from wire.value import Value, INT, FLOAT, REAL, LIST, TUPLE
 
 
-def fail(who: String, message: String) -> Error:
-    """The error an evaluation raises: its message names the function."""
-    return Error(who + ": " + message)
+def fail[Message: Writable](who: String, message: Message) -> Error:
+    return Error(t"{who}: {message}")
 
 
-def describe(v: Value) -> String:
-    """A short form of a value for error messages."""
-    return String(v)
-
-
-def want(v: Value, kind: Kind, who: String, what: String) raises:
-    if v.kind != kind:
-        raise fail(who, "expected " + what + ", got " + describe(v))
+def codepoint_count(s: String) -> Int:
+    var n = 0
+    for b in s.as_bytes():
+        n += 1 if (Int(b) & 0xC0) != 0x80 else 0
+    return n
 
 
 def int_of(v: Value, who: String) raises -> BigInt:
     if v.kind != INT:
-        raise fail(who, "expected an integer, got " + describe(v))
+        raise fail(who, t"expected an integer, got {v}")
     return v.as_bigint()
 
 
 def float_of(v: Value, who: String) raises -> FloatFormat:
-    """The format of a FLOAT value."""
     if v.kind != FLOAT:
-        raise fail(who, "expected a float, got " + describe(v))
+        raise fail(who, t"expected a float, got {v}")
     return format_by_id(v.float_format_id())
 
 
 def real_of(v: Value, who: String) raises -> Real:
-    """An INT, REAL or FLOAT promoted to an extended real. A NaN raises."""
+    """An INT, REAL or FLOAT as an extended real. A NaN raises."""
     if v.kind == INT:
         return Real(v.as_bigint())
     if v.kind == REAL:
-        return Real(
-            lowest_numerator=v.item(0).as_bigint(),
-            lowest_denominator=v.item(1).as_bigint(),
-        )
+        return Real(lowest_numerator=v.item(0).as_bigint(), lowest_denominator=v.item(1).as_bigint())
     if v.kind == FLOAT:
         var f = format_by_id(v.float_format_id())
         try:
             return to_real(f, v.float_bits())
         except:
-            raise fail(who, "cannot promote a NaN (" + String(f) + " bits " + hex(v.float_bits()) + ")")
-    raise fail(who, "expected a number, got " + describe(v))
-
-
-def is_number(v: Value) -> Bool:
-    return v.kind == INT or v.kind == REAL
+            raise fail(who, t"cannot promote a NaN ({f} bits {hex(v.float_bits())})")
+    raise fail(who, t"expected a number, got {v}")
 
 
 def real_value(var r: Real) -> Value:
@@ -63,8 +51,5 @@ def real_value(var r: Real) -> Value:
 
 def list_items(v: Value, who: String) raises -> List[Value]:
     if v.kind != LIST and v.kind != TUPLE:
-        raise fail(who, "expected a list, got " + describe(v))
-    var out = List[Value](capacity=v.count())
-    for i in range(v.count()):
-        out.append(v.item(i))
-    return out^
+        raise fail(who, t"expected a list, got {v}")
+    return [v.item(i) for i in range(v.count())]
