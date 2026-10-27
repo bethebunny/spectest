@@ -119,3 +119,21 @@ def nodes_of(spec: Spec, root: Int, kind: UInt8) -> List[Int]:
         if spec.ast.nodes[n].kind == kind:
             out.append(n)
     return out^
+
+
+def parents(spec: Spec) -> List[Int]:
+    """By node id: the node's parent, 0 for the root."""
+    var out = List[Int](length=len(spec.ast.nodes), fill=0)
+    for n in range(len(spec.ast.nodes)):
+        for k in spec.ast.nodes[n].kids:
+            out[k] = n
+    return out^
+
+
+def named(spec: Spec, root: Int, kind: UInt8, text: String) -> List[Int]:
+    """The nodes of `kind` with this text below `root`, in source order."""
+    var out = List[Int]()
+    for n in nodes_of(spec, root, kind):
+        if spec.ast.nodes[n].text == text:
+            out.append(n)
+    return out^
