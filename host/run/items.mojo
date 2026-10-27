@@ -12,19 +12,22 @@ from .util import collect_models
 
 
 def _item(
+    spec: Spec,
     decl: String,
     id: String,
     kind: String,
     text: String,
-    line: Int,
+    node: Int,
     tparams: List[String],
 ) raises -> Value:
+    """An item for the clause or declaration at `node`, located in its own file."""
     var o = Obj()
     o.text("decl", decl)
     o.text("clause_id", id)
     o.text("kind", kind)
     o.text("text", text)
-    o.num("line", line)
+    o.num("line", spec.ast.nodes[node].span.line)
+    o.text("file", spec.ast.path_of(node))
     o.put("tparams", strings(tparams))
     return o^.build()
 
@@ -37,45 +40,47 @@ def _interface_items(spec: Spec, f: Int, mut out: List[Value]) raises:
     if func.owner < 0:
         return
     ref model = spec.models[func.owner]
-    var line = spec.ast.nodes[func.node].span.line
     var has_modifies = False
     for c in func.clauses:
         ref cl = spec.clauses[c]
         var k = cl.kind
         if k == ast.ENSURES or k == ast.RELATES or k == ast.RAISES or k == ast.MODIFIES:
             out.append(
-                _item(model.name, cl.id, String(ast.op_name(k)), source_text(spec, cl.node), spec.ast.nodes[cl.node].span.line, model.tparams)
+                _item(spec, model.name, cl.id, String(ast.op_name(k)), source_text(spec, cl.node), cl.node, model.tparams)
             )
         if k == ast.MODIFIES:
             has_modifies = True
     out.append(
         _item(
+            spec,
             model.name,
             func.decl_id + "#type",
             "type",
             String("built-in: the result of ", func.name, " reads as ", spec.types.text(func.result)),
-            line,
+            func.node,
             model.tparams,
         )
     )
     out.append(
         _item(
+            spec,
             model.name,
             func.decl_id + "#raises",
             "raises",
             String("built-in: ", func.name, " raises only what a raises or may_raise admits"),
-            line,
+            func.node,
             model.tparams,
         )
     )
     if func.receiver and not has_modifies:
         out.append(
             _item(
+                spec,
                 model.name,
                 func.decl_id + "#frame",
                 "frame",
                 String("built-in: ", func.name, " leaves every live object unchanged (no modifies clause)"),
-                line,
+                func.node,
                 model.tparams,
             )
         )
@@ -92,7 +97,7 @@ def _interface_items(spec: Spec, f: Int, mut out: List[Value]) raises:
             ref cl = spec.clauses[c]
             if cl.kind == ast.INVARIANT:
                 out.append(
-                    _item(model.name, cl.id, "invariant", source_text(spec, cl.node), spec.ast.nodes[cl.node].span.line, model.tparams)
+                    _item(spec, model.name, cl.id, "invariant", source_text(spec, cl.node), cl.node, model.tparams)
                 )
 
 
@@ -112,28 +117,29 @@ def items_of(loaded: Loaded) raises -> List[Value]:
             var k = cl.kind
             if k == ast.ENSURES or k == ast.RELATES or k == ast.RAISES or k == ast.AGGREGATE or k == ast.MODIFIES:
                 out.append(
-                    _item(func.decl_id, cl.id, String(ast.op_name(k)), source_text(spec, cl.node), spec.ast.nodes[cl.node].span.line, func.tparams)
+                    _item(spec, func.decl_id, cl.id, String(ast.op_name(k)), source_text(spec, cl.node), cl.node, func.tparams)
                 )
             if k == ast.MODIFIES:
                 has_modifies = True
-        var line = spec.ast.nodes[func.node].span.line
         out.append(
             _item(
+                spec,
                 func.decl_id,
                 func.decl_id + "#type",
                 "type",
                 String("built-in: the result of ", func.name, " reads as ", spec.types.text(func.result)),
-                line,
+                func.node,
                 func.tparams,
             )
         )
         out.append(
             _item(
+                spec,
                 func.decl_id,
                 func.decl_id + "#raises",
                 "raises",
                 String("built-in: ", func.name, " raises only what a raises or may_raise admits"),
-                line,
+                func.node,
                 func.tparams,
             )
         )
@@ -145,11 +151,12 @@ def items_of(loaded: Loaded) raises -> List[Value]:
         if len(handles) > 0 and not has_modifies:
             out.append(
                 _item(
+                    spec,
                     func.decl_id,
                     func.decl_id + "#frame",
                     "frame",
                     String("built-in: ", func.name, " leaves its handle parameters unchanged (no modifies clause)"),
-                    line,
+                    func.node,
                     func.tparams,
                 )
             )
@@ -169,6 +176,6 @@ def items_of(loaded: Loaded) raises -> List[Value]:
                 ref cl = spec.clauses[c]
                 if cl.kind == ast.INVARIANT:
                     out.append(
-                        _item(func.decl_id, func.decl_id + ":" + cl.id, "invariant", source_text(spec, cl.node), spec.ast.nodes[cl.node].span.line, func.tparams)
+                        _item(spec, func.decl_id, func.decl_id + ":" + cl.id, "invariant", source_text(spec, cl.node), cl.node, func.tparams)
                     )
     return out^

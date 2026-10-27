@@ -28,7 +28,7 @@ def test_an_existing_spec_loads_and_lists_items(path):
         # deque.spec declares only an interface, which a later package runs.
         assert items or path.endswith("deque.spec")
         for item in items:
-            assert set(item) == {"decl", "clause_id", "kind", "text", "line", "tparams"}
+            assert set(item) == {"decl", "clause_id", "kind", "text", "line", "file", "tparams"}
             assert item["kind"] not in ("requires", "unspecified", "impl_defined", "perf")
         ids = [i["clause_id"] for i in items]
         assert len(ids) == len(set(ids))

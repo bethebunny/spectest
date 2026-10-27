@@ -1022,7 +1022,10 @@ class SpecClauseItem(pytest.Item):
         return super().repr_failure(excinfo, style=style)
 
     def reportinfo(self) -> tuple[Any, int | None, str]:
-        return self.path, self.entry.get("line"), f"spectest {self.name}"
+        """The clause's own spec file and line: a clause of a used spec is in that file."""
+        file = self.entry.get("file")
+        line = self.entry.get("line")
+        return (Path(file) if file else self.path), (line - 1 if line else None), f"spectest {self.name}"
 
 
 def _explicit_ci(config: pytest.Config) -> bool:

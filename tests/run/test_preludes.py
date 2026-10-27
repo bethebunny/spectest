@@ -72,7 +72,12 @@ def test_use_brings_the_declarations_of_another_spec(tmp_path):
     top = 'spec top\nuse "base.spec"\n\nfn runimpls.clamp_identity_bug(x: i16, lo: i16, hi: i16) -> i16\n  requires lo <= hi\n  ensures in_range: lo <= result and result <= hi\n'
     spec = Loaded(write_spec(tmp_path, top, "top.spec"))
     try:
-        decls = {i["decl"] for i in spec.items()}
+        items = spec.items()
+        decls = {i["decl"] for i in items}
+        # Each item names the file its clause is written in.
+        files = {i["decl"]: i["file"] for i in items}
+        assert files["runimpls.clamp_identity_bug"].endswith("top.spec")
+        assert files["runimpls.clamp"].endswith("base.spec")
         assert decls == {
             "runimpls.ident_plus_one_from_five",
             "runimpls.clamp",

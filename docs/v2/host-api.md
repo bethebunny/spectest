@@ -24,6 +24,7 @@ One dict per clause that a run judges, and per built-in clause:
     "kind": "ensures",             # requires is not an item; "type" and "raises" for built-ins
     "text": "ensures accurate: qe(result, cr.cos(x)) <= 1",
     "line": 12,
+    "file": "/path/to/libm.spec",  # the file the clause is written in (a used spec's own)
     "tparams": ["T"],              # type parameters the run needs instantiated, else []
 }
 ```

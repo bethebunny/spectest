@@ -124,7 +124,9 @@ def test_the_items_of_a_spec(spec):
     items = spec.items()
     by_id = {i["clause_id"]: i for i in items}
     assert "runimpls.clamp.in_range" in by_id
-    assert by_id["runimpls.clamp.in_range"] == {
+    item = dict(by_id["runimpls.clamp.in_range"])
+    assert item.pop("file").endswith(".spec")
+    assert item == {
         "decl": "runimpls.clamp",
         "clause_id": "runimpls.clamp.in_range",
         "kind": "ensures",
