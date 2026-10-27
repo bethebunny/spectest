@@ -1,0 +1,6 @@
+# Helpers for datetimes.spec: microseconds since 0001-01-01 00:00.
+
+fn imax(a: int, b: int) -> int = if a > b then a else b
+fn end_us() -> int = 3652059 * 86400 * 1000000
+fn wall_us(dt: datetime.datetime) -> int = (((dt.ordinal - 1) * 86400 + dt.hour * 3600 + dt.minute * 60 + dt.second) * 1000000) + dt.microsecond
+fn utc_us(dt: datetime.datetime) -> int = wall_us(dt) - dt.offset_seconds * 1000000

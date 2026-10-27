@@ -1,0 +1,17 @@
+# Helpers for enums.spec: the enums of support.py and their codecs.
+
+fn imax(a: int, b: int) -> int = if a > b then a else b
+
+# Members(E): one member per definition, aliases not counted.
+fn member_count(kind: string) -> int = if kind == "Color" then 3 else if kind == "Level" then 3 else if kind == "Single" then 1 else 0
+fn member_names(kind: string) -> list<string> = if kind == "Color" then ["RED", "GREEN", "BLUE"] else if kind == "Level" then ["LOW", "MID", "HIGH"] else if kind == "Single" then ["ONLY"] else []
+fn members_width(kind: string) -> int = bit_length(imax(member_count(kind) - 1, 0))
+fn chosen(kind: string, picks: list<int>) -> list<int> = filter(i in range(0, member_count(kind)): exists(p in picks: p % member_count(kind) == i))
+
+# Flags(F): a combination is its own integer value; all is the unions of members.
+fn flag_value(name: string) -> int = if name == "R" then 4 else if name == "W" then 2 else if name == "X" then 1 else if name == "LEAF" then 4 else if name == "CHAIN" then 12 else 1
+fn flag_names(kind: string) -> list<string> = if kind == "Perm" then ["R", "W", "X"] else ["LEAF", "CHAIN", "LOW"]
+fn flags_width(kind: string) -> int = if kind == "Perm" then 3 else 4
+fn flag_all(kind: string) -> list<int> = if kind == "Perm" then [0, 1, 2, 3, 4, 5, 6, 7] else [0, 1, 4, 5, 12, 13]
+fn mask_of(names: list<string>) -> int = sum(bit in range(0, 4): if exists(n in names: (flag_value(n) >> bit) % 2 == 1) then 2 ** bit else 0)
+fn valid_names(kind: string, names: list<string>) -> bool = all(n in names: n in flag_names(kind))

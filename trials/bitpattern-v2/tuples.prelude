@@ -1,0 +1,8 @@
+# Helpers for tuples.spec: the Int codec as a field of a Tuple codec.
+
+fn imax(a: int, b: int) -> int = if a > b then a else b
+fn int_min(c: Int) -> int = if c.signed then -(2 ** (c.width - 1)) else 0
+fn int_max(c: Int) -> int = if c.signed then 2 ** (c.width - 1) - 1 else 2 ** c.width - 1
+fn int_decode(c: Int, b: int) -> int = if b > int_max(c) then b - 2 ** c.width else b
+fn int_encodable(c: Int, v: int) -> bool = int_min(c) <= v and v <= int_max(c)
+fn set_fits(ca: Int, a: bitpattern.intset.IntSet, cb: Int, b: bitpattern.intset.IntSet) -> bool = ca.width >= 1 and cb.width >= 1 and a.width <= ca.width and b.width <= cb.width

@@ -315,3 +315,62 @@ IP_MODULES = {
 }
 
 test_ips = spectest.check("ips.spec", modules=IP_MODULES)
+
+TUPLE_MODULES = {
+    "Int": "bitpattern.codecs.Int",
+    "Tuple": "bitpattern.codecs.Tuple",
+    "BDDSet": "bitpattern.codecs.BDDSet",
+    "bitpattern.IntSet.range": "support.intset_range",
+    "variant.Tuple_new": "support.tuple_new",
+    "variant.Tuple_empty": "support.tuple_empty",
+    "variant.Tuple_encode": "support.tuple_encode",
+    "variant.Tuple_encode_list": "support.tuple_encode_list",
+    "variant.Tuple_encode_length": "support.tuple_encode_length",
+    "variant.Tuple_decode": "support.tuple_decode",
+    "variant.Tuple_product": "support.tuple_product",
+    "variant.Tuple_product_nothing": "support.tuple_product_nothing",
+    "variant.Tuple_mul": "support.tuple_mul",
+    "variant.Tuple_mul_foreign": "support.tuple_mul_foreign",
+    "variant.Tuple_project": "support.tuple_project",
+    "variant.Tuple_project_non_tuple": "support.tuple_project_non_tuple",
+}
+
+test_tuples = spectest.check("tuples.spec", modules=TUPLE_MODULES)
+
+ENUM_MODULES = {
+    "variant.Members_codec": "support.members_codec",
+    "variant.Members_encode": "support.members_encode",
+    "variant.Members_encode_alias": "support.members_encode_alias",
+    "variant.Members_encode_raw": "support.members_encode_raw",
+    "variant.Members_encode_unlisted_combination": "support.members_encode_unlisted_combination",
+    "variant.Members_decode": "support.members_decode",
+    "variant.Members_dtype": "support.members_dtype",
+    "variant.Members_all": "support.members_all",
+    "variant.Members_set": "support.members_set",
+    "variant.Members_iterate": "support.members_iterate",
+    "variant.Members_invert": "support.members_invert",
+    "variant.Members_exported": "support.members_exported",
+    "variant.Flags_codec": "support.flags_codec",
+    "variant.Flags_all": "support.flags_all",
+    "variant.Flags_encode": "support.flags_encode",
+    "variant.Flags_encode_int": "support.flags_encode_int",
+    "variant.Flags_decode": "support.flags_decode",
+    "variant.Flags_having": "support.flags_having",
+    "variant.Flags_lacking": "support.flags_lacking",
+}
+
+test_enums = spectest.check("enums.spec", modules=ENUM_MODULES)
+
+DATETIME_MODULES = {
+    "DateTime": "bitpattern.codecs.DateTime",
+    "BDDSet": "bitpattern.codecs.BDDSet",
+    "variant.DT_codec": "support.dt_codec",
+    "variant.DT_utc_equals": "support.dt_utc_equals",
+    "variant.DT_encode": "support.dt_encode",
+    "variant.DT_encode_date": "support.dt_encode",
+    "variant.DT_decode": "support.dt_decode",
+    "variant.DT_all": "support.dt_all",
+    "variant.DT_range": "support.dt_range",
+}
+
+test_datetimes = spectest.check("datetimes.spec", modules=DATETIME_MODULES)

@@ -600,3 +600,254 @@ def ipv6_min():
 
 def ipv6_max():
     return bitpattern.codecs.ipv6.max
+
+
+# -- bitpattern.codecs: Tuple, product, project --------------------------------------
+
+
+def tuple_new(a, b):
+    return bitpattern.codecs.Tuple(a, b)
+
+
+def tuple_empty():
+    return bitpattern.codecs.Tuple()
+
+
+def tuple_encode(a, b, x, y):
+    return bitpattern.codecs.Tuple(a, b).encode((x, y))
+
+
+def tuple_encode_list(a, b, x, y):
+    return bitpattern.codecs.Tuple(a, b).encode([x, y])
+
+
+def tuple_encode_length(a, b, x):
+    return bitpattern.codecs.Tuple(a, b).encode((x,))
+
+
+def tuple_decode(a, b, bits):
+    return bitpattern.codecs.Tuple(a, b).decode(bits)
+
+
+def tuple_product(ca, a, cb, b):
+    return bitpattern.codecs.product(_set(ca, a), _set(cb, b))
+
+
+def tuple_product_nothing():
+    return bitpattern.codecs.product()
+
+
+def tuple_mul(ca, a, cb, b):
+    return _set(ca, a) * _set(cb, b)
+
+
+def tuple_mul_foreign(ca, a, other):
+    return _set(ca, a) * other
+
+
+def tuple_project(ca, a, cb, b, index):
+    projected = bitpattern.codecs.project(tuple_product(ca, a, cb, b), index)
+    return (projected.storage, projected.codec.name)
+
+
+def tuple_project_non_tuple(ca, a, index):
+    projected = bitpattern.codecs.project(_set(ca, a), index)
+    return (projected.storage, projected.codec.name)
+
+
+# -- bitpattern.codecs: Members and Flags, over enums defined here --------------------
+#
+# bitpattern does not provide enums, so the spec's enums are these.
+
+import enum  # noqa: E402
+
+
+class Color(enum.Enum):
+    RED = "r"
+    GREEN = "g"
+    BLUE = "b"
+    CRIMSON = "r"  # an alias of RED
+
+
+class Level(enum.IntEnum):
+    LOW = 1
+    MID = 2
+    HIGH = 3
+
+
+class Single(enum.Enum):
+    ONLY = 1
+
+
+class Empty(enum.Enum):
+    pass
+
+
+class Perm(enum.Flag):
+    R = 4
+    W = 2
+    X = 1
+
+
+class Tree(enum.Flag):
+    LEAF = 4
+    CHAIN = 12
+    LOW = 1
+
+
+_ENUMS = {"Color": Color, "Level": Level, "Single": Single, "Empty": Empty, "Perm": Perm, "Tree": Tree}
+
+
+def _member(kind, index):
+    return list(_ENUMS[kind].__members__.values())[index]
+
+
+def _members(kind, picks):
+    members = [_member(kind, p % len(_ENUMS[kind])) for p in picks]
+    return bitpattern.codecs.Members(_ENUMS[kind]).set(members)
+
+
+def _flags(kind, names):
+    flags = _ENUMS[kind](0)
+    for name in names:
+        flags |= _ENUMS[kind][name]
+    return flags
+
+
+def members_codec(kind):
+    codec = bitpattern.codecs.Members(_ENUMS[kind])
+    return (codec.width, codec.name)
+
+
+def members_encode(kind, index):
+    return bitpattern.codecs.Members(_ENUMS[kind]).encode(_member(kind, index))
+
+
+def members_encode_alias():
+    return bitpattern.codecs.Members(Color).encode(Color.CRIMSON)
+
+
+def members_encode_raw(kind, index):
+    return bitpattern.codecs.Members(_ENUMS[kind]).encode(_member(kind, index).value)
+
+
+def members_encode_unlisted_combination():
+    return bitpattern.codecs.Members(Tree).encode(Tree.LEAF | Tree.LOW)
+
+
+def members_decode(kind, i):
+    return bitpattern.codecs.Members(_ENUMS[kind]).decode(i)
+
+
+def members_dtype(kind):
+    return bitpattern.codecs.Members(_ENUMS[kind]).dtype()
+
+
+def members_all(kind):
+    return bitpattern.codecs.Members(_ENUMS[kind]).all.storage
+
+
+def members_set(kind, picks):
+    return _members(kind, picks).storage
+
+
+def members_iterate(kind, picks):
+    return list(_members(kind, picks))
+
+
+def members_invert(kind, picks):
+    return (~_members(kind, picks)).storage
+
+
+def members_exported(kind, picks):
+    array = numpy.from_dlpack(_members(kind, picks))
+    return (str(array.dtype), list(array.shape), array.reshape(-1).tolist())
+
+
+def flags_codec(kind):
+    codec = bitpattern.codecs.Flags(_ENUMS[kind])
+    return (codec.width, codec.name)
+
+
+def flags_all(kind):
+    return bitpattern.codecs.Flags(_ENUMS[kind]).all.storage
+
+
+def flags_encode(kind, names):
+    return bitpattern.codecs.Flags(_ENUMS[kind]).encode(_flags(kind, names))
+
+
+def flags_encode_int(kind, n):
+    return bitpattern.codecs.Flags(_ENUMS[kind]).encode(n)
+
+
+def flags_decode(kind, b):
+    return bitpattern.codecs.Flags(_ENUMS[kind]).decode(b)
+
+
+def flags_having(kind, names):
+    return bitpattern.codecs.Flags(_ENUMS[kind]).having(_flags(kind, names)).storage
+
+
+def flags_lacking(kind, names):
+    return bitpattern.codecs.Flags(_ENUMS[kind]).lacking(_flags(kind, names)).storage
+
+
+# -- bitpattern.codecs: DateTime ------------------------------------------------------
+
+
+def is_aware(dt):
+    return dt.utcoffset() is not None
+
+
+def offset_seconds(dt):
+    offset = dt.utcoffset()
+    return 0 if offset is None else int(offset.total_seconds())
+
+
+def naive_datetime(day, micros):
+    """A naive datetime for any integers: a date, and a time of day in microseconds."""
+    import datetime
+
+    date = datetime.date.fromordinal(1 + day % 3652059)
+    return datetime.datetime.combine(date, datetime.time()) + datetime.timedelta(
+        microseconds=micros % (86400 * 10**6)
+    )
+
+
+def aware_datetime(day, micros, offset_minutes):
+    """An aware datetime in a fixed zone of up to 23 hours 59 minutes from UTC."""
+    import datetime
+
+    zone = datetime.timezone(datetime.timedelta(minutes=offset_minutes % 2879 - 1439))
+    return naive_datetime(day, micros).replace(tzinfo=zone)
+
+
+def _datetimes(kind):
+    return bitpattern.codecs.datetimes if kind == "utc" else bitpattern.codecs.naive_datetimes
+
+
+def dt_codec(kind):
+    return _datetimes(kind)
+
+
+def dt_utc_equals():
+    import datetime
+
+    return bitpattern.codecs.DateTime(datetime.timezone.utc) == bitpattern.codecs.datetimes
+
+
+def dt_encode(kind, dt):
+    return _datetimes(kind).encode(dt)
+
+
+def dt_decode(kind, b):
+    return _datetimes(kind).decode(b)
+
+
+def dt_all(kind):
+    return _datetimes(kind).all
+
+
+def dt_range(kind, start, stop):
+    return _datetimes(kind).range(start, stop)
