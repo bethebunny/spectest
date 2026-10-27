@@ -1,85 +1,29 @@
-"""The parts of CPython's C API the module calls, and the structs it shares with C.
+"""The parts of CPython's C API the module calls.
 
-`external_call` binds each name when Python loads the module, as for any C extension, so
-only functions in 3.11's stable ABI are called that way. Data symbols and other functions
-are looked up with `symbol`.
+`external_call` binds each name when Python loads the module, so only functions in
+3.11's stable ABI are called that way. Data symbols and other functions are looked up
+with `symbol`.
 
-Pointers in the structs are plain Ints (addresses), which C reads the same way. A call
-through a C function pointer takes memory as a pointer with the memory's own origin, or
-as a `mut` argument. Given an Int address, an untracked pointer or a pointer to a
-read-only argument, the compiler may drop the store before the call or miss the callee's
-write. `external_call` isn't affected.
-
-The one private stdlib name the module uses is `PyObjectPtr`, from
-`std.python._cpython`.
+Pointers in structs shared with C are plain Ints (addresses). A call through a C
+function pointer takes memory as a pointer with the memory's own origin, or as a `mut`
+argument. Otherwise the compiler may drop the store before the call or miss the callee's
+write.
 """
 
-from std.ffi import CStringSpan, c_int, c_uint, external_call
+from std.ffi import CStringSpan, c_int, external_call
 from std.python._cpython import PyObjectPtr
 from std.sys.info import CompilationTarget
 
 
-# Type slots (Include/typeslots.h).
-comptime Py_nb_and = 8
-comptime Py_nb_bool = 9
-comptime Py_nb_invert = 27
-comptime Py_nb_or = 31
-comptime Py_nb_subtract = 36
-comptime Py_nb_xor = 38
-comptime Py_tp_dealloc = 52
-comptime Py_tp_doc = 56
-comptime Py_tp_hash = 59
-comptime Py_tp_iter = 62
-comptime Py_tp_iternext = 63
-comptime Py_tp_methods = 64
-comptime Py_tp_new = 65
-comptime Py_tp_repr = 66
-comptime Py_tp_richcompare = 67
-comptime Py_tp_members = 72
-comptime Py_tp_getset = 73
-comptime Py_tp_free = 74
-
-# Module slots.
-comptime Py_mod_exec = 2
-comptime Py_mod_multiple_interpreters = 3
-comptime Py_MOD_PER_INTERPRETER_GIL_SUPPORTED = 2
-
-# Type flags (Include/object.h), as type specs hold them.
-comptime Py_TPFLAGS_DEFAULT: UInt32 = 1 << 18  # Py_TPFLAGS_HAVE_VERSION_TAG
-comptime Py_TPFLAGS_DISALLOW_INSTANTIATION: UInt32 = 1 << 7
-
-# As PyType_GetFlags returns them.
 comptime Py_TPFLAGS_LIST_SUBCLASS: UInt64 = 1 << 25
 comptime Py_TPFLAGS_TUPLE_SUBCLASS: UInt64 = 1 << 26
 comptime Py_TPFLAGS_UNICODE_SUBCLASS: UInt64 = 1 << 28
+comptime Py_TPFLAGS_LONG_SUBCLASS: UInt64 = 1 << 24
+comptime Py_TPFLAGS_BYTES_SUBCLASS: UInt64 = 1 << 27
 
-comptime METH_KEYWORDS: c_int = 0x02
 comptime METH_NOARGS: c_int = 0x04
 comptime METH_O: c_int = 0x08
 comptime METH_FASTCALL: c_int = 0x80
-
-comptime Py_EQ: c_int = 2
-comptime Py_NE: c_int = 3
-
-comptime T_PYSSIZET: c_int = 19
-comptime READONLY: c_int = 1
-
-comptime SIGINT: c_int = 2
-
-
-@fieldwise_init
-struct TypeSlot(TrivialRegisterPassable):
-    var slot: c_int
-    var pfunc: Int
-
-
-@fieldwise_init
-struct TypeSpec(TrivialRegisterPassable):
-    var name: Int
-    var basicsize: c_int
-    var itemsize: c_int
-    var flags: UInt32
-    var slots: Int
 
 
 @fieldwise_init
@@ -88,30 +32,6 @@ struct MethodDef(TrivialRegisterPassable):
     var meth: Int
     var flags: c_int
     var doc: Int
-
-
-@fieldwise_init
-struct GetSetDef(TrivialRegisterPassable):
-    var name: Int
-    var get: Int
-    var set: Int
-    var doc: Int
-    var closure: Int
-
-
-@fieldwise_init
-struct MemberDef(TrivialRegisterPassable):
-    var name: Int
-    var type: c_int
-    var offset: Int
-    var flags: c_int
-    var doc: Int
-
-
-@fieldwise_init
-struct ModuleSlot(TrivialRegisterPassable):
-    var slot: c_int
-    var value: Int
 
 
 @fieldwise_init
@@ -143,12 +63,6 @@ struct ObjectHead:
 def address[T: TrivialRegisterPassable](function: T) -> Int:
     """The C address of an `abi("C")` function."""
     return Pointer(to=function).unsafe_bitcast[Int]()[]
-
-
-@always_inline
-def c_function[T: TrivialRegisterPassable](address: Int) -> T:
-    """The C function at `address`, which must have type `T`."""
-    return Pointer(to=address).unsafe_bitcast[T]()[]
 
 
 @always_inline
@@ -205,9 +119,6 @@ def Py_NewRef(o: PyObjectPtr) -> PyObjectPtr:
     return o
 
 
-# Ints.
-
-
 @always_inline
 def PyLong_FromLongLong(value: Int64) -> PyObjectPtr:
     return external_call["PyLong_FromLongLong", PyObjectPtr](value)
@@ -231,16 +142,8 @@ def PyLong_AsLongLongAndOverflow(o: PyObjectPtr, mut overflow: c_int) -> Int64:
 
 
 @always_inline
-def PyNumber_Index(o: PyObjectPtr) -> PyObjectPtr:
-    return external_call["PyNumber_Index", PyObjectPtr](o)
-
-
-@always_inline
 def PyBool_FromLong(value: Bool) -> PyObjectPtr:
     return external_call["PyBool_FromLong", PyObjectPtr](Int(value))
-
-
-# Errors.
 
 
 @always_inline
@@ -259,14 +162,6 @@ def PyErr_Clear():
 
 
 @always_inline
-def PyOS_InterruptOccurred() -> c_int:
-    return external_call["PyOS_InterruptOccurred", c_int]()
-
-
-# Strings, tuples, lists and dicts.
-
-
-@always_inline
 def PyUnicode_FromStringAndSize(text: StringSpan) -> PyObjectPtr:
     return external_call["PyUnicode_FromStringAndSize", PyObjectPtr](
         text.unsafe_ptr(), text.byte_length()
@@ -279,44 +174,13 @@ def PyUnicode_InternFromString(text: CStringSpan) -> PyObjectPtr:
 
 
 @always_inline
-def PyUnicode_FromOrdinal(ordinal: c_int) -> PyObjectPtr:
-    return external_call["PyUnicode_FromOrdinal", PyObjectPtr](ordinal)
-
-
-@always_inline
-def PyUnicode_CompareWithASCIIString(
-    o: PyObjectPtr, text: CStringSpan
-) -> c_int:
-    return external_call["PyUnicode_CompareWithASCIIString", c_int](o, text)
-
-
-@always_inline
 def PyUnicode_AsUTF8AndSize(o: PyObjectPtr, mut size: Int) -> Int:
     return external_call["PyUnicode_AsUTF8AndSize", Int](o, Pointer(to=size))
-
-
-def utf8(o: PyObjectPtr) -> String:
-    """A str's text, or "?" if it can't be read."""
-    var size = 0
-    var data = PyUnicode_AsUTF8AndSize(o, size)
-    if data == 0:
-        PyErr_Clear()
-        return "?"
-    return String(
-        unsafe_from_utf8_ptr=Pointer[UInt8, MutUntrackedOrigin](
-            unsafe_from_address=data
-        ).as_imm()
-    )
 
 
 @always_inline
 def PyObject_Str(o: PyObjectPtr) -> PyObjectPtr:
     return external_call["PyObject_Str", PyObjectPtr](o)
-
-
-@always_inline
-def PyObject_Repr(o: PyObjectPtr) -> PyObjectPtr:
-    return external_call["PyObject_Repr", PyObjectPtr](o)
 
 
 @always_inline
@@ -339,36 +203,6 @@ def PyTuple_GetItem(o: PyObjectPtr, index: Int) -> PyObjectPtr:
 def PyTuple_SetItem(o: PyObjectPtr, index: Int, item: PyObjectPtr) -> c_int:
     """Steals `item`."""
     return external_call["PyTuple_SetItem", c_int](o, index, item)
-
-
-def pair(first: PyObjectPtr, second: PyObjectPtr) -> PyObjectPtr:
-    """`(first, second)`, stealing both. Null if either is (after an error)."""
-    var made = PyTuple_New(2) if first and second else PyObjectPtr()
-    if not made:
-        Py_DecRef(first)
-        Py_DecRef(second)
-        return made
-    _ = PyTuple_SetItem(made, 0, first)
-    _ = PyTuple_SetItem(made, 1, second)
-    return made
-
-
-@always_inline
-def Py_BuildValue(
-    format: CStringSpan, first: c_int, second: c_uint, third: c_uint
-) -> PyObjectPtr:
-    return external_call["Py_BuildValue", PyObjectPtr, num_fixed_args=1](
-        format, first, second, third
-    )
-
-
-@always_inline
-def Py_BuildValue(
-    format: CStringSpan, first: PyObjectPtr, second: PyObjectPtr
-) -> PyObjectPtr:
-    return external_call["Py_BuildValue", PyObjectPtr, num_fixed_args=1](
-        format, first, second
-    )
 
 
 @always_inline
@@ -410,107 +244,9 @@ def PyDict_Next(
     )
 
 
-# Objects, types and modules.
-
-
 @always_inline
 def PyObject_GetAttrString(o: PyObjectPtr, name: CStringSpan) -> PyObjectPtr:
     return external_call["PyObject_GetAttrString", PyObjectPtr](o, name)
-
-
-@always_inline
-def PyObject_SetAttrString(
-    o: PyObjectPtr, name: CStringSpan, value: PyObjectPtr
-) -> c_int:
-    return external_call["PyObject_SetAttrString", c_int](o, name, value)
-
-
-@always_inline
-def PyObject_CallObject(
-    callable: PyObjectPtr, args: PyObjectPtr
-) -> PyObjectPtr:
-    return external_call["PyObject_CallObject", PyObjectPtr](callable, args)
-
-
-@always_inline
-def PyObject_CallFunction(
-    callable: PyObjectPtr,
-    format: CStringSpan,
-    first: c_int,
-    second: PyObjectPtr,
-) -> PyObjectPtr:
-    return external_call[
-        "PyObject_CallFunction", PyObjectPtr, num_fixed_args=2
-    ](callable, format, first, second)
-
-
-@always_inline
-def PyObject_CallFunctionObjArgs(
-    callable: PyObjectPtr, arg: PyObjectPtr
-) -> PyObjectPtr:
-    return external_call[
-        "PyObject_CallFunctionObjArgs", PyObjectPtr, num_fixed_args=1
-    ](callable, arg, PyObjectPtr())
-
-
-@always_inline
-def PyObject_CallMethod(
-    o: PyObjectPtr, name: CStringSpan, format: CStringSpan
-) -> PyObjectPtr:
-    return external_call["PyObject_CallMethod", PyObjectPtr, num_fixed_args=3](
-        o, name, format
-    )
-
-
-@always_inline
-def PyObject_CallMethod(
-    o: PyObjectPtr, name: CStringSpan, format: CStringSpan, arg: c_int
-) -> PyObjectPtr:
-    return external_call["PyObject_CallMethod", PyObjectPtr, num_fixed_args=3](
-        o, name, format, arg
-    )
-
-
-@always_inline
-def PyEval_GetFrame() -> PyObjectPtr:
-    """Borrowed."""
-    return external_call["PyEval_GetFrame", PyObjectPtr]()
-
-
-@always_inline
-def PyCallable_Check(o: PyObjectPtr) -> Bool:
-    return external_call["PyCallable_Check", c_int](o) != 0
-
-
-@always_inline
-def PyObject_IsInstance(o: PyObjectPtr, type: PyObjectPtr) -> c_int:
-    return external_call["PyObject_IsInstance", c_int](o, type)
-
-
-@always_inline
-def PyObject_GetIter(o: PyObjectPtr) -> PyObjectPtr:
-    return external_call["PyObject_GetIter", PyObjectPtr](o)
-
-
-@always_inline
-def PyIter_Next(o: PyObjectPtr) -> PyObjectPtr:
-    """A new reference, or null at the end (or with an error set)."""
-    return external_call["PyIter_Next", PyObjectPtr](o)
-
-
-@always_inline
-def PyObject_ClearWeakRefs(o: PyObjectPtr):
-    external_call["PyObject_ClearWeakRefs", NoneType](o)
-
-
-@always_inline
-def PyType_GenericAlloc(type: PyObjectPtr, items: Int) -> PyObjectPtr:
-    return external_call["PyType_GenericAlloc", PyObjectPtr](type, items)
-
-
-@always_inline
-def PyType_GetSlot(type: PyObjectPtr, slot: Int) -> Int:
-    return external_call["PyType_GetSlot", Int](type, c_int(slot))
 
 
 @always_inline
@@ -524,31 +260,6 @@ def PyType_GetQualName(type: PyObjectPtr) -> PyObjectPtr:
 
 
 @always_inline
-def PyType_FromModuleAndSpec(
-    module: PyObjectPtr, spec: Int, bases: PyObjectPtr
-) -> PyObjectPtr:
-    return external_call["PyType_FromModuleAndSpec", PyObjectPtr](
-        module, spec, bases
-    )
-
-
-@always_inline
-def PyType_GetModule(type: PyObjectPtr) -> PyObjectPtr:
-    """Borrowed."""
-    return external_call["PyType_GetModule", PyObjectPtr](type)
-
-
-@always_inline
-def PyType_GetModuleState(type: PyObjectPtr) -> Int:
-    return external_call["PyType_GetModuleState", Int](type)
-
-
-@always_inline
-def PyModule_GetState(module: PyObjectPtr) -> Int:
-    return external_call["PyModule_GetState", Int](module)
-
-
-@always_inline
 def PyImport_ImportModule(name: CStringSpan) -> PyObjectPtr:
     return external_call["PyImport_ImportModule", PyObjectPtr](name)
 
@@ -556,33 +267,6 @@ def PyImport_ImportModule(name: CStringSpan) -> PyObjectPtr:
 @always_inline
 def PyModuleDef_Init(definition: Int) -> PyObjectPtr:
     return external_call["PyModuleDef_Init", PyObjectPtr](definition)
-
-
-# Capsules.
-
-
-@always_inline
-def PyCapsule_New(
-    pointer: Pointer[NoneType, MutUntrackedOrigin],
-    name: CStringSpan,
-    destructor: Int,
-) -> PyObjectPtr:
-    return external_call["PyCapsule_New", PyObjectPtr](
-        pointer, name, destructor
-    )
-
-
-@always_inline
-def PyCapsule_GetPointer(capsule: PyObjectPtr, name: CStringSpan) -> Int:
-    return external_call["PyCapsule_GetPointer", Int](capsule, name)
-
-
-@always_inline
-def PyCapsule_IsValid(capsule: PyObjectPtr, name: CStringSpan) -> Bool:
-    return external_call["PyCapsule_IsValid", c_int](capsule, name) != 0
-
-
-# Added for the bridge: bytes, sequences, calls with vectors, exceptions.
 
 
 @always_inline
@@ -677,16 +361,6 @@ def PyErr_NormalizeException(
     external_call["PyErr_NormalizeException", NoneType](
         Pointer(to=kind), Pointer(to=value), Pointer(to=trace)
     )
-
-
-@always_inline
-def PyErr_SetString(kind: PyObjectPtr, message: Int):
-    external_call["PyErr_SetString", NoneType](kind, message)
-
-
-@always_inline
-def PyObject_IsTrue(o: PyObjectPtr) -> c_int:
-    return external_call["PyObject_IsTrue", c_int](o)
 
 
 @always_inline
