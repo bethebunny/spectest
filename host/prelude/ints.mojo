@@ -3,33 +3,22 @@
 from bigint import BigUInt
 
 from numeric.bigint import BigInt
+from numeric.fixed import int_max, int_min, wrapped
 from numeric.formats import FloatFormat
 from numeric.floats import exactly
 from prelude.util import fail, int_of, real_of
 from wire.value import Value
 
 
-def _bound(bits: Int) -> BigInt:
-    return BigInt(1) << bits
-
-
 def wrap(n: Value, bits: Int, signed: Bool) raises -> Value:
     """`n` reduced modulo 2**bits into the range of the type."""
-    var x = int_of(n, "wrap")
-    var m = x % _bound(bits)
-    if signed and not (m < _bound(bits - 1)):
-        m = m - _bound(bits)
-    return Value.int(m^)
+    return Value.int(wrapped(int_of(n, "wrap"), bits, signed=signed))
 
 
 def fits_int(x: Value, bits: Int, signed: Bool) raises -> Value:
-    var name = String("i" if signed else "u", bits)
-    var lo = -_bound(bits - 1) if signed else BigInt(0)
-    var hi = _bound(bits - 1 if signed else bits) - BigInt(1)
-    var r = real_of(x, String("fits<", name, ">"))
-    if r.is_inf() or r.denominator != BigInt(1):
-        return Value.bool(False)
-    return Value.bool(not (r.numerator < lo) and not (hi < r.numerator))
+    var r = real_of(x, String("fits<", "i" if signed else "u", bits, ">"))
+    ref n = r.numerator
+    return Value.bool(r.is_integer() and int_min(bits, signed) <= n and n <= int_max(bits, signed))
 
 
 def fits_float(x: Value, f: FloatFormat) raises -> Value:

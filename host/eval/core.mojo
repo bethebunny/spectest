@@ -8,6 +8,7 @@ planned call that raised in the library) rather than an error.
 from check import spec as sp
 from check import types as ty
 from check.spec import Spec, Param
+from numeric.fixed import int_max, int_min
 from numeric.formats import format_by_id
 from numeric.literal import is_integer_literal, parse_number
 from partitions.compile import compile_set_aliased
@@ -18,7 +19,7 @@ from syntax import ast
 from wire.equality import same
 from wire.value import Value
 
-from .coerce import bits_of_value, coerce_arg, fit, float_max, int_max, int_min, value_from_bits
+from .coerce import bits_of_value, coerce_arg, fit, value_from_bits
 from .env import Env, Run
 from .host import EvalHost
 from .numbers import (
@@ -281,7 +282,7 @@ def ev_attr[
         if scalar.kind == ty.FIXED_INT:
             return Value.int(int_min(scalar.bits, scalar.signed) if r.name == "min" else int_max(scalar.bits, scalar.signed))
         var f = format_by_id(UInt8(scalar.bits))
-        var top = float_max(f)
+        var top = f.max_finite()
         return Value.float(f, top if r.name == "max" else top | f.sign_mask())
     if kind == sp.R_OBSERVER:
         var obj = ev(spec, n.children[0], env, run, host)

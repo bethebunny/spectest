@@ -1,11 +1,9 @@
 """Values made exact for the types of the parameters they are passed to, and the bit
 patterns of fixed-width values."""
 
-from std.memory import bitcast
-
-from bigint import BigUInt
 from check import types as ty
 from numeric.bigint import BigInt
+from numeric.fixed import int_max, int_min, pattern_of, signed_of
 from numeric.floats import exactly, is_nan, is_zero, round_to, signbit, to_real
 from numeric.formats import FloatFormat, format_by_id
 from numeric.real import Real
@@ -22,20 +20,6 @@ def needs_exact(types: ty.Types, t: Int) -> Bool:
     if k == ty.LIST or k == ty.OPTION or k == ty.MAP or k == ty.TUPLE or k == ty.RECORD:
         return any([needs_exact(types, a) for a in types.info(t).args])
     return False
-
-
-def int_min(width: Int, signed: Bool) -> BigInt:
-    return -BigInt(negative=False, magnitude=BigUInt(1) << (width - 1)) if signed else BigInt(0)
-
-
-def int_max(width: Int, signed: Bool) -> BigInt:
-    var bits = width - 1 if signed else width
-    return BigInt(negative=False, magnitude=BigUInt(1) << bits) - BigInt(1)
-
-
-def float_max(f: FloatFormat) -> UInt64:
-    """The bit pattern of the largest finite value."""
-    return f.exponent_mask() - 1
 
 
 def _to_int(v: Value, width: Int, signed: Bool, what: String) raises -> Value:
@@ -151,13 +135,7 @@ def fit(types: ty.Types, v: Value, t: Int) -> Value:
 
 
 def int_from_bits(bits: UInt64, width: Int, signed: Bool) -> Value:
-    if signed:
-        var shift = 64 - width
-        var wide = bitcast[DType.int64](bits << UInt64(shift))
-        return Value.int(Int(wide >> Int64(shift)))
-    if bits < (UInt64(1) << 63):
-        return Value.int(Int(bits))
-    return Value.int(BigInt(bits))
+    return Value.int(signed_of(bits, width)) if signed else Value.int(BigInt(bits))
 
 
 def value_from_bits(types: ty.Types, t: Int, bits: UInt64) raises -> Value:
@@ -184,12 +162,8 @@ def bits_of_value(types: ty.Types, t: Int, v: Value) raises -> UInt64:
     if info.kind == ty.FIXED_INT:
         if v.kind != .INT:
             raise Error(t"expected an integer, got {show(v)}")
-        var mask = ~UInt64(0) if info.bits == 64 else (UInt64(1) << UInt64(info.bits)) - 1
-        var small = v.small_int()
-        if small is not None:
-            return UInt64(bitcast[DType.uint64](Int64(small.value()))) & mask
-        var magnitude = v.as_bigint().magnitude.uint64_or_none()
-        if magnitude is None:
+        var n = v.as_bigint()
+        if n.magnitude.bits() > 64:
             raise Error(t"{show(v)} does not fit {types.text(t)}")
-        return magnitude.value() & mask
+        return pattern_of(n, info.bits)
     raise Error(t"{types.text(t)} is not a fixed-width type")

@@ -5,6 +5,7 @@ from std.memory import bitcast
 from eval.coerce import int_from_bits
 from mcheck.source import Source, Many, MANY_LABEL, index_to_int
 from numeric.bigint import BigInt
+from numeric.fixed import low_mask, signed_of
 from numeric.formats import FloatFormat, F16, BF16, F32, F64
 from wire.value import Value
 
@@ -12,10 +13,6 @@ from .sizes import Sizes
 
 
 # Integers
-
-
-def _mask(width: Int) -> UInt64:
-    return UInt64.MAX if width >= 64 else (UInt64(1) << UInt64(width)) - 1
 
 
 def _seg(u: UInt64, start: Int, log_length: Int, n: UInt128) -> UInt64:
@@ -31,7 +28,7 @@ def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt
     The choice, read as a fraction, picks small values, powers of two and their
     neighbours, the extremes, or a value uniform over all patterns, in that order.
     Within each, a smaller choice is a smaller magnitude."""
-    var mask = _mask(width)
+    var mask = low_mask(width)
     var u = src.draw_bits(64)
     var seg = Int(u >> 56)
     var top = UInt64(1) << UInt64(width - 1)
@@ -59,7 +56,7 @@ def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt
         return [top, top - 1, top + 1, top - 2][e] if signed else [0, mask, 1, mask - 1][e]
     var idx = _seg(u, 128, 7, UInt128(1) << UInt128(width))
     if signed:
-        var lo = Int(bitcast[DType.int64](top << UInt64(64 - width))) >> (64 - width)
+        var lo = signed_of(top, width)
         var hi = -(lo + 1)
         return bitcast[DType.uint64](Int64(index_to_int(idx, lo, hi))) & mask
     return idx

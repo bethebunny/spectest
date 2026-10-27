@@ -9,8 +9,8 @@ from std.collections import Dict
 
 import check.types as ty
 import syntax.ast as sx
-from bigint import BigUInt
 from numeric.bigint import BigInt
+from numeric.fixed import int_max, int_min, pattern_of
 from numeric.floats import exactly, to_real
 from numeric.formats import BF16, F16, F32, F64, FloatFormat, format_by_id
 from numeric.literal import parse_number
@@ -63,13 +63,10 @@ struct Elem(Copyable, Equatable, TrivialRegisterPassable):
         return "none"
 
     def int_min(self) -> BigInt:
-        if not self.signed:
-            return BigInt()
-        return -BigInt(negative=False, magnitude=BigUInt(1) << (self.width - 1))
+        return int_min(self.width, self.signed)
 
     def int_max(self) -> BigInt:
-        var bits = self.width - 1 if self.signed else self.width
-        return BigInt(negative=False, magnitude=BigUInt(1) << bits) - BigInt(1)
+        return int_max(self.width, self.signed)
 
 
 def elem_of(types: ty.Types, t: Int) -> Optional[Elem]:
@@ -342,10 +339,7 @@ struct SetCompiler(Movable):
                 or self.elem.int_max() < v.numerator
             ):
                 raise self.fail(e, t"{text} is not a {name} value")
-            var wrapped = v.numerator.copy()
-            if wrapped.negative:
-                wrapped = wrapped + BigInt(negative=False, magnitude=BigUInt(1) << self.elem.width)
-            return wrapped.magnitude.uint64_or_none().value()
+            return pattern_of(v.numerator, self.elem.width)
         if n.kind == .UNARY and n.op == .NEG and v.is_zero():
             raise self.fail(
                 e,
@@ -388,7 +382,7 @@ struct SetCompiler(Movable):
                     return Real(elem.int_min() if is_min else elem.int_max())
                 if elem.is_float():
                     var format = elem.format()
-                    var top = to_real(format, format.exponent_mask() - 1)
+                    var top = to_real(format, format.max_finite())
                     return -top if is_min else top^
                 raise self.fail(e, t"{owner.text} has no {n.text}")
         raise self.fail(

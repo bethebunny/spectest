@@ -6,8 +6,8 @@ that to the `#type` clause."""
 
 from check import types as ty
 from check.types import Types
-from eval.coerce import int_max, int_min
 from numeric.bigint import BigInt
+from numeric.fixed import int_max, int_min, low_mask
 from numeric.floats import exactly, is_nan, is_zero, round_to, signbit, to_real
 from numeric.formats import FloatFormat, format_by_id
 from .util import norm_name
@@ -49,7 +49,7 @@ def _float(
                 | (f.sign_mask() if signbit(src, bits) else UInt64(0)),
             )
         var payload = bits & src.fraction_mask()
-        if payload & ((UInt64(1) << UInt64(drop)) - 1) != 0:
+        if payload & low_mask(drop) != 0:
             raise _mismatch(types, t, v, path, "a NaN payload the format cannot hold")
         var kept = payload >> UInt64(drop)
         if kept == 0:

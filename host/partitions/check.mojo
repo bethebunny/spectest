@@ -8,6 +8,7 @@ import check.types as ty
 import syntax.ast as sx
 from bigint import BigUInt
 from check.spec import Partition, Spec
+from numeric.fixed import low_mask, signed_of
 from numeric.floats import is_nan
 from numeric.formats import format_by_id
 from numeric.text import float_text
@@ -82,8 +83,7 @@ def value_text(elem: Elem, bits: UInt64) raises -> String:
     if elem.is_float():
         return String(float_text(elem.format_id, bits), " (0x", _hex(bits, elem.width // 4), ")")
     if elem.signed:
-        var shift = UInt64(64 - elem.width)
-        return String(Int(Int64(bits << shift) >> Int64(shift)))
+        return String(signed_of(bits, elem.width))
     return String(bits)
 
 
@@ -95,8 +95,7 @@ def _example(mut ctx: SetContext, elem: Elem, s: BitSet) raises -> String:
         var one = UInt64(format.bias()) << UInt64(format.fraction_bits)
         candidates.extend([one, one | format.sign_mask()])
     elif elem.is_int():
-        var minus_one = UInt64.MAX if elem.width == 64 else (UInt64(1) << UInt64(elem.width)) - 1
-        candidates.extend([1, minus_one])
+        candidates.extend([1, low_mask(elem.width)])
     else:
         candidates.append(1)
     for c in candidates:

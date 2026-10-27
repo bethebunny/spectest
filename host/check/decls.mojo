@@ -2,10 +2,10 @@
 rules of functions, models and interfaces, then the whole-file `run`.
 """
 
+from numeric.fixed import int_max, int_min
 from numeric.floats import exactly
 from numeric.formats import format_by_id
 from numeric.real import Real
-from numeric.bigint import BigInt
 from syntax import ast
 
 from check import types as ty
@@ -439,25 +439,12 @@ def _declare_def(mut c: Checker, d: Int):
 
 
 def _int_range_text(bits: Int, signed: Bool) -> String:
-    if signed:
-        var lo = -(1 << (bits - 1)) if bits < 64 else Int.MIN
-        var hi = (1 << (bits - 1)) - 1 if bits < 64 else Int.MAX
-        return String(lo, " to ", hi)
-    if bits == 64:
-        return "0 to 18446744073709551615"
-    return String("0 to ", (1 << bits) - 1)
+    return String(int_min(bits, signed), " to ", int_max(bits, signed))
 
 
 def _in_fixed_range(value: Real, bits: Int, signed: Bool) -> Bool:
-    if not value.is_integer():
-        return False
-    try:
-        var top = Real(BigInt(1) << (bits - 1 if signed else bits))
-        var hi = top - Real(1)
-        var lo = -top if signed else Real(0)
-        return not (value < lo) and not (hi < value)
-    except:
-        return False
+    ref n = value.numerator
+    return value.is_integer() and int_min(bits, signed) <= n and n <= int_max(bits, signed)
 
 
 def check_default(mut c: Checker, p: Param):

@@ -11,6 +11,7 @@ from arena.compare import disjoint, subset
 from arena.members import accepts, nth_narrow, rank_narrow
 from bigint import BigUInt
 from numeric.bigint import BigInt
+from numeric.fixed import int_max, int_min, low_mask, pattern_of
 from numeric.formats import FloatFormat
 
 from .pattern import expand_pattern
@@ -101,30 +102,19 @@ struct SetContext(Movable):
         hi: Optional[BigInt],
     ) -> BitSet:
         """Integers in `[lo, hi)` as two's-complement patterns (absent bounds are open)."""
-        var modulus = BigInt(negative=False, magnitude=BigUInt(1) << width)
-        var type_lo = BigInt()
-        var type_hi = modulus.copy()
-        if signed:
-            var half = BigInt(negative=False, magnitude=BigUInt(1) << (width - 1))
-            type_lo = -half
-            type_hi = half^
+        var type_lo = int_min(width, signed)
+        var type_hi = int_max(width, signed) + 1
         var low = type_lo.copy() if lo is None else max(lo.value().copy(), type_lo)
         var high = type_hi.copy() if hi is None else min(hi.value().copy(), type_hi)
         if low >= high:
             return self.empty(width)
-        var last = high - BigInt(1)
+        var last = high - 1
         if low.negative and not last.negative:
             # straddles zero: the non-negatives, then the negatives from the top
-            var upper = self.interval_inclusive(
-                _u64(low + modulus), _u64(modulus - BigInt(1)), width
-            )
-            var lower = self.interval_inclusive(0, _u64(last), width)
+            var upper = self.interval_inclusive(pattern_of(low, width), low_mask(width), width)
+            var lower = self.interval_inclusive(0, pattern_of(last, width), width)
             return self.union(lower, upper)
-        if low.negative:
-            return self.interval_inclusive(
-                _u64(low + modulus), _u64(last + modulus), width
-            )
-        return self.interval_inclusive(_u64(low), _u64(last), width)
+        return self.interval_inclusive(pattern_of(low, width), pattern_of(last, width), width)
 
     def float_named(mut self, format: FloatFormat, name: StringSlice) raises -> BitSet:
         match name:
@@ -242,7 +232,3 @@ struct SetContext(Movable):
         if total > UInt128(limit):
             raise Error(t"the set has more than {limit} members")
         return [UInt64(nth_narrow(self.arena, a.root, UInt128(i))) for i in range(Int(total))]
-
-
-def _u64(value: BigInt) -> UInt64:
-    return value.magnitude.uint64_or_none().value()
