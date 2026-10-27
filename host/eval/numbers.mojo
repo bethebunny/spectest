@@ -273,7 +273,7 @@ def slice_value(v: Value, a: Value, b: Value) raises -> Value:
 def concat(a: Value, b: Value) raises -> Optional[Value]:
     """`a + b` on lists, strings and bytes; None for other operands."""
     if a.kind == .LIST and b.kind == .LIST:
-        return Value.list([a.item(i) for i in range(a.count())] + [b.item(i) for i in range(b.count())])
+        return Value.list(a.items() + b.items())
     if is_stringish(a) and is_stringish(b):
         return Value.string(String(a.text(), b.text()))
     if a.kind == .BYTES and b.kind == .BYTES:
@@ -284,13 +284,13 @@ def concat(a: Value, b: Value) raises -> Optional[Value]:
 def elements(v: Value, what: String) raises -> List[Value]:
     """What a comprehension ranges over."""
     if v.kind == .LIST or v.kind == .TUPLE:
-        return [v.item(i) for i in range(v.count())]
+        return v.items()
     if v.kind == .BYTES:
         return [Value.int(Int(b)) for b in v.data()]
     if is_stringish(v):
         return [Value.string(String(cp)) for cp in v.text().codepoints()]
     if v.kind == .MAP:
-        return [v.item(2 * i) for i in range(v.count())]
+        return v.keys()
     raise Error(t"{what} ranges over a list, string, bytes or map, but got {show(v)}")
 
 

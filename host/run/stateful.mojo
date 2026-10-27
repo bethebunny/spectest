@@ -418,7 +418,7 @@ struct Machine(Property):
         if is_ctor and name:
             return String(name, " = ", call)
         if prop.last_reply.kind == .ERROR:
-            return String(call, " raised ", prop.last_reply.name(), ": ", prop.last_reply.text())
+            return String(call, " raised ", prop.last_reply.error_text())
         if not is_ctor and prop.last_ok and self.loaded[].spec.types.kind(prop.rtype) != ty.UNIT:
             return String(call, " -> ", prop.show(prop.last_result.copy(), prop.rtype))
         return call^

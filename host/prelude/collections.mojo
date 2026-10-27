@@ -5,12 +5,10 @@ to judge sorting code. Element equality in `is_permutation`, `is_subsequence`,
 `distinct` and `index_of` is `same`: floats by bits, maps without regard to order.
 """
 
-from std.hash import default_hasher
-
 from numeric.bigint import BigInt
 from numeric.floats import is_nan as fl_is_nan, to_real
 from prelude.util import codepoint_count, fail, int_of, list_items
-from wire.equality import hash_same, same
+from wire.equality import same, same_hash
 from wire.order import compare, is_ord
 from wire.value import Value
 
@@ -87,12 +85,6 @@ def is_sorted(xs: Value) raises -> Value:
     return Value.bool(True)
 
 
-def _hash(v: Value) -> UInt64:
-    var h = default_hasher()
-    hash_same(v, h)
-    return UInt64(h^.finish())
-
-
 def is_permutation(a: Value, b: Value) raises -> Value:
     var xs = list_items(a, "is_permutation")
     var ys = list_items(b, "is_permutation")
@@ -100,14 +92,14 @@ def is_permutation(a: Value, b: Value) raises -> Value:
         return Value.bool(False)
     var buckets = Dict[UInt64, List[Int]]()
     for j, y in enumerate(ys):
-        var key = _hash(y)
+        var key = same_hash(y)
         if key in buckets:
             buckets[key].append(j)
         else:
             buckets[key] = [j]
     var used = List[Bool](length=len(ys), fill=False)
     for x in xs:
-        var key = _hash(x)
+        var key = same_hash(x)
         if key not in buckets:
             return Value.bool(False)
         var found = False
@@ -137,7 +129,7 @@ def distinct(xs: Value) raises -> Value:
     var items = list_items(xs, "distinct")
     var seen = Dict[UInt64, List[Int]]()
     for i, item in enumerate(items):
-        var key = _hash(item)
+        var key = same_hash(item)
         if key in seen:
             for j in seen[key]:
                 if same(item, items[j]):
@@ -159,13 +151,13 @@ def index_of(xs: Value, x: Value) raises -> Value:
 def keys(m: Value) raises -> Value:
     if m.kind != .MAP:
         raise fail("keys", t"expected a map, got {m}")
-    return Value.list([m.item(2 * i) for i in range(m.count())])
+    return Value.list(m.keys())
 
 
 def values(m: Value) raises -> Value:
     if m.kind != .MAP:
         raise fail("values", t"expected a map, got {m}")
-    return Value.list([m.item(2 * i + 1) for i in range(m.count())])
+    return Value.list(m.values())
 
 
 def range_(a: Value, b: Value) raises -> Value:

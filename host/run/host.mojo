@@ -133,7 +133,7 @@ struct RunHost(Builder, EvalHost):
         var target = self.named_target(b.target)
         var out = self._reply(self.client[].call(target, args))
         if out.kind == .ERROR:
-            raise Error(String("building ", b.target, " raised ", out.name(), ": ", out.text()))
+            raise Error(String("building ", b.target, " raised ", out.error_text()))
         if out.kind != .HANDLE:
             raise Error(String("building ", b.target, " returned ", format_value(out), ", not an object"))
         self.track(out, False)
@@ -159,7 +159,7 @@ struct RunHost(Builder, EvalHost):
                 raise Error(
                     String(
                         "observer ", self.loaded[].spec.models[model].name, ".", o.name,
-                        " raised ", reply.name(), ": ", reply.text(),
+                        " raised ", reply.error_text(),
                     )
                 )
             try:
@@ -235,7 +235,7 @@ struct RunHost(Builder, EvalHost):
         var target = self.client[].resolve(c.name)
         var raw = self.client[].get(target)
         if raw.kind == .ERROR:
-            raise Error(String("constant ", c.name, ": ", raw.name(), ": ", raw.text()))
+            raise Error(String("constant ", c.name, ": ", raw.error_text()))
         var got = decode(raw, c.type, self.loaded[].spec.types)
         self.const_values[`const`] = got.copy()
         self.const_known[`const`] = True
@@ -259,5 +259,5 @@ struct RunHost(Builder, EvalHost):
         var target = self.named_target(name)
         var out = self._reply(self.client[].call(target, args))
         if out.kind == .ERROR:
-            raise Error(String(name, " raised ", out.name(), ": ", out.text()))
+            raise Error(String(name, " raised ", out.error_text()))
         return out^

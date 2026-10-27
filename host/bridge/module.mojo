@@ -122,7 +122,7 @@ def _values(list: PyObjectPtr) raises -> List[Value]:
     var v = from_python(list)
     if v.kind != .LIST:
         raise Error("TypeError: args must be a list of wire objects")
-    return [v.item(i) for i in range(v.count())]
+    return v.items()
 
 
 def version(module: PyObjectPtr, unused: PyObjectPtr) abi("C") -> PyObjectPtr:

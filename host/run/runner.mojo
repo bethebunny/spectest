@@ -847,7 +847,7 @@ struct Prop(Property, Movable):
             return
         var did = String("returned")
         if raised:
-            did = String("raised ", reply.name(), ": ", reply.text())
+            did = String("raised ", reply.error_text())
         if conds[k] == 1:
             if raised and contains_name(must, mapped):
                 return
@@ -877,7 +877,7 @@ struct Prop(Property, Movable):
         ref spec = self.loaded[].spec
         if mapped == "":
             self.vkind[i] = V_FAIL
-            self.vnote[i] = String("no raises or may_raise admits ", reply.name(), ": ", reply.text())
+            self.vnote[i] = String("no raises or may_raise admits ", reply.error_text())
             return
         if contains_name(must, mapped) or contains_name(may, mapped):
             return
@@ -1047,7 +1047,7 @@ struct Prop(Property, Movable):
         # What the call did.
         var obs = String()
         if raised:
-            obs = String("raised ", reply.name(), ": ", reply.text())
+            obs = String("raised ", reply.error_text())
             if mapped:
                 obs += String(" (maps to ", mapped, ")")
             else:

@@ -293,9 +293,8 @@ def ev_attr[
         var rec = ev(spec, n.children[0], env, run, host)
         if rec.kind != .RECORD:
             raise Error(t".{n.text} needs a record, but got {show(rec)}")
-        for i in range(rec.count()):
-            if rec.item(2 * i).text() == n.text:
-                return rec.item(2 * i + 1)
+        if case .Some(field) = rec.field(n.text):
+            return field.copy()
         raise Error(t"record {rec.name()} has no field {n.text}")
     if kind == sp.R_QERR_PART:
         var q = ev(spec, n.children[0], env, run, host)
@@ -511,7 +510,7 @@ def ev_call[
         coerce_args(spec, args, f.params, f.name)
         var out = host.call_fn(r.index, args^)
         if out.kind == .ERROR:
-            raise run.skip(e, String(t"the call of {f.name} raised {out.name()}: {out.text()}"))
+            raise run.skip(e, String(t"the call of {f.name} raised {out.error_text()}"))
         return fit(spec.types, out, spec.node_types[e])
     if kind == sp.R_DEF:
         ref d = spec.defs[r.index]

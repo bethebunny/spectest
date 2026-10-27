@@ -50,4 +50,4 @@ def real_value(var r: Real) -> Value:
 def list_items(v: Value, who: String) raises -> List[Value]:
     if v.kind != .LIST and v.kind != .TUPLE:
         raise fail(who, t"expected a list, got {v}")
-    return [v.item(i) for i in range(v.count())]
+    return v.items()
