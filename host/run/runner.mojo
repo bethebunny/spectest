@@ -660,8 +660,12 @@ struct Prop(Property):
         # State before the call.
         var before = List[Value]()
         var digest_error = String()
-        var before_text = List[String]()
+        var input_text = List[String]()
         var explaining = self.explain_all or self.focus >= 0
+        if explaining:
+            # The inputs as they were before the call, which may change them.
+            for p in range(len(args)):
+                input_text.append(self.show(args[p], self.ptypes[p]))
         for i in self.checked:
             if i >= len(args) or args[i].kind != HANDLE:
                 before.append(Value.none())
@@ -671,8 +675,6 @@ struct Prop(Property):
             except e:
                 digest_error = String(e)
                 before.append(Value.none())
-            if explaining:
-                before_text.append(self.show(args[i], self.ptypes[i]))
         var conds = List[Int]()
         var cond_msg = List[String]()
         for c in self.cond_clauses:
@@ -787,7 +789,7 @@ struct Prop(Property):
                         continue
                     self._capture(
                         i, args, env, raised, reply, mapped, has_type_error, type_error, result,
-                        conds, cond_msg, must, may, changed_names, before_text, due_notes,
+                        conds, cond_msg, must, may, changed_names, input_text, due_notes,
                     )
         return out^
 
@@ -1022,7 +1024,7 @@ struct Prop(Property):
         must: List[String],
         may: List[String],
         changed_names: List[String],
-        before_text: List[String],
+        input_text: List[String],
         due_notes: String,
     ):
         ref spec = self.loaded[].spec
@@ -1032,9 +1034,9 @@ struct Prop(Property):
         for p in range(len(args)):
             d.input_names.append(func.params[p].name.copy())
             if self.defaulted[p]:
-                d.input_values.append(String("default (", self.show(args[p], self.ptypes[p]), ")"))
+                d.input_values.append(String("default (", input_text[p], ")"))
             else:
-                d.input_values.append(self.show(args[p], self.ptypes[p]))
+                d.input_values.append(input_text[p].copy())
         # What the call did.
         var obs = String()
         if raised:
@@ -1047,6 +1049,18 @@ struct Prop(Property):
             obs = String("returned ", describe(reply), ", which is not ", spec.types.text(self.rtype), ": ", type_error)
         else:
             obs = String("result = ", self.show(result, self.rtype))
+        # The state after the call of the handles it may modify.
+        var afters = String()
+        if not raised:
+            for p in range(len(func.params)):
+                for q in self.modified:
+                    if q == func.params[p].name and args[p].kind == HANDLE:
+                        afters += String("\n", q, " after = ", self.show(args[p], self.ptypes[p]))
+        if afters:
+            if spec.types.kind(self.rtype) == ty.UNIT:
+                obs = String(afters[byte = 1 :])
+            else:
+                obs += afters
         if self.infos[i].kind == K_COND or self.infos[i].kind == K_INVARIANT:
             var lines = due_notes.split("\n")
             for line in lines:
@@ -1056,8 +1070,8 @@ struct Prop(Property):
             for q in range(len(self.checked)):
                 var pi = self.checked[q]
                 for nm in changed_names:
-                    if nm == func.params[pi].name and q < len(before_text):
-                        obs += String("\n", nm, " before = ", before_text[q])
+                    if nm == func.params[pi].name:
+                        obs += String("\n", nm, " before = ", input_text[pi])
                         obs += String("\n", nm, " after  = ", self.show(args[pi], self.ptypes[pi]))
         d.observation = obs^
         for p in range(len(self.part_class)):

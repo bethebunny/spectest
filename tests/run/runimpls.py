@@ -214,3 +214,29 @@ def not_a_box(items):
 
 def shout(s):
     return s.upper()
+
+
+# -- Counting calls ------------------------------------------------------------
+
+CALLS = []
+
+
+def counted(x):
+    CALLS.append(x)
+    return x
+
+
+def repeat(s, n=3):
+    return s * n
+
+
+def repeat_bug(s, n=3):
+    return s * n + ("!" if n == 4 else "")
+
+
+def ident_generic(x):
+    return x
+
+
+def ident_generic_bug(x):
+    return x if x != 3 else 4

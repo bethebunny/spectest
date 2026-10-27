@@ -41,8 +41,9 @@ struct RunHost(Builder, EvalHost):
     var tnames: List[String]
     var tids: List[Int]
     """The instantiation of the declaration being run."""
-    var memo_fn: List[Int]
-    var memo_args: List[Value]
+    var memo: Dict[Value, Int]
+    """Planned calls of the current example: the function and arguments as one list
+    value, to the position of the result in `memo_result`."""
     var memo_result: List[Value]
     var known: List[UInt64]
     """Ids of the handles among the current example's arguments."""
@@ -68,8 +69,7 @@ struct RunHost(Builder, EvalHost):
             self.const_known.append(False)
         self.tnames = List[String]()
         self.tids = List[Int]()
-        self.memo_fn = List[Int]()
-        self.memo_args = List[Value]()
+        self.memo = Dict[Value, Int]()
         self.memo_result = List[Value]()
         self.known = List[UInt64]()
         self.seen = List[UInt64]()
@@ -79,9 +79,9 @@ struct RunHost(Builder, EvalHost):
     # Example bookkeeping
 
     def begin_example(mut self, args: List[Value]):
-        self.memo_fn.clear()
-        self.memo_args.clear()
-        self.memo_result.clear()
+        if len(self.memo_result) > 0:
+            self.memo.clear()
+            self.memo_result.clear()
         self.known.clear()
         for a in args:
             if a.kind == HANDLE:
@@ -172,13 +172,16 @@ struct RunHost(Builder, EvalHost):
         return got^
 
     def call_fn(mut self, `fn`: Int, args: List[Value]) raises -> Value:
-        var packed = Value.list(args.copy())
-        for i in range(len(self.memo_fn)):
-            if self.memo_fn[i] == `fn` and self.memo_args[i] == packed:
-                return self.memo_result[i].copy()
+        var packed = List[Value](capacity=len(args) + 1)
+        packed.append(Value.int(`fn`))
+        for a in args:
+            packed.append(a.copy())
+        var key = Value.list(packed^)
+        var found = self.memo.get(key)
+        if found:
+            return self.memo_result[found.value()].copy()
         var out = self._planned(`fn`, args)
-        self.memo_fn.append(`fn`)
-        self.memo_args.append(packed^)
+        self.memo[key^] = len(self.memo_result)
         self.memo_result.append(out.copy())
         return out^
 
