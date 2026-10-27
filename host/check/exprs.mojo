@@ -523,8 +523,7 @@ def integer_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         + " takes integers, but got "
         + c.text(lt)
         + " and "
-        + c.text(rt)
-        + (" (use / for division of reals)" if op == "**" and False else ""),
+        + c.text(rt),
     )
     return c.poison
 
@@ -1083,8 +1082,6 @@ def infer_call(mut c: Checker, e: Int) -> Int:
                 joined += " or " if i else ""
                 joined += options[i]
             hint = " (did you mean " + joined + "?)"
-        if c.ctx.extern_result >= 0 and False:
-            pass
         return fail_call(c, e, f, "unknown function " + name + hint)
     if fk == ast.ATTR:
         var base = c.kid(f, 0)
@@ -1122,9 +1119,10 @@ def infer_call(mut c: Checker, e: Int) -> Int:
                 var root = _root_name(c, f)
                 if root != "" and c.scalar(root) < 0:
                     return call_extern(c, e, chain)
-            if c.kind_of(base) == ast.NAME and c.scalar(c.text_of(base)) >= 0:
-                pass
-            elif not (c.kind_of(base) == ast.NAME and c.text_of(base) in c.enum_index):
+            var known_type_root = c.kind_of(base) == ast.NAME and (
+                c.scalar(c.text_of(base)) >= 0 or c.text_of(base) in c.enum_index
+            )
+            if not known_type_root:
                 return fail_call(c, e, f, "unknown function " + chain)
         var vt = infer(c, base)
         if c.tkind(vt) == ty.MODEL:

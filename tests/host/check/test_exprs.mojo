@@ -1,10 +1,12 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
 from check import types as ty
-from check.spec import R_LOCAL, R_PARAM
+from check.spec import R_LOCAL, R_PARAM, R_SET_CTOR, R_SPEC_FN, R_TYPE_CONST, Spec
 from check.testkit import (
     clause_expr,
+    count_errors,
     ensures_ty,
+    named,
     fails,
     fails2,
     nodes_of,
@@ -441,6 +443,276 @@ def test_literal_union_and_maps_and_records() raises:
         "  ensures e: all(k in keys(m): m[k].v <= 255) and result >= 0\n"
     )
     assert_equal(spec2.types.text(spec2.fns[0].params[0].type), "map<string, P>")
+
+
+# -- quantized errors, max, aggregates (v1's test_lang_qerr) ------------------------
+
+
+def qerr_ok(expr: String) raises:
+    _ = ok("fn f(x: f64, y: f64, n: u8)\n  ensures " + expr + "\n")
+
+
+def qerr_fails(expr: String, message: String) raises:
+    fails("fn f(x: f64, y: f64)\n  ensures " + expr + "\n", message)
+
+
+def test_qerr_accepted() raises:
+    qerr_ok("qe(x, y) <= 1")
+    qerr_ok("qe(x, y) < 1.5")
+    qerr_ok("qe(x, y) == 0")
+    qerr_ok("qe(x, y) != 0")
+    qerr_ok("qe(x, y) >= qe(y, x)")
+    qerr_ok("0 < qe(x, y)")
+    qerr_ok("qe(x, y) > n")
+    qerr_ok("qe(x, y) == qe(y, x)")
+    qerr_ok("qe(x, y) + qe(x, x) <= 2")
+    qerr_ok("qe(x, y) in [qe(x, x)]")
+    qerr_ok("distinct([qe(x, y), qe(y, x)])")
+    qerr_ok("steps(qe(x, y)) < 2 and nans(qe(x, y)) == 0")
+    qerr_ok("(if is_nan(x) then qe(x, x) else qe(x, y)) <= 1")
+
+
+def test_qerr_rejected() raises:
+    qerr_fails("qe(x, y) <= x", "compares a qerr with a qerr or a number")
+    qerr_fails("qe(x, y) == x", "but the other side is f64")
+    qerr_fails('qe(x, y) == "a"', "but the other side is string")
+    qerr_fails("qe(x, y) - qe(x, y) == 0", "quantized errors only add to each other")
+    qerr_fails("qe(x, y) + 1 == 0", "cannot apply + to qerr and int")
+    qerr_fails("qe(x, y) * 2 == 0", "cannot apply * to qerr and int")
+    qerr_fails("-qe(x, y) == 0", "unary - needs a number")
+    qerr_fails("sorted([qe(x, y)]) == []", "qerr has no total order")
+    qerr_fails("(if true then qe(x, y) else 0) == 0", "different types: qerr and int")
+
+
+def test_qerr_comparison_types() raises:
+    var spec = ok("fn f(x: f32) -> f32\n  ensures a: qe(result, cr.cos(x)) <= 1\n")
+    var e = clause_expr(spec, "f.a")
+    assert_equal(type_text(spec, e), "bool")
+    assert_equal(type_text(spec, spec.ast.kid(e, 0)), "qerr")
+    assert_equal(type_text(spec, spec.ast.kid(e, 1)), "int")
+
+
+def test_max_and_sum_types() raises:
+    assert_equal(ensures_ty("xs: list<u8>", "max(v in xs: v)"), "int")
+    assert_equal(ensures_ty("xs: list<int>", "max(v in xs: v / 2)"), "real")
+    assert_equal(ensures_ty("xs: list<f64>", "max(v in xs: v)"), "real")
+    assert_equal(ensures_ty("xs: list<f64>", "max(v in xs: qe(v, cr.sqrt(v)))"), "qerr")
+    assert_equal(ensures_ty("xs: list<f64>", "sum(v in xs: qe(v, cr.sqrt(v)))"), "qerr")
+    assert_equal(ensures_ty("xs: list<f64>", "sum(v in xs: steps(qe(v, v)))"), "int")
+    fails(
+        "fn f(xs: list<string>)\n  ensures let v = max(s in xs: s) in true\n",
+        "max(...) takes the largest of numbers or qerr values, but the body is string",
+    )
+    fails(
+        "fn f(xs: list<bool>)\n  ensures let v = sum(s in xs: s) in true\n",
+        "sum(...) adds numbers or qerr values, but the body is bool",
+    )
+
+
+def aggregate_ok(clause: String, decls: String = "") raises -> Spec:
+    return ok(decls + "fn f(x: f16) -> f16\n  aggregate a: " + clause + "\n")
+
+
+def aggregate_fails(clause: String, message: String, decls: String = "") raises:
+    fails(decls + "fn f(x: f16) -> f16\n  aggregate a: " + clause + "\n", message)
+
+
+def test_aggregate_accepted_shapes() raises:
+    var g = "fn g(x: f16) -> f16\n"
+    _ = aggregate_ok("sum(v in f16.all: qe(f(v), cr.cos(v))) == 0", g)
+    _ = aggregate_ok("sum(v in f16.finite: qe(f(v), cr.cos(v))) <= 100", g)
+    _ = aggregate_ok("sum(v in f16.finite: steps(qe(f(v), cr.cos(v)))) < 2 * 50", g)
+    _ = aggregate_ok("max(v in f16.finite - f16.zero: qe(f(v), cr.cos(v))) <= 1", g)
+    _ = aggregate_ok("max(v in f16.range(-1, 1): qe(f(v), cr.cos(v))) < 1.5", g)
+    _ = aggregate_ok(
+        "max(v in f16.all & {0, 1, 0.5}: steps(qe(f(v), cr.cos(v)))) <= i8.max", g
+    )
+    _ = aggregate_ok("all(v in f16.nan: is_nan(f(v)))", g)
+    _ = aggregate_ok('all(v in f16.pattern("0 11111 0*") | f16.zero: not is_nan(f(v)))', g)
+    _ = aggregate_ok("sum(v in [1, 2, 3]: qe(f(v), cr.cos(f(v)))) <= 3", g)
+    _ = aggregate_ok("max(n in range(0, 10): n) <= 9", g)
+    _ = aggregate_ok("all(v in f16.all: same(f(v), g(v)))", g)
+
+
+def test_aggregate_resolutions_and_types() raises:
+    var spec = aggregate_ok("sum(v in f16.finite - f16.zero: qe(f(v), cr.cos(v))) == 0")
+    var id = spec.clause_named("f.a").value()
+    assert_equal(spec.clauses[id].kind, ast.AGGREGATE)
+    var e = spec.clauses[id].expr
+    var top = spec.ast.kid(e, 0)
+    assert_equal(type_text(spec, spec.ast.kid(top, 0)), "set<f16>")
+    assert_equal(type_text(spec, top), "qerr")
+    var finite = spec.ast.kid(spec.ast.kid(top, 0), 0)
+    assert_equal(spec.resolution(finite).value().kind, R_TYPE_CONST)
+    assert_equal(spec.resolution(finite).value().name, "finite")
+    var body = spec.ast.kid(top, 1)
+    var call = spec.ast.kid(spec.ast.kid(body, 2), 0)
+    assert_equal(spec.resolution(call).value().kind, R_SPEC_FN)
+    assert_equal(spec.resolution(call).value().index, spec.fn_named("f").value())
+    var vs = named(spec, call, ast.NAME, "v")
+    assert_equal(type_text(spec, vs[0]), "f16")
+    assert_equal(spec.resolution(vs[0]).value().kind, R_LOCAL)
+    assert_equal(spec.resolution(vs[0]).value().index, top)
+
+
+def test_aggregate_set_constructor_resolution() raises:
+    var spec = ok(
+        "fn f(x: f32) -> f32\n"
+        "  aggregate worst: max(v in f32.range(-1, 1): qe(f(v), cr.cos(v))) <= 0\n"
+    )
+    var top = spec.ast.kid(clause_expr(spec, "f.worst"), 0)
+    var it = spec.ast.kid(top, 0)
+    assert_equal(type_text(spec, it), "set<f32>")
+    assert_equal(spec.resolution(it).value().kind, R_SET_CTOR)
+    assert_equal(spec.resolution(it).value().name, "range")
+
+
+def test_aggregate_clause_ids() raises:
+    var spec = ok(
+        "fn cos16(x: f16) -> f16\n"
+        "  ensures accurate: qe(result, cr.cos(x)) <= 1\n"
+        "  aggregate correctly_rounded: sum(v in f16.all: qe(cos16(v), cr.cos(v))) == 0\n"
+        "  aggregate max(v in f16.all: qe(cos16(v), cr.cos(v))) <= 1\n"
+    )
+    assert_equal(len(spec.clauses), 3)
+    assert_equal(spec.clauses[0].id, "cos16.accurate")
+    assert_equal(spec.clauses[1].id, "cos16.correctly_rounded")
+    assert_equal(spec.clauses[2].id, "cos16#3")
+
+
+def test_aggregate_bad_shapes() raises:
+    var q = "qe(f(v), cr.cos(v))"
+    aggregate_fails("max(v in f16.all: " + q + ") == 0", "one of the shapes")
+    aggregate_fails("sum(v in f16.all: " + q + ") >= 1", "one of the shapes")
+    aggregate_fails("sum(v in f16.all: " + q + ") > 1", "one of the shapes")
+    aggregate_fails("1 >= sum(v in f16.all: " + q + ")", "one of the shapes")
+    aggregate_fails("sum(v in f16.all: " + q + ") == 1", "only for c = 0")
+    aggregate_fails("exists(v in f16.all: is_nan(f(v)))", "one of the shapes")
+    aggregate_fails("count(v in f16.all: is_nan(f(v))) <= 1", "one of the shapes")
+    aggregate_fails("is_nan(f(x))", "one of the shapes")
+    aggregate_fails("true", "one of the shapes")
+    aggregate_fails("all(v in f16.all: is_nan(f(v))) and true", "one of the shapes")
+
+
+def test_aggregate_bound_is_a_constant() raises:
+    aggregate_fails(
+        "sum(v in f16.all: qe(f(v), cr.cos(v))) <= len([1])",
+        "the bound of an aggregate clause must be a constant",
+    )
+    aggregate_fails(
+        "max(n in range(0, 3): n) <= max(m in range(0, 3): m)",
+        "the bound of an aggregate clause must be a constant",
+    )
+    aggregate_fails(
+        "max(v in f16.all: qe(f(v), cr.cos(v))) <= f16.max", "but the other side is f16"
+    )
+
+
+def test_aggregate_parameters_result_and_old() raises:
+    aggregate_fails(
+        "sum(v in f16.all: qe(f(v), cr.cos(x))) <= 3",
+        "an aggregate clause cannot use the parameter x of f",
+    )
+    aggregate_fails(
+        "sum(v in f16.all: qe(result, cr.cos(v))) <= 3",
+        "evaluated once over a set of inputs, so there is no result",
+    )
+    aggregate_fails(
+        "sum(v in f16.all: steps(qe(old(f(v)), v))) <= 3",
+        "old(...) has no meaning in an aggregate clause",
+    )
+    assert_equal(
+        count_errors(
+            "fn f(x: f16) -> f16\n  aggregate a: sum(v in f16.all: steps(qe(old(f(v)), v)))"
+            " <= 3\n"
+        ),
+        1,
+    )
+
+
+def test_aggregate_spec_functions_are_planned_calls() raises:
+    var spec = aggregate_ok(
+        "all(v in f16.all: same(g(v), f(v)))", "fn g(y: f16) -> f16\n"
+    )
+    var names = List[String]()
+    for n in nodes_of(spec, clause_expr(spec, "f.a"), ast.CALL):
+        var r = spec.resolution(n)
+        if r and r.value().kind == R_SPEC_FN:
+            names.append(r.value().name.copy())
+    assert_equal(len(names), 2)
+    assert_equal(names[0], "g")
+    assert_equal(names[1], "f")
+
+
+def test_aggregates_only_in_functions() raises:
+    fails(
+        "interface Q\n  observe n: int\n  new make() -> Q\n"
+        "    aggregate a: max(i in range(0, 3): i) <= 3\n",
+        "aggregate clauses belong to functions (fn), not to a constructor",
+    )
+    fails(
+        "interface Q\n  observe n: int\n  method m(self)\n"
+        "    aggregate a: max(i in range(0, 3): i) <= 3\n",
+        "aggregate clauses belong to functions (fn), not to a method",
+    )
+    fails(
+        "model M\n  observe n: int\n  aggregate a: max(i in range(0, 3): i) <= 3\n",
+        "aggregate belongs to a function, constructor or method, not to model M",
+    )
+
+
+def test_sets_only_at_the_top_of_an_aggregate() raises:
+    aggregate_fails(
+        "all(v in f16.all: all(w in f16.nan: same(f(v), w)))",
+        "all(...) ranges over a set such as f16.all only as the top comprehension",
+    )
+    fails(
+        "fn f(x: f16) -> f16\n  ensures all(v in f16.nan: is_nan(v))\n",
+        "only as the top comprehension of an aggregate clause",
+    )
+    fails(
+        "fn f(x: f16) -> f16\n  ensures let s = sum(v in f16.range(0, 1): steps(qe(v, x)))"
+        " in s >= 0\n",
+        "sum(...) ranges over a set such as f16.all only as the top comprehension",
+    )
+
+
+def test_set_iterables_must_be_typed_sets() raises:
+    aggregate_fails(
+        "sum(v in {1, 2}: steps(qe(f(v), cr.cos(v)))) <= 1", "the type of this set is unknown"
+    )
+    aggregate_fails(
+        "sum(v in f16.all | f32.nan: steps(qe(f(v), cr.cos(v)))) <= 1",
+        "cannot combine a set of f16 with a set of f32",
+    )
+    aggregate_fails("all(v in f16.all - x: true)", "cannot use the parameter x")
+
+
+comptime IFACE = (
+    "interface S\n  observe items: list<int>\n  new e() -> S\n  method m(self)\n"
+)
+
+
+def test_old_of_clause_locals() raises:
+    fails(
+        String(IFACE)
+        + "    ensures all(i in range(0, len(self.items)): old(self.items[i]) =="
+        " self.items[i])\n",
+        "old(...) is evaluated before the call, so it cannot use i, which all(...) binds"
+        " inside this clause: bind old(...) of the state first, e.g. let xs ="
+        " old(self.items)",
+    )
+    fails(
+        String(IFACE) + "    ensures let n = 1 in old(len(self.items) + n) == n\n",
+        "cannot use n, which let binds inside this clause",
+    )
+    _ = ok(
+        String(IFACE)
+        + "    ensures a: old(let n = len(self.items) in n + 1) >= 1\n"
+        "    ensures b: old(all(i in self.items: i > 0)) or true\n"
+        "    ensures c: let xs = old(self.items) in "
+        "all(i in range(0, len(xs)): xs[i] == self.items[i])\n"
+    )
 
 
 def main() raises:
