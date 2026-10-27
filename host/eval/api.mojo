@@ -3,16 +3,16 @@ explain and class_holds."""
 
 from check import types as ty
 from check.spec import Spec, R_OLD
-from numeric.bigint import BigInt
 from partitions.compile import compile_set_aliased
 from sets import BitSet, SetContext
 from syntax import ast
-from wire.value import Value, BOOL
+from wire import value as wv
+from wire.value import Value
 
 from .coerce import bits_of_value, fit
 from .core import ev, tkind
-from .env import Env, Run
-from .explain import Explainer, Outcome, add_known, outcome_of, shown, walk
+from .env import Env, Old, Run
+from .explain import Explainer, add_known, outcome_of, walk
 from .host import EvalHost
 from .numbers import show
 from .text import located
@@ -59,10 +59,8 @@ struct Judgment(Copyable, Movable):
             return "true"
         if self.kind == J_FALSE:
             return "false"
-        var what = "error: " if self.kind == J_ERROR else "skip: "
-        if self.node > 0:
-            return what + located(spec, self.node, self.message)
-        return what + self.message
+        var prefix = "error: " if self.kind == J_ERROR else "skip: "
+        return String(prefix, located(spec, self.node, self.message) if self.node > 0 else self.message)
 
 
 def evaluate[
@@ -89,21 +87,13 @@ def judge[
         if c.kind == ast.RAISES or c.kind == ast.MAY_RAISE:
             return Judgment(J_TRUE)
         return Judgment(
-            J_ERROR,
-            String(
-                c.id, ": a ", ast.op_name(c.kind), " clause has no condition to evaluate"
-            ),
-            c.node,
+            J_ERROR, String(t"{c.id}: a {ast.op_name(c.kind)} clause has no condition to evaluate"), c.node
         )
     var run = Run()
     try:
         var v = ev(spec, c.expr, env, run, host)
-        if v.kind != BOOL:
-            return Judgment(
-                J_ERROR,
-                "the clause must evaluate to a bool, but it is " + show(v),
-                c.expr,
-            )
+        if v.kind != wv.BOOL:
+            return Judgment(J_ERROR, String(t"the clause must evaluate to a bool, but it is {show(v)}"), c.expr)
         return Judgment(J_TRUE if v.as_bool() else J_FALSE)
     except err:
         var node = run.err_node if run.err_node >= 0 else c.expr
@@ -113,20 +103,17 @@ def judge[
 
 def collect_olds(spec: Spec, root: Int, mut out: List[Int]):
     """The `old(...)` calls below `root`, in source order."""
-    var stack = List[Int]()
-    stack.append(root)
+    var stack: List[Int] = [root]
     while len(stack) > 0:
         var n = stack.pop()
         ref node = spec.ast.nodes[n]
         if node.kind == ast.CALL:
             var r = spec.resolutions.get(n)
-            if r and r.value().kind == R_OLD:
+            if r is not None and r.value().kind == R_OLD:
                 out.append(n)
                 continue
-        var i = len(node.kids) - 1
-        while i >= 0:
-            stack.append(node.kids[i])
-            i -= 1
+        for kid in reversed(node.kids):
+            stack.append(kid)
 
 
 def snapshot_olds[
@@ -135,32 +122,27 @@ def snapshot_olds[
     """Evaluates every `old(e)` of the given clauses (positions in `Spec.clauses`) on
     the state before the call, and records the values in `env`. An `old` whose
     evaluation fails records the failure, which the clause meets when it reads it."""
-    var calls = List[Int]()
+    var calls: List[Int] = []
     for ci in clauses:
         if spec.clauses[ci].expr != 0:
             collect_olds(spec, spec.clauses[ci].expr, calls)
     for call in calls:
-        if env.old_index(call) >= 0:
+        if call in env.olds:
             continue
-        var arg = spec.ast.nodes[spec.ast.nodes[call].kids[2]].kids[0] if len(
-            spec.ast.nodes[call].kids
-        ) > 2 else 0
+        ref kids = spec.ast.nodes[call].kids
+        var arg = spec.ast.nodes[kids[2]].kids[0] if len(kids) > 2 else 0
         var run = Run()
-        var value = Value.none()
-        var message = String()
-        var node = 0
-        var skipped = False
         try:
-            value = ev(spec, arg, env, run, host)
+            var old = Old(ev(spec, arg, env, run, host), String(), 0, False)
+            env.olds[call] = old^
         except err:
-            message = run.err_message.copy() if run.err_node >= 0 else String(err)
-            node = run.err_node if run.err_node >= 0 else call
-            skipped = run.skipped
-        env.old_nodes.append(call)
-        env.old_values.append(value^)
-        env.old_errors.append(message^)
-        env.old_error_nodes.append(node)
-        env.old_skips.append(skipped)
+            var failed_here = run.err_node >= 0
+            env.olds[call] = Old(
+                Value.none(),
+                run.err_message.copy() if failed_here else String(err),
+                run.err_node if failed_here else call,
+                run.skipped,
+            )
 
 
 def observe_with[
@@ -176,14 +158,11 @@ def observe_with[
     """The value of an observer given by a reading expression, with `self` bound to
     `obj`. Calls the reading expression makes outside the spec go to `host.call_extern`."""
     ref o = spec.models[model].observers[observer]
+    var name = String(spec.models[model].name, ".", o.name)
     if o.expr == 0:
-        raise Error(
-            spec.models[model].name + "." + o.name + " has no reading expression: it reads the attribute of the same name"
-        )
+        raise Error(t"{name} has no reading expression: it reads the attribute of the same name")
     if len(args) != len(o.params):
-        raise Error(
-            spec.models[model].name + "." + o.name + " takes " + String(len(o.params)) + " argument(s), but " + String(len(args)) + " are given"
-        )
+        raise Error(t"{name} takes {len(o.params)} argument(s), but {len(args)} are given")
     var env = Env(args.copy())
     env.set_self(obj.copy())
     return fit(spec.types, evaluate(spec, o.expr, env, host), o.type)
@@ -206,12 +185,10 @@ def explain[
     if c.expr != 0:
         var run = Run()
         var value = outcome_of(spec, c.expr, env, run, host)
-        if not value.is_any_bool():
-            add_known(ex, spec, c.expr, value)
-        else:
+        if value.is_any_bool():
             walk(ex, spec, c.expr, value, env, run, host)
-            if len(ex.pairs) == 0:
-                add_known(ex, spec, c.expr, value)
+        if not value.is_any_bool() or len(ex.pairs) == 0:
+            add_known(ex, spec, c.expr, value)
     return ex^.into_pairs()
 
 
@@ -220,27 +197,22 @@ def class_holds[
 ](spec: Spec, class_node: Int, value: Value, mut host: H) raises -> Bool:
     """Is `value`, a value of the partitioned parameter, in the partition class at
     `class_node` (a CLASS node)?"""
-    for f in range(len(spec.fns)):
-        ref func = spec.fns[f]
-        for p in range(len(func.partitions)):
-            ref part = func.partitions[p]
+    for func in spec.fns:
+        for part in func.partitions:
             for c in range(len(part.classes)):
                 if part.classes[c].node != class_node:
                     continue
                 var t = func.params[part.param].type
                 var expr = part.classes[c].expr
                 if tkind(spec, expr) != ty.SET:
-                    var params = List[Value]()
-                    for _ in range(len(func.params)):
-                        params.append(Value.none())
+                    var params = [Value.none() for _ in func.params]
                     params[part.param] = value.copy()
-                    var env = Env(params^)
-                    var v = evaluate(spec, expr, env, host)
-                    if v.kind != BOOL:
-                        raise Error("a predicate class must be a bool, but it is " + show(v))
-                    return v.as_bool()
+                    var held = evaluate(spec, expr, Env(params^), host)
+                    if held.kind != wv.BOOL:
+                        raise Error(t"a predicate class must be a bool, but it is {show(held)}")
+                    return held.as_bool()
                 var ctx = SetContext()
-                var earlier = Dict[String, BitSet]()
+                var earlier: Dict[String, BitSet] = {}
                 var chosen = ctx.empty(1)
                 for j in range(c + 1):
                     var s = compile_set_aliased(
@@ -249,4 +221,4 @@ def class_holds[
                     earlier[part.classes[j].name] = s
                     chosen = s
                 return ctx.contains(chosen, bits_of_value(spec.types, t, value))
-    raise Error("node " + String(class_node) + " is not a partition class")
+    raise Error(t"node {class_node} is not a partition class")
