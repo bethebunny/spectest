@@ -52,11 +52,6 @@ def choice_seeded(s, seed):
     return (s.choice(rng=random.Random(seed)), s.choice(rng=random.Random(seed)))
 
 
-def getslice(s, start, stop, step):
-    """s[start:stop:step]; a slice object cannot cross from the host."""
-    return s[slice(start, stop, step)]
-
-
 def intset_slice(s, start, stop):
     return s[start:stop]
 

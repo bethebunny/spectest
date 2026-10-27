@@ -782,9 +782,8 @@ fn variant.Pattern_rsub_list(p: bitpattern.pattern.Pattern, other: list<u8>) -> 
   ensures members: p.size <= 512 implies same_members(elems(result), filter(x in other: not (x in elems_p(p))))
 
 # Slices stay Patterns.
-fn variant.Pattern_slice(p: bitpattern.pattern.Pattern, start: option<int>, stop: option<int>, step: option<int>) -> bitpattern.pattern.Pattern
-  may_raise ValueError when is_some(step) and unwrap(step) == 0
-  ensures members: p.size <= 512 and (is_none(step) or unwrap(step) != 0) implies same_members(elems_p(result), map(i in slice_positions(start, stop, if is_none(step) then 1 else unwrap(step), p.size): elems_p(p)[i]))
+fn variant.Pattern_slice(p: bitpattern.pattern.Pattern, start: option<int>, stop: option<int>) -> bitpattern.pattern.Pattern
+  ensures members: p.size <= 512 implies same_members(elems_p(result), map(i in slice_positions(start, stop, 1, p.size): elems_p(p)[i]))
   ensures width: result.width == p.width
 
 # Equality ignores width, across Pattern and IntSet.

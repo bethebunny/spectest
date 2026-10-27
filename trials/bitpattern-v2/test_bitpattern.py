@@ -48,7 +48,7 @@ MODULES = {
     "variant.IntSet_xor_pattern": "operator.xor",
     "variant.Pattern_ror_list": "bitpattern.pattern.Pattern.__ror__",
     "variant.Pattern_rsub_list": "bitpattern.pattern.Pattern.__rsub__",
-    "variant.Pattern_slice": "support.getslice",
+    "variant.Pattern_slice": "support.intset_slice",
     "variant.Int_eq": "operator.eq",
     "variant.Int_hash": "builtins.hash",
     "variant.Int_setattr": "builtins.setattr",

@@ -116,5 +116,6 @@ were run against independent Python references; the spec's own test items have n
 
 ## Changes after translation
 
-IntSet slices with a step are out of scope by the library author's decision, so the step was removed from `IntSet_slice` and `BDDSet_slice`.
-Bitpattern 0.3.0 still accepts a step, and `s[::2]` on a set of 2^24 members takes about 9 s, which stalled the first run.
+No bitpattern type is meant to support stepped slices (the library author's decision), so the step was removed from `IntSet_slice`, `BDDSet_slice` and `Pattern_slice`.
+Bitpattern 0.3.0 still accepts a step, and builds the slice position by position.
+`s[::2]` on 2^24 members takes about 9 s, and the spec's stepped slices of patterns with up to 2^127 members grew until the kernel killed the test workers.
