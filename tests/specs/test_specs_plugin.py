@@ -11,6 +11,7 @@ from fake_spec_host import FakeHost, item, make_test
 
 pytest_plugins = ["pytester"]
 
+from spectest.driver.wire import Float
 from spectest.runtime.report import load_reports
 
 ARGS = ("-p", "no:cacheprovider", "-p", "no:randomly")
@@ -89,7 +90,7 @@ def test_a_generic_declaration_without_instantiations_errors(project: pytest.Pyt
         "test_demo.py::test_g::first.head",
     ]
     result = project.runpytest(*ARGS)
-    result.assert_outcomes(passed=1, failed=2)
+    result.assert_outcomes(passed=1, errors=2)
     out = result.stdout.str()
     assert "sort is generic (T)" in out
     assert "instantiations=" in out
@@ -176,7 +177,7 @@ def test_run_options_come_from_the_session_and_the_check(
         "strength": "dev",
         "max_examples": 7,
         "exhaustive_limit": 99,
-        "examples": [{"x": 0.5}],
+        "examples": [{"x": Float("f64", 0x3FE0000000000000)}],
     }
     assert "examples" not in sqrt_opts
 
@@ -213,7 +214,7 @@ def test_every_outcome(project: pytest.Pytester, fake_host: FakeHost) -> None:
     }
     outcome_project(project, fake_host)
     result = project.runpytest("-rA", *ARGS)
-    result.assert_outcomes(failed=2, skipped=1)
+    result.assert_outcomes(failed=1, errors=1, skipped=1)
     out = result.stdout.str()
     # v1's failure rendering
     assert "math.cos.accurate (ensures) failed" in out
@@ -223,6 +224,7 @@ def test_every_outcome(project: pytest.Pytester, fake_host: FakeHost) -> None:
     assert "cr.cos is undefined" in out
     assert "no example applied: 5 skip" in out
     assert any(ln.startswith("SPEC ERROR test_demo.py") for ln in result.outlines)
+    result.stdout.fnmatch_lines(["*test_demo.py::test_math (spec demo): 1 failed, 1 spec error, 1 skipped"])
 
 
 def test_an_inconclusive_item_is_skipped(project: pytest.Pytester, fake_host: FakeHost) -> None:

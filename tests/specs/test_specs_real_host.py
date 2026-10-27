@@ -41,3 +41,59 @@ def test_a_spec_runs_through_the_real_host(pytester: pytest.Pytester) -> None:
     assert "FAILED test_demo.py::test_real::realimpl.bad.same" in out
     assert "FAILED test_demo.py::test_real::realimpl.bad#type" in out
     assert "x = 9223372036854775807" in out
+
+
+EXAMPLE_SPEC = """spec ex
+
+fn exlib.ident(x: f64) -> f64
+  ensures same: same(result, x)
+
+fn exlib.narrow(x: f32) -> f32
+  ensures same: same(result, x)
+
+fn exlib.first(p: (i64, i64)) -> i64
+  ensures same: result == p.0
+"""
+EXAMPLE_IMPL = """
+def ident(x):
+    return x
+
+
+def narrow(x):
+    return x
+
+
+def first(p):
+    return p[0]
+"""
+
+
+def example_project(pytester: pytest.Pytester, examples: str) -> pytest.RunResult:
+    real_host()
+    pytester.makefile(".spec", ex=EXAMPLE_SPEC)
+    pytester.makepyfile(exlib=EXAMPLE_IMPL)
+    make_test(pytester, f'test_ex = spectest.check("ex.spec", examples={examples})\n')
+    return pytester.runpytest(*ARGS)
+
+
+def test_float_and_tuple_examples_reach_the_host_as_wire_values(
+    pytester: pytest.Pytester,
+) -> None:
+    result = example_project(
+        pytester,
+        '{"exlib.ident": [{"x": 0.5}], "exlib.narrow": [{"x": 0.5}], "exlib.first": [{"p": (1, 2)}]}',
+    )
+    result.assert_outcomes(passed=9)
+
+
+def test_an_f32_example_that_is_not_representable_is_an_error(
+    pytester: pytest.Pytester,
+) -> None:
+    result = example_project(pytester, '{"exlib.narrow": [{"x": 0.1}]}')
+    result.assert_outcomes(passed=6, errors=3)
+    result.stdout.fnmatch_lines(
+        [
+            "*test_demo.py::test_ex (spec ex): 6 passed, 3 spec errors",
+            "*SPEC ERROR exlib.narrow.same: example x: 0.1 is not exactly representable as f32",
+        ]
+    )

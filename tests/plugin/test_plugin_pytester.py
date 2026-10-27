@@ -142,7 +142,8 @@ def test_outcomes_xfail_and_spec_errors(project: pytest.Pytester) -> None:
     result = project.runpytest("-v", "-rxs", "-p", "no:cacheprovider")
     outcomes = result.parseoutcomes()
     assert outcomes.get("xfailed") == 2
-    assert outcomes.get("failed") == 1
+    assert "failed" not in outcomes
+    assert outcomes.get("errors") == 1
     assert outcomes.get("passed") == 17
     result.stdout.fnmatch_lines(
         [
@@ -539,7 +540,7 @@ def test_runxfail_reports_expected_failures_as_failures(project: pytest.Pytester
         """
     )
     result = project.runpytest("-p", "no:cacheprovider", "--runxfail", "-rf")
-    result.assert_outcomes(failed=3, passed=20)
+    result.assert_outcomes(failed=2, errors=1, passed=20)
     result.stdout.fnmatch_lines(
         [
             "*_ spectest test_demo::ident.same _*",

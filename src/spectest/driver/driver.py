@@ -157,6 +157,15 @@ class Driver:
             return _error(exc)
         return result if type(result) in _SIMPLE else self._result(result)
 
+    def wire(self, obj: Any) -> Any:
+        """The wire value of a Python value; raises if it can't be converted."""
+        try:
+            return self._to_wire(obj, [self.max_elements])
+        except _TooLarge:
+            raise ValueError(f"more than {self.max_elements} values") from None
+        except _Failure as f:
+            raise ValueError(f.error().message) from f
+
     def _kwargs_to_python(self, kwargs: Any) -> dict[str, Any]:
         if type(kwargs) is Map:
             return self._to_python(kwargs)
