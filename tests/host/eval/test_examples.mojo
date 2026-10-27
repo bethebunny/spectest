@@ -6,7 +6,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 from check.checker import check_source
 from check.spec import Spec
 from eval.api import explain, snapshot_olds
-from eval.testkit import *
+from eval_testkit import *
 from numeric.formats import F32
 from wire.value import Value
 

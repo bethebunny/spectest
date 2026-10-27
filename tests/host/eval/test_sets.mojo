@@ -3,7 +3,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 from check.spec import Spec
 from eval.api import class_holds
 from eval.core import set_contains
-from eval.testkit import *
+from eval_testkit import *
 from numeric.formats import F16
 from wire.value import Value
 

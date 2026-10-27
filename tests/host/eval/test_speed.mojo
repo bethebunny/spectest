@@ -6,7 +6,7 @@ from check.checker import check_source
 from eval.api import judge
 from eval.env import Env
 from eval.host import EvalHost
-from eval.testkit import f64v
+from eval_testkit import f64v
 from wire.value import Value
 
 

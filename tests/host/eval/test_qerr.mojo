@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from eval.testkit import *
+from eval_testkit import *
 from numeric.bigint import BigInt
 from wire.value import Value
 

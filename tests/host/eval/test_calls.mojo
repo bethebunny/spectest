@@ -3,7 +3,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 from eval.api import observe_with, snapshot_olds
 from eval.core import scalar_type_id
 from numeric.formats import F16
-from eval.testkit import *
+from eval_testkit import *
 from wire.value import Value
 
 

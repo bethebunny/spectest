@@ -4,7 +4,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 from check.checker import check_source
 from check.spec import Spec
 from eval.api import class_holds, explain, snapshot_olds
-from eval.testkit import *
+from eval_testkit import *
 from numeric.formats import F64
 from wire.value import Value
 
