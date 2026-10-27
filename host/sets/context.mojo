@@ -22,8 +22,7 @@ def _bit(value: UInt64, bit: Int32) -> Bool:
 
 @fieldwise_init
 struct BitSet(Copyable, Equatable, TrivialRegisterPassable):
-    """A set of `width`-bit patterns. Valid only with the `SetContext` that made it. Two
-    sets of one context are equal exactly when their roots are."""
+    """A set of `width`-bit patterns, valid only with the `SetContext` that made it."""
 
     var width: Int32
     var root: Id
@@ -34,22 +33,16 @@ struct BitSet(Copyable, Equatable, TrivialRegisterPassable):
 
 def _check_width(width: Int) raises:
     if width < 1 or width > 64:
-        raise Error("set widths are 1 to 64 bits, not " + String(width))
+        raise Error(t"set widths are 1 to 64 bits, not {width}")
 
 
 struct SetContext(Movable):
-    """Owns one arena. Nothing is freed until the context is dropped, so a context
-    lives as long as one spec run."""
+    """Owns the arena of its sets. Nothing is freed before the context is dropped."""
 
     var arena: Arena
 
     def __init__(out self):
         self.arena = Arena(never_pause, PauseStatePointer.unsafe_dangling())
-
-    def _done(self, width: Int32, id: Id) -> BitSet:
-        return BitSet(width, id)
-
-    # Builders
 
     def empty(mut self, width: Int) -> BitSet:
         return BitSet(Int32(width), REJECT)
@@ -60,7 +53,7 @@ struct SetContext(Movable):
     def interval_inclusive(
         mut self, first: UInt64, last: UInt64, width: Int
     ) -> BitSet:
-        """`[first, last]`, empty if `last < first`. Both must fit `width` bits."""
+        """`[first, last]`, empty if `last < first`."""
         if last < first:
             return self.empty(width)
         try:
@@ -71,19 +64,14 @@ struct SetContext(Movable):
             abort("interval interrupted")
 
     def interval(mut self, lo: UInt64, hi: UInt64, width: Int) -> BitSet:
-        """`[lo, hi)`, empty if `hi <= lo`. For a range that includes the width's
-        highest pattern, use `interval_inclusive`."""
+        """`[lo, hi)`, empty if `hi <= lo`."""
         if hi <= lo:
             return self.empty(width)
         return self.interval_inclusive(lo, hi - 1, width)
 
     def exactly(mut self, var values: List[UInt64], width: Int) -> BitSet:
-        """The listed patterns, in any order, duplicates allowed."""
         sort(values)
-        var distinct = List[UInt64]()
-        for v in values:
-            if not distinct or distinct[len(distinct) - 1] != v:
-                distinct.append(v)
+        var distinct = [v for i, v in enumerate(values) if i == 0 or values[i - 1] != v]
         try:
             return BitSet(
                 Int32(width),
@@ -102,12 +90,7 @@ struct SetContext(Movable):
         _check_width(width)
         var bits = expand_pattern(text)
         if bits.byte_length() != width:
-            raise Error(
-                "the pattern is "
-                + String(bits.byte_length())
-                + " bits, not "
-                + String(width)
-            )
+            raise Error(t"the pattern is {bits.byte_length()} bits, not {width}")
         return self._diagram(bits, width)
 
     def int_range(
@@ -117,8 +100,7 @@ struct SetContext(Movable):
         lo: Optional[BigInt],
         hi: Optional[BigInt],
     ) -> BitSet:
-        """Integers in `[lo, hi)` as two's-complement patterns; an absent bound is open,
-        and bounds are clamped to the type."""
+        """Integers in `[lo, hi)` as two's-complement patterns (absent bounds are open)."""
         var modulus = BigInt(negative=False, magnitude=BigUInt(1) << width)
         var type_lo = BigInt()
         var type_hi = modulus.copy()
@@ -126,17 +108,13 @@ struct SetContext(Movable):
             var half = BigInt(negative=False, magnitude=BigUInt(1) << (width - 1))
             type_lo = -half
             type_hi = half^
-        var low = type_lo.copy()
-        if lo:
-            low = max(lo.value().copy(), type_lo)
-        var high = type_hi.copy()
-        if hi:
-            high = min(hi.value().copy(), type_hi)
-        if not (low < high):
+        var low = type_lo.copy() if lo is None else max(lo.value().copy(), type_lo)
+        var high = type_hi.copy() if hi is None else min(hi.value().copy(), type_hi)
+        if low >= high:
             return self.empty(width)
         var last = high - BigInt(1)
         if low.negative and not last.negative:
-            # Straddles zero: the non-negatives, then the negatives from the top.
+            # straddles zero: the non-negatives, then the negatives from the top
             var upper = self.interval_inclusive(
                 _u64(low + modulus), _u64(modulus - BigInt(1)), width
             )
@@ -149,33 +127,31 @@ struct SetContext(Movable):
         return self.interval_inclusive(_u64(low), _u64(last), width)
 
     def float_named(mut self, format: FloatFormat, name: StringSlice) raises -> BitSet:
-        if name == "nan":
-            return self.difference(
-                self._float_glob(format, "?", "1", "?"),
-                self._float_glob(format, "?", "1", "0"),
-            )
-        if name == "inf":
-            return self._float_glob(format, "?", "1", "0")
-        if name == "zero":
-            return self._float_glob(format, "?", "0", "0")
-        if name == "subnormal":
-            return self.difference(
-                self._float_glob(format, "?", "0", "?"),
-                self._float_glob(format, "?", "0", "0"),
-            )
-        if name == "normal":
-            var special = self.union(
-                self._float_glob(format, "?", "0", "?"),
-                self._float_glob(format, "?", "1", "?"),
-            )
-            return self.complement(special)
-        if name == "finite":
-            return self.complement(self._float_glob(format, "?", "1", "?"))
-        if name == "positive":
-            return self._float_glob(format, "0", "?", "?")
-        if name == "negative":
-            return self._float_glob(format, "1", "?", "?")
-        raise Error("no float set named " + String(name))
+        match name:
+            case "nan":
+                var any_nan_or_inf = self._float_glob(format, "?", "1", "?")
+                return self.difference(any_nan_or_inf, self._float_glob(format, "?", "1", "0"))
+            case "inf":
+                return self._float_glob(format, "?", "1", "0")
+            case "zero":
+                return self._float_glob(format, "?", "0", "0")
+            case "subnormal":
+                var zero_exponent = self._float_glob(format, "?", "0", "?")
+                return self.difference(zero_exponent, self._float_glob(format, "?", "0", "0"))
+            case "normal":
+                var special = self.union(
+                    self._float_glob(format, "?", "0", "?"),
+                    self._float_glob(format, "?", "1", "?"),
+                )
+                return self.complement(special)
+            case "finite":
+                return self.complement(self._float_glob(format, "?", "1", "?"))
+            case "positive":
+                return self._float_glob(format, "0", "?", "?")
+            case "negative":
+                return self._float_glob(format, "1", "?", "?")
+            case _:
+                raise Error(t"no float set named {name}")
 
     def _float_glob(
         mut self,
@@ -184,24 +160,17 @@ struct SetContext(Movable):
         exponent: String,
         fraction: String,
     ) -> BitSet:
-        var bits = sign
-        for _ in range(format.exponent_bits):
-            bits += exponent
-        for _ in range(format.fraction_bits):
-            bits += fraction
+        var bits = sign + exponent * format.exponent_bits + fraction * format.fraction_bits
         return self._diagram(bits, format.width())
 
     def float_magnitudes(
         mut self, format: FloatFormat, lo: UInt64, hi: UInt64, negative: Bool
     ) -> BitSet:
-        """Patterns whose magnitude (the bits below the sign) is in `[lo, hi)`, with the
-        sign bit set if `negative`."""
+        """Patterns with magnitude (the bits below the sign) in `[lo, hi)`."""
         if hi <= lo:
             return self.empty(format.width())
         var sign = format.sign_mask() if negative else UInt64(0)
         return self.interval_inclusive(lo | sign, (hi - 1) | sign, format.width())
-
-    # Algebra
 
     def union(mut self, a: BitSet, b: BitSet) -> BitSet:
         try:
@@ -222,13 +191,10 @@ struct SetContext(Movable):
             abort("difference interrupted")
 
     def complement(mut self, a: BitSet) -> BitSet:
-        """The patterns of `a`'s width that `a` lacks."""
         try:
             return BitSet(a.width, complement(self.arena, a.root))
         except:
             abort("complement interrupted")
-
-    # Queries
 
     def is_empty(self, a: BitSet) -> Bool:
         return a.root == REJECT
@@ -257,10 +223,9 @@ struct SetContext(Movable):
         return accepts[_bit](self.arena, a.root, bits)
 
     def nth(self, a: BitSet, n: BigUInt) -> UInt64:
-        """The `n`-th member in increasing order. `n` must be below `count(a)`; any
-        other `n` gives 0."""
+        """The `n`-th member in increasing order (0 if `n` is not below `count(a)`)."""
         var small = n.uint128_or_none()
-        if not small or small.value() >= self.arena.count_narrow(a.root, a.width):
+        if small is None or small.value() >= self.arena.count_narrow(a.root, a.width):
             return 0
         return UInt64(nth_narrow(self.arena, a.root, small.value()))
 
@@ -275,11 +240,8 @@ struct SetContext(Movable):
         """Every member in increasing order; raises if there are more than `limit`."""
         var total = self.arena.count_narrow(a.root, a.width)
         if total > UInt128(limit):
-            raise Error("the set has more than " + String(limit) + " members")
-        var out = List[UInt64]()
-        for i in range(Int(total)):
-            out.append(UInt64(nth_narrow(self.arena, a.root, UInt128(i))))
-        return out^
+            raise Error(t"the set has more than {limit} members")
+        return [UInt64(nth_narrow(self.arena, a.root, UInt128(i))) for i in range(Int(total))]
 
 
 def _u64(value: BigInt) -> UInt64:

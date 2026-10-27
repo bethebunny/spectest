@@ -2,7 +2,7 @@
 
 
 def _is_bit_symbol(b: UInt8) -> Bool:
-    return Int(b) == ord("0") or Int(b) == ord("1") or Int(b) == ord("?")
+    return Int(b) in [ord("0"), ord("1"), ord("?")]
 
 
 def expand_pattern(text: StringSlice) raises -> String:
@@ -12,38 +12,22 @@ def expand_pattern(text: StringSlice) raises -> String:
     leading quartet may be shorter than 4 bits.
     """
     var stripped = text.strip()
-    if stripped.find("|") >= 0:
+    if "|" in stripped:
         raise Error("patterns can't contain '|'")
     var bits = String()
-    var at = 0
-    for quartet in stripped.split("."):
+    for at, quartet in enumerate(stripped.split(".")):
         var star = quartet.find("*")
-        var expanded: String
+        var expanded = String(quartet)
         if star >= 0:
-            var head = quartet[byte=0:star]
-            var tail = quartet[byte = star + 1 :]
-            var fill = 4 - head.byte_length() - tail.byte_length()
-            expanded = String(head)
-            for _ in range(fill):
-                expanded += "?"
-            expanded += tail
-        else:
-            expanded = String(quartet)
+            var fill = "?" * (5 - quartet.byte_length())
+            expanded = String(quartet[byte=0:star], fill, quartet[byte = star + 1 :])
         var n = expanded.byte_length()
-        var ok = (n >= 1 and n <= 4) if at == 0 else n == 4
-        if ok:
-            for b in expanded.as_bytes():
-                if not _is_bit_symbol(b):
-                    ok = False
-        if not ok:
+        var length_ok = n >= 1 and n <= 4 if at == 0 else n == 4
+        if not length_ok or not all([_is_bit_symbol(b) for b in expanded.as_bytes()]):
             raise Error(
-                "bad quartet '"
-                + String(quartet)
-                + "' in pattern '"
-                + String(stripped)
-                + "': quartets are 4 bits of 0, 1 or ?, and * fills out the"
-                " rest; only the leading quartet can be shorter"
+                t"bad quartet '{quartet}' in pattern '{stripped}': quartets are 4 bits"
+                t" of 0, 1 or ?, and * fills out the rest; only the leading quartet"
+                t" can be shorter"
             )
         bits += expanded
-        at += 1
     return bits
