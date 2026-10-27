@@ -1,0 +1,46 @@
+# Helpers for floats.spec: the bit layout of each float format and the named sets.
+
+fn fexp(kind: string) -> int = if kind == "float64" then 11 else if kind == "float32" then 8 else if kind == "float16" then 5 else if kind == "bfloat16" then 8 else if kind == "float8_e5m2" then 5 else 4
+fn fman(kind: string) -> int = if kind == "float64" then 52 else if kind == "float32" then 23 else if kind == "float16" then 10 else if kind == "bfloat16" then 7 else if kind == "float8_e5m2" then 2 else 3
+fn fwidth(kind: string) -> int = 1 + fexp(kind) + fman(kind)
+fn fbias(kind: string) -> int = 2 ** (fexp(kind) - 1) - 1
+
+fn sign_field(kind: string, b: int) -> int = b // 2 ** (fwidth(kind) - 1)
+fn exp_field(kind: string, b: int) -> int = (b // 2 ** fman(kind)) % 2 ** fexp(kind)
+fn mant_field(kind: string, b: int) -> int = b % 2 ** fman(kind)
+
+# IEEE layout, except that float8_e4m3fn has no infinities and only the all-ones pattern is NaN.
+fn is_nan_bits(kind: string, b: int) -> bool = if kind == "float8_e4m3fn" then b % 2 ** (fwidth(kind) - 1) == 2 ** (fwidth(kind) - 1) - 1 else exp_field(kind, b) == 2 ** fexp(kind) - 1 and mant_field(kind, b) != 0
+fn is_inf_bits(kind: string, b: int) -> bool = kind != "float8_e4m3fn" and exp_field(kind, b) == 2 ** fexp(kind) - 1 and mant_field(kind, b) == 0
+fn is_zero_bits(kind: string, b: int) -> bool = b % 2 ** (fwidth(kind) - 1) == 0
+fn is_sub_bits(kind: string, b: int) -> bool = exp_field(kind, b) == 0 and mant_field(kind, b) != 0
+
+# The exact value of a finite pattern.
+fn magnitude(kind: string, b: int) -> real = if exp_field(kind, b) == 0 then mant_field(kind, b) * 2 / 2 ** (fbias(kind) + fman(kind)) else (2 ** fman(kind) + mant_field(kind, b)) * 2 ** exp_field(kind, b) / 2 ** (fbias(kind) + fman(kind))
+fn value_of(kind: string, b: int) -> real = if sign_field(kind, b) == 1 then -magnitude(kind, b) else magnitude(kind, b)
+fn inf_bits(kind: string, negative: bool) -> int = (if negative then 2 ** (fwidth(kind) - 1) else 0) + (2 ** fexp(kind) - 1) * 2 ** fman(kind)
+
+# The named sets, by encoding.
+fn in_named(kind: string, name: string, b: int) -> bool = if name == "all" then true else if name == "sign_clear" then sign_field(kind, b) == 0 else if name == "sign_set" then sign_field(kind, b) == 1 else if name == "zeros" then is_zero_bits(kind, b) else if name == "positive" then sign_field(kind, b) == 0 and not is_zero_bits(kind, b) and not is_nan_bits(kind, b) else if name == "negative" then sign_field(kind, b) == 1 and not is_zero_bits(kind, b) and not is_nan_bits(kind, b) else if name == "nonnegative" then is_zero_bits(kind, b) or (sign_field(kind, b) == 0 and not is_nan_bits(kind, b)) else if name == "subnormal" then is_sub_bits(kind, b) else if name == "infinities" then is_inf_bits(kind, b) else if name == "nan" then is_nan_bits(kind, b) else not is_inf_bits(kind, b) and not is_nan_bits(kind, b)
+fn named_size(kind: string, name: string) -> int = let w = fwidth(kind) in let m = fman(kind) in if name == "all" then 2 ** w else if name == "sign_clear" or name == "sign_set" then 2 ** (w - 1) else if name == "zeros" then 2 else if name == "nan" or name == "subnormal" then 2 * (2 ** m - 1) else if name == "infinities" then 2 else if name == "positive" or name == "negative" then 2 ** (w - 1) - 2 ** m else if name == "nonnegative" then 2 ** (w - 1) - 2 ** m + 2 else 2 ** w - 2 - 2 * (2 ** m - 1)
+
+# Boundary patterns of both signs: zero, subnormals, the smallest and largest normals, infinity, NaNs.
+fn boundary(kind: string) -> list<int> = let m = fman(kind) in let e = fexp(kind) in let s = 2 ** (fwidth(kind) - 1) in [0, 1, 2 ** m - 1, 2 ** m, 2 ** m + 1, (2 ** e - 2) * 2 ** m, (2 ** e - 2) * 2 ** m + 2 ** m - 1, (2 ** e - 1) * 2 ** m, (2 ** e - 1) * 2 ** m + 1, (2 ** e - 1) * 2 ** m + 2 ** m - 1, s, s + 1, s + 2 ** m - 1, s + 2 ** m, s + 2 ** m + 1, s + (2 ** e - 2) * 2 ** m, s + (2 ** e - 2) * 2 ** m + 2 ** m - 1, s + (2 ** e - 1) * 2 ** m, s + (2 ** e - 1) * 2 ** m + 1, s + (2 ** e - 1) * 2 ** m + 2 ** m - 1]
+fn patterns(kind: string) -> list<int> = if fwidth(kind) <= 8 then range(0, 2 ** fwidth(kind)) else boundary(kind)
+
+# Rounding to the format, ties to even, for the four formats the prelude can round to.
+fn round_bits(kind: string, v: f64) -> int = if kind == "float64" then bits(round<f64>(v)) else if kind == "float32" then bits(round<f32>(v)) else if kind == "float16" then bits(round<f16>(v)) else bits(round<bf16>(v))
+fn round_inf(kind: string, v: f64) -> bool = if kind == "float64" then is_inf(round<f64>(v)) else if kind == "float32" then is_inf(round<f32>(v)) else if kind == "float16" then is_inf(round<f16>(v)) else is_inf(round<bf16>(v))
+fn round_zero(kind: string, v: f64) -> bool = if kind == "float64" then is_zero(round<f64>(v)) else if kind == "float32" then is_zero(round<f32>(v)) else if kind == "float16" then is_zero(round<f16>(v)) else is_zero(round<bf16>(v))
+fn can_round(kind: string) -> bool = kind != "float8_e5m2" and kind != "float8_e4m3fn"
+fn encoded(kind: string, v: f64, negative: bool) -> int = if round_zero(kind, v) then (if negative then 2 ** (fwidth(kind) - 1) else 0) else round_bits(kind, v)
+
+# The same for an int.
+fn round_bits_i(kind: string, n: int) -> int = if kind == "float64" then bits(round<f64>(n)) else if kind == "float32" then bits(round<f32>(n)) else if kind == "float16" then bits(round<f16>(n)) else bits(round<bf16>(n))
+fn round_inf_i(kind: string, n: int) -> bool = if kind == "float64" then is_inf(round<f64>(n)) else if kind == "float32" then is_inf(round<f32>(n)) else if kind == "float16" then is_inf(round<f16>(n)) else is_inf(round<bf16>(n))
+fn round_zero_i(kind: string, n: int) -> bool = if kind == "float64" then is_zero(round<f64>(n)) else if kind == "float32" then is_zero(round<f32>(n)) else if kind == "float16" then is_zero(round<f16>(n)) else is_zero(round<bf16>(n))
+fn encoded_i(kind: string, n: int, negative: bool) -> int = if round_zero_i(kind, n) then (if negative then 2 ** (fwidth(kind) - 1) else 0) else round_bits_i(kind, n)
+
+# Numeric order of floats, with -0.0 just below 0.0.
+fn float_lt(a: f64, b: f64) -> bool = real(a) < real(b) or (real(a) == real(b) and is_zero(a) and is_zero(b) and signbit(a) and not signbit(b))
+fn in_interval(x: f64, start: option<f64>, stop: option<f64>) -> bool = (is_none(start) or not float_lt(x, unwrap(start))) and (is_none(stop) or float_lt(x, unwrap(stop)))

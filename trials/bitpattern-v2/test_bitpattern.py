@@ -128,4 +128,100 @@ MODULES = {
     "variant.Pattern_eq_pattern": "bitpattern.pattern.Pattern.__eq__",
 }
 
-test_bitpattern = spectest.check("bitpattern.spec", modules=MODULES)
+
+# The float codecs are named by `kind`; each variant is a call on the codec of that name.
+FLOAT_MODULES = {
+    "Float": "bitpattern.codecs.Float",
+    "FloatFN": "bitpattern.codecs.FloatFN",
+    "BDDSet": "bitpattern.codecs.BDDSet",
+    "variant.Float_codec": "support.float_codec",
+    "variant.FloatFN_codec": "support.float_codec_fn",
+    "variant.Float_dtype": "support.float_dtype",
+    "variant.Float_max": "support.float_max",
+    "variant.Float_min": "support.float_min",
+    "variant.FloatFN_max": "support.float_fn_max",
+    "variant.Float_encode": "support.float_encode",
+    "variant.Float_encode_int": "support.float_encode",
+    "variant.Float_encode_string": "support.float_encode",
+    "variant.Float_decode": "support.float_decode",
+    "variant.FloatFN_decode": "support.float_fn_decode",
+    "variant.FloatFN_encode": "support.float_fn_encode",
+    "variant.Float_set": "support.float_set",
+    "variant.Float_partition": "support.float_partition",
+    "variant.Float_range": "support.float_range",
+    "variant.Float_getitem": "support.float_getitem",
+}
+
+# Inputs the informal spec works through, judged before the search.
+EXAMPLES = {
+    "bitpattern.IntSet.range": [
+        {"start": 3, "stop": 17, "width": 3},
+        {"start": 0, "stop": 0, "width": None},
+        {"start": 0, "stop": 2, "width": None},
+        {"start": 5, "stop": 3, "width": None},
+        {"start": 0, "stop": 2**100, "width": 128},
+        {"start": -1, "stop": 3, "width": None},
+        {"start": 0, "stop": 4, "width": -1},
+    ],
+    "variant.IntSet_with_width": [
+        {"items": [300], "width": 2},
+        {"items": [], "width": 0},
+        {"items": [1], "width": -3},
+    ],
+    "variant.IntSet_new": [
+        {"items": []},
+        {"items": [0]},
+        {"items": [5, 1, 3]},
+        {"items": [3, 3, 1]},
+        {"items": [-1]},
+    ],
+    "variant.Pattern_new": [
+        {"tokens": list("*1.0000")},
+        {"tokens": list("1.*")},
+        {"tokens": list("*1.*.*.0000.1111.?01?")},
+        {"tokens": list("1?1")},
+        {"tokens": list(".1111")},
+        {"tokens": list("1111.")},
+        {"tokens": list("11111")},
+        {"tokens": list("1.1")},
+        {"tokens": list("**")},
+        {"tokens": list("1|0")},
+        {"tokens": []},
+    ],
+    "variant.diagram_cells": [{"cells": list("1?0")}, {"cells": []}],
+    "bitpattern.bdd.diagram": [{"bits": ""}, {"bits": "*"}, {"bits": "1.0"}],
+    "bitpattern.bdd.interval": [{"start": 3, "stop": 17, "width": 5}, {"start": 0, "stop": 8, "width": 3}],
+    "bitpattern.bdd.count_repr": [{"total": t} for t in (0, 512, 1023, 1024, 2**64 - 1, 2**64, 2**127)],
+}
+
+FLOAT_EXAMPLES = {
+    "variant.Float_encode": [
+        {"kind": "float16", "value": 65504.0},
+        {"kind": "float16", "value": 65520.0},
+        {"kind": "float16", "value": 1 + 2**-11},
+        {"kind": "float16", "value": 1 + 3 * 2**-11},
+        {"kind": "float16", "value": -1e-10},
+        {"kind": "float16", "value": -0.0},
+        {"kind": "float16", "value": float("inf")},
+        {"kind": "float16", "value": float("-nan")},
+        {"kind": "float32", "value": 1e39},
+    ],
+    "variant.Float_range": [
+        {"kind": "float16", "start": 1.0, "stop": 2.0},
+        {"kind": "float32", "start": 1.0, "stop": 2.0},
+        {"kind": "float16", "start": None, "stop": None},
+        {"kind": "float16", "start": 0.0, "stop": None},
+        {"kind": "float16", "start": 0.0, "stop": float("inf")},
+        {"kind": "float16", "start": -0.0, "stop": None},
+        {"kind": "float16", "start": -0.0, "stop": 0.0},
+        {"kind": "float16", "start": None, "stop": 0.0},
+        {"kind": "float16", "start": 1.00001, "stop": 1.002},
+        {"kind": "float16", "start": 1e10, "stop": None},
+        {"kind": "float16", "start": -1e10, "stop": -65504.0},
+        {"kind": "float16", "start": float("nan"), "stop": None},
+    ],
+    "variant.FloatFN_encode": [{"value": 464.0}, {"value": 465.0}, {"value": 0.3}, {"value": float("inf")}],
+}
+
+test_bitpattern = spectest.check("bitpattern.spec", modules=MODULES, examples=EXAMPLES)
+test_floats = spectest.check("floats.spec", modules=FLOAT_MODULES, examples=FLOAT_EXAMPLES)

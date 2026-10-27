@@ -280,7 +280,7 @@ def strategy_examples(source):
     def collect(x):
         drawn.append(x)
 
-    if len(source) == 0 if source.size < 2**62 else False:
+    if source.size == 0:
         return []
     collect()
     return drawn
@@ -292,3 +292,68 @@ def strategy_minimal(source):
     from hypothesis import find, settings
 
     return find(from_set(source), lambda x: True, settings=settings(database=None))
+
+
+# -- bitpattern.codecs: the float codecs, picked by name ---------------------------------
+
+
+def _codec(kind):
+    return getattr(bitpattern.codecs, kind)
+
+
+def float_codec(kind):
+    return _codec(kind)
+
+
+def float_codec_fn():
+    return bitpattern.codecs.float8_e4m3fn
+
+
+def float_dtype(kind):
+    return _codec(kind).dtype()
+
+
+def float_max(kind):
+    return _codec(kind).max
+
+
+def float_min(kind):
+    return _codec(kind).min
+
+
+def float_fn_max():
+    return bitpattern.codecs.float8_e4m3fn.max
+
+
+def float_encode(kind, value):
+    return _codec(kind).encode(value)
+
+
+def float_decode(kind, b):
+    return _codec(kind).decode(b)
+
+
+def float_fn_encode(value):
+    return bitpattern.codecs.float8_e4m3fn.encode(value)
+
+
+def float_fn_decode(b):
+    return bitpattern.codecs.float8_e4m3fn.decode(b)
+
+
+def float_set(kind, name):
+    codec = _codec(kind)
+    return codec.all if name == "all" else getattr(codec, name)
+
+
+def float_partition(kind):
+    """The partition laws are clauses over the named sets; there is nothing to call."""
+    return 0
+
+
+def float_range(kind, start, stop):
+    return _codec(kind).range(start, stop)
+
+
+def float_getitem(kind, i):
+    return _codec(kind).all[i]
