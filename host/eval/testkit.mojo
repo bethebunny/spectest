@@ -7,7 +7,7 @@ from check.spec import Spec
 from numeric.bigint import BigInt
 from numeric.formats import F32, F64, FloatFormat
 from wire.format import format_value
-from wire.value import Value
+from wire.value import HANDLE, Value
 
 from .api import J_ERROR, J_FALSE, J_SKIP, J_TRUE, Judgment, evaluate, judge
 from .env import Env
@@ -20,6 +20,8 @@ struct Mock(EvalHost):
     var obs_model: List[Int]
     var obs_observer: List[Int]
     var obs_value: List[Value]
+    var obs_handle: List[Int]
+    var last_args: List[Value]
     var fn_pos: List[Int]
     var fn_val: List[Value]
     var const_pos: List[Int]
@@ -35,6 +37,8 @@ struct Mock(EvalHost):
         self.obs_model = List[Int]()
         self.obs_observer = List[Int]()
         self.obs_value = List[Value]()
+        self.obs_handle = List[Int]()
+        self.last_args = List[Value]()
         self.fn_pos = List[Int]()
         self.fn_val = List[Value]()
         self.const_pos = List[Int]()
@@ -46,20 +50,43 @@ struct Mock(EvalHost):
         self.is_shared = False
         self.log = List[String]()
 
-    def on_observe(mut self, model: Int, observer: Int, var value: Value):
+    def on_observe(mut self, model: Int, observer: Int, var value: Value, handle: Int = -1):
+        """Answer observer `observer` of model `model` with `value`, for the handle with
+        id `handle` (any handle when -1). A later answer replaces an earlier one."""
+        for i in range(len(self.obs_model)):
+            if (
+                self.obs_model[i] == model
+                and self.obs_observer[i] == observer
+                and self.obs_handle[i] == handle
+            ):
+                self.obs_value[i] = value^
+                return
         self.obs_model.append(model)
         self.obs_observer.append(observer)
+        self.obs_handle.append(handle)
         self.obs_value.append(value^)
 
     def on_call(mut self, fn_index: Int, var value: Value):
+        for i in range(len(self.fn_pos)):
+            if self.fn_pos[i] == fn_index:
+                self.fn_val[i] = value^
+                return
         self.fn_pos.append(fn_index)
         self.fn_val.append(value^)
 
     def on_constant(mut self, index: Int, var value: Value):
+        for i in range(len(self.const_pos)):
+            if self.const_pos[i] == index:
+                self.const_val[i] = value^
+                return
         self.const_pos.append(index)
         self.const_val.append(value^)
 
     def on_extern(mut self, var name: String, var value: Value):
+        for i in range(len(self.extern_name)):
+            if self.extern_name[i] == name:
+                self.extern_val[i] = value^
+                return
         self.extern_name.append(name^)
         self.extern_val.append(value^)
 
@@ -74,9 +101,13 @@ struct Mock(EvalHost):
         mut self, obj: Value, model: Int, observer: Int, args: List[Value]
     ) raises -> Value:
         self.log.append(String("observe ", model, ".", observer, " ", len(args)))
+        self.last_args = args.copy()
         for i in range(len(self.obs_model)):
             if self.obs_model[i] == model and self.obs_observer[i] == observer:
-                return self.obs_value[i].copy()
+                if self.obs_handle[i] < 0 or (
+                    obj.kind == HANDLE and Int(obj.handle_id()) == self.obs_handle[i]
+                ):
+                    return self.obs_value[i].copy()
         raise Error("mock: no observer " + String(model) + "." + String(observer))
 
     def call_fn(mut self, fn_pos: Int, args: List[Value]) raises -> Value:
@@ -84,6 +115,7 @@ struct Mock(EvalHost):
         for a in args:
             shown += " " + format_value(a)
         self.log.append(String("call ", fn_pos, shown))
+        self.last_args = args.copy()
         for i in range(len(self.fn_pos)):
             if self.fn_pos[i] == fn_pos:
                 return self.fn_val[i].copy()
