@@ -33,6 +33,19 @@ takes about a second.
 
 ## Idioms that compile in 1.2
 
+Prefer these Python-like forms. Each was compiled on 1.2:
+
+- List comprehensions: `[x * 2 for x in xs if x > 1]`.
+- `in` on lists, strings, dicts and sets: `name in names`, `"." in s`.
+- `any` and `all`: `any([p(x) for x in xs])`.
+- `match`, on ints and strings, with `case _:`.
+- Template strings for messages: `t"{name} takes {n} arguments"`, also inside
+  `Error(...)`. There are no f-strings. `String(a, b, c)` also joins several values.
+- Dict and set literals: `{"a": 1}`, `{1, 2}`. `xs.index(x)` raises when `x` is
+  missing. `", ".join(parts)` and `sort(xs)` (from `std.builtin.sort`) work.
+- `@fieldwise_init` writes the constructor, and takes keywords: `P(a=1, b="x")`.
+  Struct fields can't have default values.
+
 - Functions are `def` with typed arguments; `fn` is gone. Constants and aliases are
   `comptime NAME = ...`. The standard library is imported from `std`:
   `std.testing`, `std.memory` (`ArcPointer`, `bitcast`), `std.hash` (`Hasher`,
