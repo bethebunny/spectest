@@ -63,6 +63,7 @@ fn variant.IntSet_new(items: list<int>) -> bitpattern.intset.IntSet
   raises ValueError when exists(x in items: x < 0)
   ensures members: small(result) implies same_members(elems(result), items)
   ensures width: result.width == (if len(items) == 0 then 0 else bit_length(max(x in items: x)))
+  ensures round_trip: small(result) implies bitpattern.intset.IntSet.__eq__(variant.IntSet_with_width(elems(result), result.width), result) and variant.IntSet_with_width(elems(result), result.width).width == result.width
 
 fn variant.IntSet_floats(items: list<f64>) -> bitpattern.intset.IntSet
   raises TypeError when len(items) > 0
@@ -80,6 +81,10 @@ fn bitpattern.IntSet.range(start: int, stop: int, width: option<i16>) -> bitpatt
   ensures default_width: is_none(width) implies result.width == bit_length(imax(stop - 1, 0))
   ensures size: result.size == imax(0, imin(stop, 2 ** (if is_some(width) then unwrap(width) else bit_length(imax(stop - 1, 0)))) - start)
   ensures members: small(result) implies elems(result) == range(start, start + result.size)
+
+# Bounds that are not ints raise TypeError.
+fn variant.IntSet_range_floats(start: f64, stop: f64, width: option<i8>) -> bitpattern.intset.IntSet
+  raises TypeError when true
 
 fn bitpattern.IntSet.from_bdd(bdd: bitpattern.bdd.BDD, width: i16) -> bitpattern.intset.IntSet
   requires width <= 200
@@ -283,6 +288,21 @@ fn variant.IntSet_sub_int(s: bitpattern.intset.IntSet, other: i64) -> bitpattern
 fn variant.IntSet_xor_int(s: bitpattern.intset.IntSet, other: i64) -> bitpattern.intset.IntSet
   raises TypeError when true
 
+# The result has the type of the left operand: IntSet & Pattern is an IntSet.
+fn variant.IntSet_and_pattern(s: bitpattern.intset.IntSet, p: bitpattern.pattern.Pattern) -> bitpattern.intset.IntSet
+  ensures members: small(s) and p.size <= 512 implies same_members(elems(result), inter_of(elems(s), elems_p(p)))
+  ensures width: result.width == imax(s.width, p.width)
+
+fn variant.IntSet_or_pattern(s: bitpattern.intset.IntSet, p: bitpattern.pattern.Pattern) -> bitpattern.intset.IntSet
+  ensures members: small(s) and p.size <= 512 implies same_members(elems(result), elems(s) + elems_p(p))
+  ensures width: result.width == imax(s.width, p.width)
+
+fn variant.IntSet_sub_pattern(s: bitpattern.intset.IntSet, p: bitpattern.pattern.Pattern) -> bitpattern.intset.IntSet
+  ensures members: small(s) and p.size <= 512 implies same_members(elems(result), minus_of(elems(s), elems_p(p)))
+
+fn variant.IntSet_xor_pattern(s: bitpattern.intset.IntSet, p: bitpattern.pattern.Pattern) -> bitpattern.intset.IntSet
+  ensures members: small(s) and p.size <= 512 implies same_members(elems(result), xor_of(elems(s), elems_p(p)))
+
 # -- 1. IntSet: comparisons, equality, hash ----------------------------------------
 
 fn bitpattern.intset.IntSet.__le__(self, other: bitpattern.intset.IntSet) -> bool
@@ -346,6 +366,7 @@ fn builtins.setattr(s: bitpattern.intset.IntSet, name: "extra" | "size" | "membe
 
 const bitpattern.bdd.BDD.ACCEPT: bitpattern.bdd.BDD
 const bitpattern.bdd.BDD.REJECT: bitpattern.bdd.BDD
+const bitpattern.bdd.BDD.__match_args__: (string, string, string)
 
 # Classes, as objects: a model without a dotted name accepts any object.
 model Class
@@ -609,6 +630,7 @@ fn bitpattern.bdd.count_repr(total: int) -> string
 fn bitpattern.bdd.collect() -> int
   ensures nonnegative: result >= 0
   ensures version: bitpattern.__version__ == "0.3.0" and bitpattern.bdd.__version__ == "0.3.0"
+  ensures match_args: bitpattern.bdd.BDD.__match_args__ == ("bit", "left", "right")
   ensures exports: same_object(bitpattern.BDDSet, bitpattern.codecs.BDDSet) and same_object(bitpattern.Codec, bitpattern.codecs.Codec) and same_object(bitpattern.OrderedCodec, bitpattern.codecs.OrderedCodec)
 
 fn bitpattern.bdd.stats() -> map<string, int>
@@ -746,6 +768,27 @@ fn bitpattern.pattern.Pattern.widened(self, width: int) -> bitpattern.pattern.Pa
   ensures single_branch_dotted: width <= 64 and len(self.branch_list(2)) == 1 implies result.branch_list(2) == [dotted(from_codepoints(map(i in range(0, imax(width - self.width, 0)): 48)) + undot(self.branch_list(1)[0]))]
   relates equal_to_original: variant.Pattern_eq_pattern(result, self)
 
+fn bitpattern.pattern.Pattern.__sub__(self, other: bitpattern.intset.IntSet) -> bitpattern.pattern.Pattern
+  ensures members: self.size <= 512 and other.size <= 512 implies same_members(elems_p(result), minus_of(elems_p(self), elems(other)))
+  ensures width: result.width == imax(self.width, other.width)
+
+fn bitpattern.pattern.Pattern.__xor__(self, other: bitpattern.intset.IntSet) -> bitpattern.pattern.Pattern
+  ensures members: self.size <= 512 and other.size <= 512 implies same_members(elems_p(result), xor_of(elems_p(self), elems(other)))
+  ensures width: result.width == imax(self.width, other.width)
+
+# A built-in iterable on the left gives the right operand's type, except for `-`, a plain IntSet.
+fn variant.Pattern_ror_list(p: bitpattern.pattern.Pattern, other: list<u8>) -> bitpattern.pattern.Pattern
+  ensures members: p.size <= 512 implies same_members(elems_p(result), elems_p(p) + other)
+
+fn variant.Pattern_rsub_list(p: bitpattern.pattern.Pattern, other: list<u8>) -> bitpattern.intset.IntSet
+  ensures members: p.size <= 512 implies same_members(elems(result), filter(x in other: not (x in elems_p(p))))
+
+# Slices stay Patterns.
+fn variant.Pattern_slice(p: bitpattern.pattern.Pattern, start: option<int>, stop: option<int>, step: option<int>) -> bitpattern.pattern.Pattern
+  may_raise ValueError when is_some(step) and unwrap(step) == 0
+  ensures members: p.size <= 512 and (is_none(step) or unwrap(step) != 0) implies same_members(elems_p(result), map(i in slice_positions(start, stop, if is_none(step) then 1 else unwrap(step), p.size): elems_p(p)[i]))
+  ensures width: result.width == p.width
+
 # Equality ignores width, across Pattern and IntSet.
 fn bitpattern.pattern.Pattern.__eq__(self, other: bitpattern.intset.IntSet) -> bool
   ensures members: self.size <= 512 and other.size <= 512 implies result == same_members(elems_p(self), elems(other))
@@ -782,6 +825,17 @@ const bitpattern.codecs.uint16: Int
 const bitpattern.codecs.uint32: Int
 const bitpattern.codecs.uint64: Int
 const bitpattern.codecs.uint128: Int
+
+# The codecs of the table: int8 ... int128 and uint8 ... uint128.
+fn variant.Int_named(kind: "int8" | "int16" | "int32" | "int64" | "int128" | "uint8" | "uint16" | "uint32" | "uint64" | "uint128") -> Int
+  ensures name: result.name == kind
+  ensures width: result.width == (if kind == "int8" or kind == "uint8" then 8 else if kind == "int16" or kind == "uint16" then 16 else if kind == "int32" or kind == "uint32" then 32 else if kind == "int64" or kind == "uint64" then 64 else 128)
+  ensures signed: result.signed == (kind == "int8" or kind == "int16" or kind == "int32" or kind == "int64" or kind == "int128")
+  ensures min: bitpattern.codecs.Int.min(result) == int_min(result)
+  ensures max: bitpattern.codecs.Int.max(result) == int_max(result)
+  ensures dtype: bitpattern.codecs.Int.dtype(result) == int_dtype(result)
+  ensures dtype_table: (kind == "int8" implies bitpattern.codecs.Int.dtype(result) == "INT8") and (kind == "int64" implies bitpattern.codecs.Int.dtype(result) == "INT64") and (kind == "uint16" implies bitpattern.codecs.Int.dtype(result) == "UINT16") and (kind == "int128" implies bitpattern.codecs.Int.dtype(result) == "UINT8") and (kind == "uint128" implies bitpattern.codecs.Int.dtype(result) == "UINT8")
+  ensures wrap_around: kind == "int8" implies bitpattern.codecs.Int.decode(result, 128) == -128 and bitpattern.codecs.Int.encode(result, -1) == 255
 
 fn variant.Int_new(width: u8, name: string, signed: bool) -> Int
   ensures fields: result.width == width and result.name == name and result.signed == signed
@@ -881,6 +935,22 @@ fn variant.Int_pattern(codec: Int, tokens: list<"0" | "1" | "?" | "*" | "." | "|
   ensures members: not pat_has_star(tokens) and codec.width <= 9 implies elems(result.storage) == filter(x in range(0, 2 ** codec.width): path_matches(pat_bits(tokens), x))
 
 # -- 3. BDDSet over Int ------------------------------------------------------------
+
+# BDDSet(codec, storage): ValueError unless the storage has the codec's width; the fields
+# are read-only.
+fn variant.BDDSet_new(codec: Int, storage: bitpattern.intset.IntSet) -> BDDSet
+  requires codec.width >= 1
+  raises ValueError when storage.width != codec.width
+  ensures fields: result.codec == codec and bitpattern.intset.IntSet.__eq__(result.storage, storage)
+
+fn variant.BDDSet_setattr(codec: Int, storage: bitpattern.intset.IntSet, name: "codec" | "storage") -> int
+  requires codec.width >= 1 and storage.width <= codec.width
+  raises dataclasses.FrozenInstanceError when true
+
+# Equal sets hash alike.
+fn variant.BDDSet_hash(codec: Int, storage: bitpattern.intset.IntSet) -> int
+  requires codec.width >= 1 and storage.width <= codec.width
+  relates widths_do_not_matter: variant.BDDSet_hash(codec, bitpattern.intset.IntSet.widened(storage, codec.width)) == result
 
 fn bitpattern.codecs.BDDSet.size(codec: Int, storage: bitpattern.intset.IntSet) -> int
   requires codec.width >= 1 and storage.width <= codec.width
@@ -1014,6 +1084,12 @@ fn variant.BDDSet_exported(codec: Int, storage: bitpattern.intset.IntSet) -> (st
   requires codec.width >= 1 and codec.width <= 64 and storage.width <= codec.width and storage.size <= 512
   ensures dtype: storage.size > 0 implies result.0 == (if int_dtype(codec) == "INT8" then "int8" else if int_dtype(codec) == "INT16" then "int16" else if int_dtype(codec) == "INT32" then "int32" else if int_dtype(codec) == "INT64" then "int64" else if int_dtype(codec) == "UINT8" then "uint8" else if int_dtype(codec) == "UINT16" then "uint16" else if int_dtype(codec) == "UINT32" then "uint32" else "uint64")
   ensures values: storage.size > 0 implies result.2 == map(b in storage.head(storage.size): int_decode(codec, b))
+
+# -- 6. DLPack: DType --------------------------------------------------------------
+
+# DType.value is the DLPack (code, bits) pair; the properties are code and bits.
+fn variant.DType_value(name: "INT8" | "INT16" | "INT32" | "INT64" | "UINT8" | "UINT16" | "UINT32" | "UINT64" | "FLOAT16" | "FLOAT32" | "FLOAT64" | "BFLOAT16" | "FLOAT8_E4M3FN" | "FLOAT8_E5M2") -> (int, int)
+  ensures table: result == (if name == "INT8" then (0, 8) else if name == "INT16" then (0, 16) else if name == "INT32" then (0, 32) else if name == "INT64" then (0, 64) else if name == "UINT8" then (1, 8) else if name == "UINT16" then (1, 16) else if name == "UINT32" then (1, 32) else if name == "UINT64" then (1, 64) else if name == "FLOAT16" then (2, 16) else if name == "FLOAT32" then (2, 32) else if name == "FLOAT64" then (2, 64) else if name == "BFLOAT16" then (4, 16) else if name == "FLOAT8_E4M3FN" then (10, 8) else (12, 8))
 
 # -- 5. strategies -----------------------------------------------------------------
 

@@ -17,6 +17,7 @@ import random
 import bitpattern
 import bitpattern.bdd as bdd
 import bitpattern.codecs
+import bitpattern.dlpack
 import numpy
 
 # Iterators are cut here; the spec's clauses read at most this many items.
@@ -851,3 +852,20 @@ def dt_all(kind):
 
 def dt_range(kind, start, stop):
     return _datetimes(kind).range(start, stop)
+
+
+def int_named(kind):
+    return getattr(bitpattern.codecs, kind)
+
+
+def bddset_setattr(codec, storage, name):
+    s = _set(codec, storage)
+    setattr(s, name, getattr(s, name))
+
+
+def bddset_hash(codec, storage):
+    return hash(_set(codec, storage))
+
+
+def dtype_value(name):
+    return bitpattern.dlpack.DType[name].value
