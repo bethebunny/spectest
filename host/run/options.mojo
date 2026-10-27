@@ -29,4 +29,4 @@ struct RunOptions(Copyable, Movable):
         self.aggregate_samples = 10000
 
     def shrink_steps(self) -> Int:
-        return 5000 if self.strength == "full" else 1000
+        return 20000 if self.strength == "full" else 5000
