@@ -79,9 +79,10 @@ def _digits(src: Span[Byte, _], i: Int, end: Int, *, hex: Bool) -> Int:
     var j = i
     while True:
         var c = _at(src, j, end)
+        var next = _at(src, j + 1, end)
         if is_hex(c) if hex else is_digit(c):
             j += 1
-        elif j > i and c == ord("_") and (is_hex(_at(src, j + 1, end)) if hex else is_digit(_at(src, j + 1, end))):
+        elif j > i and c == ord("_") and (is_hex(next) if hex else is_digit(next)):
             j += 1
         else:
             return j
@@ -114,7 +115,8 @@ def _is_opener(src: Span[Byte, _], i: Int, end: Int) -> Bool:
 
 def _is_perf(src: Span[Byte, _], i: Int, end: Int) -> Bool:
     var after = _at(src, i + 4, end)
-    return _text(src, i, min(i + 4, end)) == "perf" and (i + 4 == end or is_space(after) or after == 13)
+    var ends_word = i + 4 == end or is_space(after) or after == 13
+    return _text(src, i, min(i + 4, end)) == "perf" and ends_word
 
 
 @fieldwise_init
@@ -322,7 +324,8 @@ struct Lexer:
         var c = Int(src[i])
         var col = self.col_at(src, i)
         var pair = _text(src, i, min(i + 2, end))
-        var width = 2 if pair.byte_length() == 2 and " " not in pair and pair in _TWO_CHAR_OPS else 1
+        var is_pair = pair.byte_length() == 2 and " " not in pair and pair in _TWO_CHAR_OPS
+        var width = 2 if is_pair else 1
         if width == 1 and not (c < 128 and _in(c, _ONE_CHAR_OPS)):
             raise self.error(
                 self.line_no, col, i, t"unexpected character '{_char_at(src, i, end)}'"
@@ -338,7 +341,7 @@ struct Lexer:
                     self.line_no, col, i,
                     t"'{chr(c)}' does not match '{chr(opened.open)}' at {opened.line}:{opened.col}",
                 )
-        self.emit(T_OP, pair if width == 2 else _text(src, i, i + 1), i, i + width, col, col + width)
+        self.emit(T_OP, _text(src, i, i + width), i, i + width, col, col + width)
         return i + width
 
     def number(mut self, src: Span[Byte, _], i: Int, end: Int) raises -> Int:
@@ -389,7 +392,9 @@ struct Lexer:
         var col = self.col_at(src, start)
         var i = start + 1
         var out = List[UInt8]()
-        var simple = {ord("n"): 10, ord("t"): 9, ord("r"): 13, ord("0"): 0, ord("\\"): 92, ord('"'): 34}
+        var simple = {
+            ord("n"): 10, ord("t"): 9, ord("r"): 13, ord("0"): 0, ord("\\"): 92, ord('"'): 34
+        }
         while True:
             if i >= end:
                 raise self.error(self.line_no, col, start, "unterminated string")
