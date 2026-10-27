@@ -89,7 +89,6 @@ def test_raises_and_may_raise_judge_their_condition() raises:
     var spec = spec_of("error E\nfn f(x: i64) -> i64\n  raises E when x < 0\n  raises always: E when 1 // 0 == 0\n  may_raise F: E\n  may_raise G: E when x > 100\n")
     var host = Mock()
     var env = Env(one(Value.int(-1)))
-    var kinds = List[String]()
     assert_true(judge(spec, 0, env, host).is_true())
     assert_true(judge_clause(spec, "f.always", env, host).is_error())
     assert_true(judge_clause(spec, "f.F", env, host).is_true())
@@ -268,7 +267,6 @@ def test_explaining_true_and_literal_clauses() raises:
 def test_explain_limits_and_truncates() raises:
     var spec = spec_of("fn f(xs: list<i64>) -> list<i64>\n  ensures e: result == xs\n")
     var host = Mock()
-    var xs = List[Int]()
     var items = List[Value]()
     for i in range(1000):
         items.append(Value.int(i))

@@ -103,11 +103,20 @@ struct Mock(EvalHost):
         self.log.append(String("observe ", model, ".", observer, " ", len(args)))
         self.last_args = args.copy()
         for i in range(len(self.obs_model)):
-            if self.obs_model[i] == model and self.obs_observer[i] == observer:
-                if self.obs_handle[i] < 0 or (
-                    obj.kind == HANDLE and Int(obj.handle_id()) == self.obs_handle[i]
-                ):
-                    return self.obs_value[i].copy()
+            if (
+                self.obs_model[i] == model
+                and self.obs_observer[i] == observer
+                and obj.kind == HANDLE
+                and Int(obj.handle_id()) == self.obs_handle[i]
+            ):
+                return self.obs_value[i].copy()
+        for i in range(len(self.obs_model)):
+            if (
+                self.obs_model[i] == model
+                and self.obs_observer[i] == observer
+                and self.obs_handle[i] < 0
+            ):
+                return self.obs_value[i].copy()
         raise Error("mock: no observer " + String(model) + "." + String(observer))
 
     def call_fn(mut self, fn_pos: Int, args: List[Value]) raises -> Value:

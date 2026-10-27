@@ -32,6 +32,20 @@ def test_literals() raises:
     assert_equal(v("[]"), "[]")
 
 
+def test_literal_unions_compare_with_strings() raises:
+    var spec = spec_of(fragment('how: "any" | "all", hows: list<"any" | "all">', 'how == "any" and "any" in hows and hows == ["any", "all"] and how in ["any"] and "n" in how + "any"'))
+    var host = Mock()
+    var member = Value.enum("", "any")
+    var hows = Value.list(two(Value.enum("", "any"), Value.enum("", "all")))
+    assert_true(evaluate(spec, expr_node(spec), Env(two(member^, hows^)), host).as_bool())
+    # A string works as well as a member.
+    var hows2 = Value.list(two(Value.string("any"), Value.string("all")))
+    assert_true(evaluate(spec, expr_node(spec), Env(two(Value.string("any"), hows2^)), host).as_bool())
+    var other = Value.enum("", "all")
+    var hows3 = Value.list(two(Value.enum("", "any"), Value.enum("", "all")))
+    assert_true(not evaluate(spec, expr_node(spec), Env(two(other^, hows3^)), host).as_bool())
+
+
 def test_set_literal_and_constructors_have_no_value() raises:
     var spec = spec_of("fn f(x: u8)\n  partition x\n    a = {1, 2}\n    b = u8.all - a\n  ensures e: true\n")
     var host = Mock()

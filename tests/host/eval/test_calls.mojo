@@ -173,7 +173,6 @@ def test_observers_with_arguments() raises:
     var env = Env(one(m^))
     assert_true(judge_clause(spec, "f.a", env, host).is_true())
     assert_equal(host.calls("observe 0.1 1"), 2)
-    is_(host.last_args[0].copy(), Value.int(2)) if False else None
     var j = judge_clause(spec, "f.b", env, host)
     assert_true(j.is_error())
     has(j.message, "300 is out of range for u8")
