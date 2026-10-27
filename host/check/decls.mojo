@@ -62,16 +62,11 @@ def _where(c: Checker, here: Int, other: Int) -> String:
 
 def declare(mut c: Checker, name: String, node: Int) -> Bool:
     if is_builtin_type_name(name):
-        c.error(node, name + " is a built-in type and cannot be redeclared")
+        c.error(node, t"{name} is a built-in type and cannot be redeclared")
     elif is_reserved(name):
-        c.error(node, name + " is reserved and cannot name a declaration")
+        c.error(node, t"{name} is reserved and cannot name a declaration")
     elif name in c.names:
-        c.error(
-            node,
-            name
-            + " is already declared at "
-            + _where(c, node, c.names.get(name).value()),
-        )
+        c.error(node, t"{name} is already declared at {_where(c, node, c.names.get(name).value())}")
     else:
         c.names[name] = node
         return True
@@ -88,21 +83,16 @@ def tvars_of(
         if c.nkids(tp) > 0:
             bound = c.text_of(c.kid(tp, 0))
             if bound != "Eq" and bound != "Ord":
-                c.error(
-                    tp,
-                    "unknown bound "
-                    + bound
-                    + ": a type parameter's bound is Eq or Ord",
-                )
+                c.error(tp, t"unknown bound {bound}: a type parameter's bound is Eq or Ord")
                 bound = String()
         var dup = False
         for n in names:
             if n == name:
                 dup = True
         if dup:
-            c.error(tp, "type parameter " + name + " is declared twice")
+            c.error(tp, t"type parameter {name} is declared twice")
         elif is_builtin_type_name(name):
-            c.error(tp, "type parameter " + name + " shadows a built-in type")
+            c.error(tp, t"type parameter {name} shadows a built-in type")
         names.append(name^)
         bounds.append(bound^)
 
@@ -176,7 +166,7 @@ def collect(mut c: Checker):
                     if x == mn:
                         seen = True
                 if seen:
-                    c.error(d, "enum " + name + " lists a member twice")
+                    c.error(d, t"enum {name} lists a member twice")
                 else:
                     members.append(mn^)
             if declare(c, name, d):
@@ -211,10 +201,7 @@ def collect(mut c: Checker):
             var tb = List[String]()
             tvars_of(c, c.kid(d, 0), tn, tb)
             if name in c.prelude_ids:
-                c.error(
-                    d,
-                    name + " is a prelude function and cannot be redefined",
-                )
+                c.error(d, t"{name} is a prelude function and cannot be redefined")
                 c.duplicate[d] = True
             elif (
                 name in c.names
@@ -327,9 +314,9 @@ def build_params(
             continue
         for q in out:
             if q.name == name:
-                c.error(p, "parameter " + name + " is declared twice")
+                c.error(p, t"parameter {name} is declared twice")
         if is_reserved(name):
-            c.error(p, name + " is reserved and cannot name a parameter")
+            c.error(p, t"{name} is reserved and cannot name a parameter")
         var t = resolve_type(c, tnode, self_model)
         if c.contains_real(t):
             c.error(tnode, "real is clause-only and cannot be a parameter type")
@@ -340,7 +327,7 @@ def build_params(
 def _member_dup(mut c: Checker, members: List[String], name: String, node: Int, owner: String):
     for m in members:
         if m == name:
-            c.error(node, owner + " already has a member named " + name)
+            c.error(node, t"{owner} already has a member named {name}")
 
 
 def declare_signatures(mut c: Checker):
@@ -392,9 +379,9 @@ def _declare_model(mut c: Checker, d: Int):
             if ret != 0:
                 var declared = resolve_type(c, ret, pos)
                 if not c.is_any(declared) and declared != self_t:
-                    c.error(ret, "a constructor returns its interface: -> " + name)
+                    c.error(ret, t"a constructor returns its interface: -> {name}")
             else:
-                c.error(m, "a constructor returns its interface: -> " + name)
+                c.error(m, t"a constructor returns its interface: -> {name}")
             c.spec.fns[fpos].result = rt
         elif mk == ast.METHOD:
             var fpos = c.decl_pos[m]
@@ -428,11 +415,7 @@ def _declare_fn(mut c: Checker, d: Int):
         if dot < 0:
             c.error(
                 pkids[0],
-                name
-                + " takes self, but it is not named after a model: write "
-                "fn Model."
-                + name
-                + "(self, ...)",
+                t"{name} takes self, but it is not named after a model: write fn Model.{name}(self, ...)",
             )
         else:
             var prefix = String(name[byte=0:dot])
@@ -440,10 +423,7 @@ def _declare_fn(mut c: Checker, d: Int):
             if not mp:
                 c.error(
                     pkids[0],
-                    name
-                    + " takes self, but there is no model or interface named "
-                    + prefix
-                    + " to be its receiver",
+                    t"{name} takes self, but there is no model or interface named {prefix} to be its receiver",
                 )
             else:
                 self_t = c.spec.models[mp.value()].type
@@ -513,12 +493,7 @@ def check_default(mut c: Checker, p: Param):
         else:
             c.error(
                 default,
-                "the default of "
-                + p.name
-                + " must be a "
-                + c.text(t)
-                + ", but it is "
-                + c.text(dt),
+                t"the default of {p.name} must be a {c.text(t)}, but it is {c.text(dt)}",
             )
         return
     var value = c.literal_value(default)
@@ -531,12 +506,7 @@ def check_default(mut c: Checker, p: Param):
         if not _in_fixed_range(value.value(), bits, signed):
             c.error(
                 default,
-                c.source_of(default)
-                + " is not a "
-                + c.text(t)
-                + " value ("
-                + _int_range_text(bits, signed)
-                + ")",
+                t"{c.source_of(default)} is not a {c.text(t)} value ({_int_range_text(bits, signed)})",
             )
     elif k == ty.FLOAT:
         try:
@@ -544,9 +514,7 @@ def check_default(mut c: Checker, p: Param):
             if not exactly(fmt, value.value()):
                 c.error(
                     default,
-                    c.source_of(default)
-                    + " is not exactly representable as "
-                    + c.text(t),
+                    t"{c.source_of(default)} is not exactly representable as {c.text(t)}",
                 )
         except:
             pass
@@ -647,19 +615,9 @@ def assign_ids(
             var cid = decl_id + "." + label
             c.error(
                 cl,
-                "clause label "
-                + label
-                + " gives the ID "
-                + cid
-                + ", which already names the "
-                + member_kinds[is_member]
-                + " "
-                + cid
-                + ": rename the label (e.g. "
-                + String(ast.op_name(c.op_of(cl)))
-                + " "
-                + label
-                + "_holds:)",
+                t"clause label {label} gives the ID {cid}, which already names the "
+                t"{member_kinds[is_member]} {cid}: rename the label (e.g. {ast.op_name(c.op_of(cl))} "
+                t"{label}_holds:)",
             )
             id = decl_id + "#" + String(i + 1)
             label = String()
@@ -671,13 +629,7 @@ def assign_ids(
             if prev >= 0:
                 c.error(
                     cl,
-                    "clause label "
-                    + label
-                    + " is already used in "
-                    + decl_id
-                    + " (line "
-                    + String(c.line_of(label_nodes[prev]))
-                    + ")",
+                    t"clause label {label} is already used in {decl_id} (line {c.line_of(label_nodes[prev])})",
                 )
                 id = decl_id + "#" + String(i + 1)
                 label = String()
@@ -688,7 +640,7 @@ def assign_ids(
         else:
             id = decl_id + "#" + String(i + 1)
         if id in c.clause_ids:
-            c.error(cl, "clause ID " + id + " is already in use")
+            c.error(cl, t"clause ID {id} is already in use")
         out.append(_add_clause(c, id, cl, label, owner_fn, owner_model))
     return out^
 
@@ -706,7 +658,7 @@ def check_freedoms(mut c: Checker, decl_id: String, clauses: List[Int]):
                 if n == f:
                     dup = True
             if dup:
-                c.error(cl, f + " is already declared a freedom of " + decl_id)
+                c.error(cl, t"{f} is already declared a freedom of {decl_id}")
             names.append(f^)
             nodes.append(cl)
     if len(names) == 0:
@@ -745,15 +697,8 @@ def check_freedoms(mut c: Checker, decl_id: String, clauses: List[Int]):
                 reported.append(rname.copy())
                 c.error(
                     n,
-                    "this clause observes "
-                    + rname
-                    + ", which "
-                    + decl_id
-                    + " declares "
-                    + String(ast.op_name(c.op_of(nodes[j])))
-                    + " (line "
-                    + String(c.line_of(nodes[j]))
-                    + "): no clause may observe it",
+                    t"this clause observes {rname}, which {decl_id} declares {ast.op_name(c.op_of(nodes[j]))} "
+                    t"(line {c.line_of(nodes[j])}): no clause may observe it",
                 )
 
 
@@ -824,11 +769,7 @@ def check_model(mut c: Checker, d: Int):
         ):
             c.error(
                 node,
-                String(ast.op_name(op))
-                + " belongs to a function, constructor or method, not to "
-                + what
-                + " "
-                + name,
+                t"{ast.op_name(op)} belongs to a function, constructor or method, not to {what} {name}",
             )
             if c.spec.clauses[ci].expr != 0:
                 poison_subtree(c, c.spec.clauses[ci].expr)
@@ -886,14 +827,8 @@ def _check_observer_expr(mut c: Checker, model: Int, oi: Int):
     if not c.is_poison(t) and not assignable(c, t, declared, expr):
         c.error(
             expr,
-            "the reading expression of "
-            + oname
-            + " is a "
-            + c.text(t)
-            + ", but "
-            + oname
-            + " is declared "
-            + c.text(declared),
+            t"the reading expression of {oname} is a {c.text(t)}, but {oname} is declared "
+            t"{c.text(declared)}",
         )
 
 
@@ -957,10 +892,7 @@ def check_callable(mut c: Checker, fpos: Int, what: String):
         var op = c.spec.clauses[ci].kind
         var cnode = c.spec.clauses[ci].node
         if op == ast.INVARIANT:
-            c.error(
-                cnode,
-                "invariant belongs to a model or interface; in a " + what + " use ensures",
-            )
+            c.error(cnode, t"invariant belongs to a model or interface; in a {what} use ensures")
             if c.spec.clauses[ci].expr != 0:
                 poison_subtree(c, c.spec.clauses[ci].expr)
             continue
@@ -1019,7 +951,7 @@ def _check_modifies(mut c: Checker, ci: Int, decl_id: String, base: Ctx):
     for n in c.spec.clauses[ci].names.copy():
         for s in seen:
             if s == n:
-                c.error(node, "modifies lists " + n + " twice")
+                c.error(node, t"modifies lists {n} twice")
         seen.append(n.copy())
         if n == "self":
             if base.self_t < 0:
@@ -1027,15 +959,12 @@ def _check_modifies(mut c: Checker, ci: Int, decl_id: String, base: Ctx):
             continue
         var pi = base.param_index(n)
         if pi < 0:
-            c.error(node, "modifies " + n + ": " + decl_id + " has no parameter " + n)
+            c.error(node, t"modifies {n}: {decl_id} has no parameter {n}")
         elif not c.contains_model(base.param_types[pi]):
             c.error(
                 node,
-                "modifies names handle parameters (models or interfaces) or self; "
-                + n
-                + " is a "
-                + c.text(base.param_types[pi])
-                + " value, which a call cannot change",
+                t"modifies names handle parameters (models or interfaces) or self; {n} is a "
+                t"{c.text(base.param_types[pi])} value, which a call cannot change",
             )
 
 
@@ -1052,10 +981,7 @@ def _check_partition(
     var classes_nodes = c.kids_of(part)
     for i in range(len(seen)):
         if seen[i] == pname:
-            c.error(
-                part,
-                pname + " is already partitioned at line " + String(c.line_of(seen_nodes[i])),
-            )
+            c.error(part, t"{pname} is already partitioned at line {c.line_of(seen_nodes[i])}")
     seen.append(pname.copy())
     seen_nodes.append(part)
     var pi = base.param_index(pname)
@@ -1063,7 +989,7 @@ def _check_partition(
         if pname == "self":
             c.error(part, "self cannot be partitioned: partition the method's parameters")
         else:
-            c.error(part, "partition " + pname + ": " + decl_id + " has no parameter " + pname)
+            c.error(part, t"partition {pname}: {decl_id} has no parameter {pname}")
         for cls in classes_nodes:
             poison_subtree(c, c.kid(cls, 0))
         return
@@ -1081,9 +1007,9 @@ def _check_partition(
             if x == cname:
                 dup = True
         if dup:
-            c.error(cls, "partition " + pname + " already has a class named " + cname)
+            c.error(cls, t"partition {pname} already has a class named {cname}")
         elif base.param_index(cname) >= 0:
-            c.error(cls, "class " + cname + " has the name of a parameter of " + decl_id)
+            c.error(cls, t"class {cname} has the name of a parameter of {decl_id}")
         var ctx = base.copy()
         ctx.kind = K_PARTITION_SET if fixed else K_PARTITION
         ctx.only_param = pname.copy()
@@ -1101,22 +1027,9 @@ def _check_partition(
                 var all_name = "nan" if c.tkind(ptype) == ty.FLOAT else "all"
                 c.error(
                     expr,
-                    "class "
-                    + cname
-                    + " of the "
-                    + c.text(ptype)
-                    + " parameter "
-                    + pname
-                    + " must be a set of "
-                    + c.text(ptype)
-                    + " values ("
-                    + c.text(ptype)
-                    + "."
-                    + all_name
-                    + ", "
-                    + c.text(ptype)
-                    + ".range(a, b), {v, ...}, combined with | & -), but it is "
-                    + c.text(t),
+                    t"class {cname} of the {c.text(ptype)} parameter {pname} must be a set of {c.text(ptype)} "
+                    t"values ({c.text(ptype)}.{all_name}, {c.text(ptype)}.range(a, b), {{v, ...}}, combined "
+                    t"with | & -), but it is {c.text(t)}",
                 )
             cnames.append(cname.copy())
             cnodes.append(cls)
@@ -1237,10 +1150,8 @@ def _check_aggregate(
     if c.spec.fns[fpos].kind != ast.FN:
         c.error(
             node,
-            "aggregate clauses belong to functions (fn), not to a "
-            + what
-            + ": a bound over a whole input set needs inputs that do not depend on an"
-            " object's state",
+            t"aggregate clauses belong to functions (fn), not to a {what}: a bound over a whole input "
+            t"set needs inputs that do not depend on an object's state",
         )
         poison_subtree(c, expr)
         return
@@ -1313,12 +1224,7 @@ def check_def(mut c: Checker, d: Int):
     if not c.is_poison(t) and not assignable(c, t, declared, body):
         c.error(
             body,
-            "the body of "
-            + name
-            + " is a "
-            + c.text(t)
-            + ", but it is declared to return "
-            + c.text(declared),
+            t"the body of {name} is a {c.text(t)}, but it is declared to return {c.text(declared)}",
         )
     c.ctx = Ctx()
 
@@ -1361,9 +1267,9 @@ def check_def_cycles(mut c: Checker):
                 if not reported[nxt]:
                     reported[nxt] = True
                     if len(path) - from_index == 1:
-                        c.error(at, "definition " + first + " calls itself")
+                        c.error(at, t"definition {first} calls itself")
                     else:
-                        c.error(at, "definitions cannot call each other in a cycle: " + text)
+                        c.error(at, t"definitions cannot call each other in a cycle: {text}")
             elif state[nxt] == 0:
                 state[nxt] = 1
                 path.append(nxt)

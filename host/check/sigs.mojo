@@ -55,8 +55,8 @@ def _ord(i: Int) -> String:
     return "argument " + String(i + 1)
 
 
-def _fail(mut c: Checker, message: String, arg: Int = -1, key: String = "") -> Int:
-    c.sig_msg = message
+def _fail(mut c: Checker, message: Some[Writable], arg: Int = -1, key: String = "") -> Int:
+    c.sig_msg = String(message)
     c.sig_arg = arg
     c.sig_key = key
     return c.poison
@@ -185,13 +185,8 @@ def _eq_elems(mut c: Checker, info: CallInfo, elem: Int, what: String) -> Bool:
         hint = c.text(bad) + " has no canonical equality"
     _ = _fail(
         c,
-        info.name
-        + " compares "
-        + what
-        + " with ==, but "
-        + c.text(elem)
-        + " has no canonical equality: "
-        + hint,
+        t"{info.name} compares {what} with ==, but {c.text(elem)} has no canonical equality: "
+        t"{hint}",
     )
     return False
 
@@ -242,10 +237,7 @@ def _type_arg(mut c: Checker, info: CallInfo, kinds: List[UInt8], what: String) 
     for want in kinds:
         if k == want:
             return t
-    _ = _fail(
-        c,
-        info.name + "<" + c.text(t) + ">: the type argument must be " + what,
-    )
+    _ = _fail(c, t"{info.name}<{c.text(t)}>: the type argument must be {what}")
     return NO_TYPE
 
 

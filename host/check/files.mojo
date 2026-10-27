@@ -92,8 +92,8 @@ def _is_prelude(ast: Ast, file: Int) -> Bool:
     return ast.nodes[ast.files[file].root].kind == sx.PRELUDE_FILE
 
 
-def _report(mut w: _Walk, ast: Ast, node: Int, message: String):
-    w.diags.append(Diagnostic(ast.path_of(node), ast.nodes[node].span, message))
+def _report(mut w: _Walk, ast: Ast, node: Int, message: Some[Writable]):
+    w.diags.append(Diagnostic(ast.path_of(node), ast.nodes[node].span, String(message)))
 
 
 def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:

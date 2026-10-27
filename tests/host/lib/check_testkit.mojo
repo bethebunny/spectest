@@ -30,22 +30,26 @@ def messages(body: String) -> List[String]:
     return [message_of(line) for line in error_lines(body)]
 
 
+def _listed(lines: List[String]) -> String:
+    return "".join(["\n  " + line for line in lines])
+
+
 def fails(body: String, fragment: String) raises:
     """`body` has an error whose message contains `fragment`."""
     var msgs = messages(body)
-    assert_true(any([fragment in m for m in msgs]), t"no error containing '{fragment}' in: {msgs.__str__()}")
+    assert_true(any([fragment in m for m in msgs]), String(t"no error containing '{fragment}' in:", _listed(msgs)))
 
 
 def fails2(body: String, a: String, b: String) raises:
     """One error contains both fragments."""
     var msgs = messages(body)
-    assert_true(any([a in m and b in m for m in msgs]), t"no error containing '{a}' and '{b}' in: {msgs.__str__()}")
+    assert_true(any([a in m and b in m for m in msgs]), String(t"no error containing '{a}' and '{b}' in:", _listed(msgs)))
 
 
 def fails_at(body: String, expected: String) raises:
     """The diagnostics of `body` include exactly the line `expected` (`t.spec:line:col: message`)."""
     var lines = error_lines(body)
-    assert_true(expected in lines, t"no diagnostic '{expected}' in: {lines.__str__()}")
+    assert_true(expected in lines, String(t"no diagnostic '{expected}' in:", _listed(lines)))
 
 
 def count_errors(body: String) -> Int:
@@ -54,7 +58,7 @@ def count_errors(body: String) -> Int:
 
 def clause_expr(spec: Spec, id: String) raises -> Int:
     var ci = spec.clause_named(id)
-    assert_true(ci is not None, t"no clause {id}")
+    assert_true(ci is not None, String(t"no clause {id}"))
     return spec.clauses[ci.value()].expr
 
 
@@ -64,8 +68,8 @@ def type_text(spec: Spec, node: Int) -> String:
 
 def ensures_ty(params: String, expr: String, returns: String = "") raises -> String:
     """The type of `expr` in an ensures clause of `fn f(params)`."""
-    var arrow = t" -> {returns}" if returns else String()
-    var spec = ok(t"fn f({params}){arrow}\n  ensures e: let v = {expr} in true\n")
+    var arrow = String(" -> ", returns) if returns else String()
+    var spec = ok(String(t"fn f({params}){arrow}\n  ensures e: let v = {expr} in true\n"))
     var let = clause_expr(spec, "f.e")
     return type_text(spec, spec.ast.kid(let, 0))
 
@@ -77,7 +81,8 @@ def descendants(spec: Spec, root: Int) -> List[Int]:
     while stack:
         var n = stack.pop()
         out.append(n)
-        stack.extend(reversed(spec.ast.nodes[n].kids))
+        for k in reversed(spec.ast.nodes[n].kids):
+            stack.append(k)
     return out^
 
 

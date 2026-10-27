@@ -60,13 +60,13 @@ def poison_subtree(mut c: Checker, e: Int):
 def want_bool(mut c: Checker, node: Int, t: Int, what: String):
     var k = c.tkind(t)
     if k != ty.BOOL and k != ty.ANY:
-        c.error(node, what + " must be a bool, but this is " + c.text(t))
+        c.error(node, t"{what} must be a bool, but this is {c.text(t)}")
 
 
 def want_int(mut c: Checker, node: Int, t: Int, what: String):
     if not c.is_integer(t) and not c.is_any(t):
         var hint = " (use // for integer division)" if c.tkind(t) == ty.REAL else ""
-        c.error(node, what + " must be an integer, but it is " + c.text(t) + hint)
+        c.error(node, t"{what} must be an integer, but it is {c.text(t)}{hint}")
 
 
 def binds_value(c: Checker, name: String) -> Bool:
@@ -285,28 +285,13 @@ def lookup(mut c: Checker, e: Int) -> Int:
             var set_name = "nan" if c.tkind(ptype) == ty.FLOAT else "all"
             c.error(
                 e,
-                "classes of the fixed-width parameter "
-                + c.ctx.only_param
-                + " are sets of values, so "
-                + name
-                + " cannot appear in them: build them from "
-                + c.text(ptype)
-                + "."
-                + set_name
-                + ", "
-                + c.text(ptype)
-                + ".range(a, b), {v, ...} and earlier classes",
+                String("classes of the fixed-width parameter ", c.ctx.only_param, " are sets of values, so ", name, " cannot appear in them: build them from ", c.text(ptype), ".", set_name, ", ", c.text(ptype), ".range(a, b), {v, ...} and earlier classes"),
             )
             return NO_TYPE
         if c.ctx.only_param != "" and name != c.ctx.only_param:
             c.error(
                 e,
-                "a class of partition "
-                + c.ctx.only_param
-                + " may only refer to "
-                + c.ctx.only_param
-                + ", not to "
-                + name,
+                String("a class of partition ", c.ctx.only_param, " may only refer to ", c.ctx.only_param, ", not to ", name),
             )
             return NO_TYPE
         c.resolve(e, R_PARAM, pi, -1, name)
@@ -336,7 +321,7 @@ def lookup(mut c: Checker, e: Int) -> Int:
                 for j in range(len(obs.params)):
                     names += ", " if j else ""
                     names += obs.params[j].name
-                c.error(e, name + " takes arguments: " + name + "(" + names + ")")
+                c.error(e, t"{name} takes arguments: {name}({names})")
                 return NO_TYPE
             var otype = obs.type
             c.resolve(e, R_FIELD, oi, m, name)
@@ -368,16 +353,7 @@ def lookup(mut c: Checker, e: Int) -> Int:
                     if n == 0:
                         first = c.text(en)
                     n += 1
-        c.error(
-            e,
-            name
-            + " is a member of several enums ("
-            + list
-            + "): write "
-            + first
-            + "."
-            + name,
-        )
+        c.error(e, t"{name} is a member of several enums ({list}): write {first}.{name}")
         return NO_TYPE
     unknown_name(c, e, name)
     return NO_TYPE
@@ -467,7 +443,7 @@ def infer_unary(mut c: Checker, e: Int) -> Int:
         return c.int_
     if k == ty.REAL:
         return c.real_
-    c.error(e, "unary - needs a number, but the operand is " + c.text(t))
+    c.error(e, t"unary - needs a number, but the operand is {c.text(t)}")
     return c.poison
 
 
@@ -517,14 +493,7 @@ def integer_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
                 )
                 return c.poison
         return c.int_
-    c.error(
-        e,
-        op
-        + " takes integers, but got "
-        + c.text(lt)
-        + " and "
-        + c.text(rt),
-    )
+    c.error(e, t"{op} takes integers, but got {c.text(lt)} and {c.text(rt)}")
     return c.poison
 
 
@@ -535,33 +504,22 @@ def set_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     if c.tkind(lt) != ty.SET or c.tkind(rt) != ty.SET:
         if (op == "|" or op == "&") and c.tkind(lt) == ty.BOOL and c.tkind(rt) == ty.BOOL:
             var word = "or" if op == "|" else "and"
-            c.error(e, op + " combines partition sets or integers; for booleans write " + word)
+            c.error(e, t"{op} combines partition sets or integers; for booleans write {word}")
         elif op == "|" or op == "&":
             c.error(
                 e,
-                op
-                + " needs two integers or two partition sets, but got "
-                + c.text(lt)
-                + " and "
-                + c.text(rt),
+                t"{op} needs two integers or two partition sets, but got {c.text(lt)} and {c.text(rt)}",
             )
         else:
             c.error(
                 e,
-                op
-                + " on partition sets needs a set on both sides, but got "
-                + c.text(lt)
-                + " and "
-                + c.text(rt),
+                t"{op} on partition sets needs a set on both sides, but got {c.text(lt)} and {c.text(rt)}",
             )
         return c.poison
     if c.arg(lt, 0) != c.arg(rt, 0):
         c.error(
             e,
-            "cannot combine a set of "
-            + c.text(c.arg(lt, 0))
-            + " with a set of "
-            + c.text(c.arg(rt, 0)),
+            t"cannot combine a set of {c.text(c.arg(lt, 0))} with a set of {c.text(c.arg(rt, 0))}",
         )
         return c.poison
     return lt
@@ -611,10 +569,8 @@ def qerr_comparison(mut c: Checker, e: Int, lt: Int, rt: Int) -> Bool:
         return True
     c.error(
         e,
-        String(ast.op_name(c.op_of(e)))
-        + " compares a qerr with a qerr or a number (an int or real, read as c +"
-        " 0·nan), but the other side is "
-        + c.text(other),
+        t"{ast.op_name(c.op_of(e))} compares a qerr with a qerr or a number (an int or real, read "
+        t"as c + 0·nan), but the other side is {c.text(other)}",
     )
     return True
 
@@ -649,11 +605,8 @@ def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
             return c.bool_
         c.error(
             e,
-            "cannot compare "
-            + c.text(lt)
-            + " with "
-            + c.text(rt)
-            + ": a choice is compared with one of its constants",
+            t"cannot compare {c.text(lt)} with {c.text(rt)}: a choice is compared with one of its "
+            t"constants",
         )
         return c.bool_
     for t in [lt, rt]:
@@ -663,16 +616,13 @@ def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
             return c.bool_
     var j = c.join(lt, rt)
     if j < 0:
-        c.error(e, "cannot compare " + c.text(lt) + " with " + c.text(rt))
+        c.error(e, t"cannot compare {c.text(lt)} with {c.text(rt)}")
         return c.bool_
     if c.contains_any(j):
         c.error(
             e,
-            "cannot tell the type of both sides of "
-            + op
-            + " ("
-            + c.text(j)
-            + "); compare with a value of known type",
+            t"cannot tell the type of both sides of {op} ({c.text(j)}); compare with a value of known "
+            t"type",
         )
         return c.bool_
     literal_member(c, lt, right)
@@ -698,7 +648,7 @@ def ordering(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         return c.bool_
     var j = c.join(lt, rt)
     if j < 0:
-        c.error(e, "cannot compare " + c.text(lt) + " with " + c.text(rt))
+        c.error(e, t"cannot compare {c.text(lt)} with {c.text(rt)}")
     elif not c.ordered(j):
         var hint = String()
         var k = c.tkind(j)
@@ -708,11 +658,8 @@ def ordering(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
             hint = ": compare their observers"
         c.error(
             e,
-            String(ast.op_name(c.op_of(e)))
-            + " needs ordered operands, but "
-            + c.text(j)
-            + " has no total order"
-            + hint,
+            t"{ast.op_name(c.op_of(e))} needs ordered operands, but {c.text(j)} has no total order"
+            t"{hint}",
         )
     return c.bool_
 
@@ -728,11 +675,7 @@ def membership(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         elem = c.arg(rt, 0)
     elif c.is_stringish(rt):
         if not c.is_stringish(lt) and not c.is_any(lt):
-            c.error(
-                e,
-                "in on a string looks for a substring, but the left side is "
-                + c.text(lt),
-            )
+            c.error(e, t"in on a string looks for a substring, but the left side is {c.text(lt)}")
         return c.bool_
     elif rk == ty.SET:
         c.error(
@@ -742,7 +685,7 @@ def membership(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         )
         return c.bool_
     else:
-        c.error(e, "in needs a list, map or string on the right, but it is " + c.text(rt))
+        c.error(e, t"in needs a list, map or string on the right, but it is {c.text(rt)}")
         return c.bool_
     for t in [lt, elem]:
         var bad = c.non_eq_part(t)
@@ -750,9 +693,7 @@ def membership(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
             c.error(e, eq_message(c, "in", t, bad))
             return c.bool_
     if c.join(lt, elem) < 0:
-        c.error(
-            e, "cannot look for a " + c.text(lt) + " among " + c.text(elem) + " values"
-        )
+        c.error(e, t"cannot look for a {c.text(lt)} among {c.text(elem)} values")
     return c.bool_
 
 
@@ -768,23 +709,15 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
             return c.qerr_
         c.error(
             e,
-            "cannot apply "
-            + opn
-            + " to "
-            + c.text(lt)
-            + " and "
-            + c.text(rt)
-            + ": quantized errors only add to each other (qe(a, b) + qe(c, d)); read"
-            " their parts with steps(e) and nans(e)",
+            t"cannot apply {opn} to {c.text(lt)} and {c.text(rt)}: quantized errors only add to each "
+            t"other (qe(a, b) + qe(c, d)); read their parts with steps(e) and nans(e)",
         )
         return c.poison
     if op == ast.ADD:
         if lk == ty.LIST and rk == ty.LIST:
             var j = c.join(lt, rt)
             if j < 0:
-                c.error(
-                    e, "cannot concatenate " + c.text(lt) + " and " + c.text(rt)
-                )
+                c.error(e, t"cannot concatenate {c.text(lt)} and {c.text(rt)}")
                 return c.poison
             return j
         if c.is_stringish(lt) and c.is_stringish(rt):
@@ -799,20 +732,14 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
                 return c.int_
             c.error(
                 e,
-                opn
-                + " takes integers, but got "
-                + c.text(lt)
-                + " and "
-                + c.text(rt)
-                + " (use / for division of reals)",
+                t"{opn} takes integers, but got {c.text(lt)} and {c.text(rt)} (use / for division of "
+                t"reals)",
             )
             return c.poison
         if lk == ty.FLOAT or lk == ty.REAL or rk == ty.FLOAT or rk == ty.REAL:
             return c.real_
         return c.int_
-    c.error(
-        e, "cannot apply " + opn + " to " + c.text(lt) + " and " + c.text(rt)
-    )
+    c.error(e, t"cannot apply {opn} to {c.text(lt)} and {c.text(rt)}")
     return c.poison
 
 
@@ -828,20 +755,14 @@ def infer_if(mut c: Checker, e: Int, expected: Int) -> Int:
         return c.poison
     var j = c.join(tt, et)
     if j < 0:
-        c.error(
-            e,
-            "the branches of if have different types: "
-            + c.text(tt)
-            + " and "
-            + c.text(et),
-        )
+        c.error(e, t"the branches of if have different types: {c.text(tt)} and {c.text(et)}")
         return c.poison
     return j
 
 
 def bind_name(mut c: Checker, node: Int, name: String):
     if name == "old" or name == "result" or name == "self" or name == "mp" or name == "cr":
-        c.error(node, name + " is reserved and cannot be bound")
+        c.error(node, t"{name} is reserved and cannot be bound")
 
 
 def push_local(mut c: Checker, name: String, t: Int, binder: Int):
@@ -892,9 +813,7 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
         else:
             c.error(
                 iterable,
-                kname
-                + "(...) ranges over a list, string, bytes or map, but this is "
-                + c.text(it),
+                t"{kname}(...) ranges over a list, string, bytes or map, but this is {c.text(it)}",
             )
             elem = c.poison
     push_local(c, name, elem, e)
@@ -919,14 +838,7 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
     if c.is_numeric(bt):
         return c.real_
     var what = "adds" if kind == ast.SUM else "takes the largest of"
-    c.error(
-        body,
-        kname
-        + "(...) "
-        + what
-        + " numbers or qerr values, but the body is "
-        + c.text(bt),
-    )
+    c.error(body, t"{kname}(...) {what} numbers or qerr values, but the body is {c.text(bt)}")
     return c.poison
 
 
@@ -982,10 +894,8 @@ def set_iterable(mut c: Checker, e: Int) -> Int:
     if c.ctx.aggregate_top != e:
         c.error(
             it,
-            kname
-            + "(...) ranges over a set such as f16.all only as the top comprehension"
-            " of an aggregate clause; elsewhere it ranges over a list, string, bytes"
-            " or map",
+            t"{kname}(...) ranges over a set such as f16.all only as the top comprehension of an "
+            t"aggregate clause; elsewhere it ranges over a list, string, bytes or map",
         )
         poison_subtree(c, it)
         return c.poison
@@ -1003,11 +913,7 @@ def set_iterable(mut c: Checker, e: Int) -> Int:
     if not c.is_any(t):
         c.error(
             it,
-            kname
-            + "(...) ranges over a set of "
-            + c.text(elem)
-            + " values, but this is "
-            + c.text(t),
+            t"{kname}(...) ranges over a set of {c.text(elem)} values, but this is {c.text(t)}",
         )
     return c.poison
 
@@ -1031,12 +937,13 @@ def infer_args(mut c: Checker, e: Int, mut info: CallInfo):
             info.kw_nodes.append(expr)
 
 
-def fail_call(mut c: Checker, e: Int, node: Int, message: String) -> Int:
+def fail_call(mut c: Checker, e: Int, node: Int, message: Some[Writable]) -> Int:
     var info = CallInfo(String())
     infer_args(c, e, info)
     poison_subtree(c, c.kid(e, 0))
-    if message != "":
-        c.error(node, message)
+    var text = String(message)
+    if text != "":
+        c.error(node, text)
     return c.poison
 
 
@@ -1051,7 +958,7 @@ def infer_call(mut c: Checker, e: Int) -> Int:
     if fk == ast.NAME:
         var name = c.text_of(f)
         if binds_value(c, name):
-            return fail_call(c, e, f, name + " is a value, not a function")
+            return fail_call(c, e, f, t"{name} is a value, not a function")
         if name == "old":
             return call_old(c, e)
         if c.ctx.fields_of >= 0:
@@ -1070,7 +977,7 @@ def infer_call(mut c: Checker, e: Int) -> Int:
         if pi:
             return call_prelude(c, e, name, pi.value())
         if name == "result" or name == "self" or c.ctx.param_index(name) >= 0:
-            return fail_call(c, e, f, name + " is a value, not a function")
+            return fail_call(c, e, f, t"{name} is a value, not a function")
         var options = List[String]()
         for ns in ["mp", "cr"]:
             if (String(ns) + "." + name) in c.prelude_ids:
@@ -1082,7 +989,7 @@ def infer_call(mut c: Checker, e: Int) -> Int:
                 joined += " or " if i else ""
                 joined += options[i]
             hint = " (did you mean " + joined + "?)"
-        return fail_call(c, e, f, "unknown function " + name + hint)
+        return fail_call(c, e, f, t"unknown function {name}{hint}")
     if fk == ast.ATTR:
         var base = c.kid(f, 0)
         var attr = c.text_of(f)
@@ -1102,14 +1009,8 @@ def infer_call(mut c: Checker, e: Int) -> Int:
                         c,
                         e,
                         f,
-                        "unknown function "
-                        + chain
-                        + ": "
-                        + bname
-                        + " holds "
-                        + _namespace_what(bname)
-                        + ": "
-                        + _namespace_members(c, bname),
+                        t"unknown function {chain}: {bname} holds {_namespace_what(bname)}: "
+                        t"{_namespace_members(c, bname)}",
                     )
                 var st = c.scalar(bname)
                 if st >= 0:
@@ -1123,7 +1024,7 @@ def infer_call(mut c: Checker, e: Int) -> Int:
                 c.scalar(c.text_of(base)) >= 0 or c.text_of(base) in c.enum_index
             )
             if not known_type_root:
-                return fail_call(c, e, f, "unknown function " + chain)
+                return fail_call(c, e, f, t"unknown function {chain}")
         var vt = infer(c, base)
         if c.tkind(vt) == ty.MODEL:
             var mp = c.model_pos_of_type(vt)
@@ -1135,10 +1036,8 @@ def infer_call(mut c: Checker, e: Int) -> Int:
             c,
             e,
             f,
-            c.text(vt)
-            + " has no function "
-            + attr
-            + ": only observers of models and interfaces can be called with '.'",
+            t"{c.text(vt)} has no function {attr}: only observers of models and interfaces can be "
+            t"called with '.'",
         )
     _ = infer(c, f)
     return fail_call(c, e, f, "only functions and observers can be called")
@@ -1204,15 +1103,7 @@ def bind_args(
     mut out: Bound,
 ) -> Bool:
     if len(info.args) > len(params):
-        c.error(
-            e,
-            what
-            + " takes "
-            + String(len(params))
-            + " argument(s), but "
-            + String(len(info.args))
-            + " are given",
-        )
+        c.error(e, t"{what} takes {len(params)} argument(s), but {len(info.args)} are given")
         return False
     var given = List[Bool](length=len(params), fill=False)
     var slot_type = List[Int](length=len(params), fill=0)
@@ -1227,15 +1118,10 @@ def bind_args(
             if params[i].name == info.kw_keys[j]:
                 idx = i
         if idx < 0:
-            c.error(
-                info.kw_nodes[j], what + " has no parameter named " + info.kw_keys[j]
-            )
+            c.error(info.kw_nodes[j], t"{what} has no parameter named {info.kw_keys[j]}")
             return False
         if given[idx]:
-            c.error(
-                info.kw_nodes[j],
-                "argument " + info.kw_keys[j] + " of " + what + " is given twice",
-            )
+            c.error(info.kw_nodes[j], t"argument {info.kw_keys[j]} of {what} is given twice")
             return False
         given[idx] = True
         slot_type[idx] = info.kw_types[j]
@@ -1246,7 +1132,7 @@ def bind_args(
             missing += ", " if missing else ""
             missing += params[i].name
     if missing != "":
-        c.error(e, what + " needs argument " + missing)
+        c.error(e, t"{what} needs argument {missing}")
         return False
     for i in range(len(params)):
         if given[i]:
@@ -1327,7 +1213,7 @@ def check_declared_call(
     """Types a call of a declared function or definition: arguments bound to
     parameters, type variables solved from the arguments, bounds checked."""
     if c.nkids(c.kid(e, 1)) > 0:
-        c.error(e, name + " takes no explicit type arguments")
+        c.error(e, t"{name} takes no explicit type arguments")
     var ptypes = List[Int]()
     for p in params:
         ptypes.append(p.type)
@@ -1345,30 +1231,15 @@ def check_declared_call(
             if tparams[j] == sn[i]:
                 bi = j
         if bi >= 0 and not c.satisfies(st[i], bounds[bi]):
-            c.error(
-                e,
-                name
-                + ": "
-                + c.text(st[i])
-                + " does not satisfy "
-                + tparams[bi]
-                + ": "
-                + bounds[bi],
-            )
+            c.error(e, t"{name}: {c.text(st[i])} does not satisfy {tparams[bi]}: {bounds[bi]}")
             ok = False
     for i in range(len(bound.names)):
         var target = c.spec.types.substitute(bound.ptypes[i], sn, st)
         if not assignable(c, bound.atypes[i], target, bound.nodes[i]):
             c.error(
                 bound.nodes[i],
-                "argument "
-                + bound.names[i]
-                + " of "
-                + name
-                + " is a "
-                + c.text(target)
-                + ", but this is "
-                + c.text(bound.atypes[i]),
+                t"argument {bound.names[i]} of {name} is a {c.text(target)}, but this is "
+                t"{c.text(bound.atypes[i])}",
             )
             ok = False
     var un = List[String]()
@@ -1398,21 +1269,16 @@ def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
             shadow = " (it shadows the prelude function of the same name)"
         c.error(
             e,
-            name
-            + "(...) calls the spec function "
-            + name
-            + shadow
-            + "; calls to spec functions are only allowed in ensures, relates,"
-            " invariant and aggregate clauses, where each one is a planned"
-            " implementation call",
+            t"{name}(...) calls the spec function {name}{shadow}; calls to spec functions are only "
+            t"allowed in ensures, relates, invariant and aggregate clauses, where each one is a "
+            t"planned implementation call",
         )
         return c.poison
     if c.fn_modifies[pos]:
         c.error(
             e,
-            name
-            + " modifies its arguments, so it cannot be called in a clause: a planned"
-            " call must leave its inputs unchanged",
+            t"{name} modifies its arguments, so it cannot be called in a clause: a planned call must "
+            t"leave its inputs unchanged",
         )
         return c.poison
     return check_declared_call(
@@ -1463,26 +1329,20 @@ def call_prelude(mut c: Checker, e: Int, name: String, pid: Int) -> Int:
     var ntargs = len(info.targs)
     if sig.type_args != ntargs and not (sig.optional_type_args and ntargs == 0):
         if sig.type_args > 0 and ntargs == 0:
-            c.error(e, name + " needs a type argument: " + sig.shape)
+            c.error(e, t"{name} needs a type argument: {sig.shape}")
         elif sig.type_args == 0:
-            c.error(e, name + " takes no type arguments: " + sig.shape)
+            c.error(e, t"{name} takes no type arguments: {sig.shape}")
         else:
-            c.error(
-                e,
-                name + " takes " + String(sig.type_args) + " type argument(s): " + sig.shape,
-            )
+            c.error(e, t"{name} takes {sig.type_args} type argument(s): {sig.shape}")
         ok = False
     if len(info.args) < sig.lo or len(info.args) > sig.hi:
-        c.error(
-            e,
-            name + " takes " + String(sig.lo) + " argument" + _plural(sig.lo) + ": " + sig.shape,
-        )
+        c.error(e, t"{name} takes {sig.lo} argument{_plural(sig.lo)}: {sig.shape}")
         ok = False
     for j in range(len(info.kw_keys)):
         if not (sig.has_kwargs and (info.kw_keys[j] == "float" or info.kw_keys[j] == "order")):
             c.error(
                 info.kw_nodes[j],
-                name + " has no argument named " + info.kw_keys[j] + ": " + sig.shape,
+                t"{name} has no argument named {info.kw_keys[j]}: {sig.shape}",
             )
             ok = False
     if not ok:
@@ -1514,18 +1374,14 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             msg = stext + " has no function " + attr
         return fail_call(c, e, f, msg)
     if not c.has_set_constructor(st, attr):
-        return fail_call(c, e, f, stext + " has no " + attr + "(...) set")
+        return fail_call(c, e, f, t"{stext} has no {attr}(...) set")
     set_call_res(c, e, R_SET_CTOR, st, -1, attr)
     var ok = c.ctx.kind == K_PARTITION_SET
     if not ok:
         c.error(
             e,
-            stext
-            + "."
-            + attr
-            + "(...) is a partition set: it only appears in a partition class of a "
-            + stext
-            + " parameter",
+            t"{stext}.{attr}(...) is a partition set: it only appears in a partition class of a "
+            t"{stext} parameter",
         )
     var kids = c.kids_of(e)
     var nargs = len(kids) - 2
@@ -1538,10 +1394,8 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
         if nargs != 2 or has_kw:
             c.error(
                 e,
-                stext
-                + ".range takes two bounds: "
-                + stext
-                + ".range(a, b), half-open, with none for an open end",
+                t"{stext}.range takes two bounds: {stext}.range(a, b), half-open, with none for an open "
+                t"end",
             )
             ok = False
         for i in range(2, len(kids)):
@@ -1554,10 +1408,7 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             var t = infer(c, a)
             arg_types.append(t)
             if not c.is_numeric(t) and not c.is_any(t):
-                c.error(
-                    a,
-                    "a bound of " + stext + ".range must be a number or none, not " + c.text(t),
-                )
+                c.error(a, t"a bound of {stext}.range must be a number or none, not {c.text(t)}")
                 ok = False
     else:
         if nargs != 1 or has_kw or c.kind_of(c.kid(kids[2], 0)) != ast.STR:
@@ -1587,7 +1438,7 @@ def call_observer(
             c,
             e,
             f,
-            mname + " has no observer " + name + " (its observers: " + c.observer_names(model) + ")",
+            t"{mname} has no observer {name} (its observers: {c.observer_names(model)})",
         )
     var info = CallInfo(name)
     infer_args(c, e, info)
@@ -1613,12 +1464,7 @@ def call_observer(
     if len(params) == 0:
         c.error(
             e,
-            name
-            + " is a field of "
-            + mname
-            + " and takes no arguments: write "
-            + ("" if is_field else "x.")
-            + name,
+            String(name, " is a field of ", mname, " and takes no arguments: write ", ("" if is_field else "x."), name),
         )
         return c.poison
     var bound = Bound()
@@ -1629,16 +1475,8 @@ def call_observer(
         if not assignable(c, bound.atypes[i], bound.ptypes[i], bound.nodes[i]):
             c.error(
                 bound.nodes[i],
-                "argument "
-                + bound.names[i]
-                + " of "
-                + mname
-                + "."
-                + name
-                + " is a "
-                + c.text(bound.ptypes[i])
-                + ", but this is "
-                + c.text(bound.atypes[i]),
+                t"argument {bound.names[i]} of {mname}.{name} is a {c.text(bound.ptypes[i])}, but this is "
+                t"{c.text(bound.atypes[i])}",
             )
             ok = False
     return result if ok else c.poison
@@ -1662,9 +1500,9 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
             if bname == "mp" or bname == "cr":
                 c.set_type(base, ty.ANY_TYPE)
                 if chain in c.prelude_ids:
-                    c.error(e, chain + " is a function: call it as " + chain + "(x)")
+                    c.error(e, t"{chain} is a function: call it as {chain}(x)")
                 else:
-                    c.error(e, "unknown function " + chain)
+                    c.error(e, t"unknown function {chain}")
                 return c.poison
             var st = c.scalar(bname)
             if st >= 0:
@@ -1678,7 +1516,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
                     if names[j] == attr:
                         c.resolve(e, R_ENUM_MEMBER, j, en.value(), attr)
                         return en.value()
-                c.error(e, "enum " + bname + " has no member " + attr)
+                c.error(e, t"enum {bname} has no member {attr}")
                 return c.poison
     var vt = infer(c, base)
     var k = c.tkind(vt)
@@ -1689,12 +1527,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
             if oi < 0:
                 c.error(
                     e,
-                    c.spec.models[mp].name
-                    + " has no observer "
-                    + attr
-                    + " (its observers: "
-                    + c.observer_names(mp)
-                    + ")",
+                    String(c.spec.models[mp].name, " has no observer ", attr, " (its observers: ", c.observer_names(mp), ")"),
                 )
                 return c.poison
             if len(c.spec.models[mp].observers[oi].params) > 0:
@@ -1702,7 +1535,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
                 for j in range(len(c.spec.models[mp].observers[oi].params)):
                     names += ", " if j else ""
                     names += c.spec.models[mp].observers[oi].params[j].name
-                c.error(e, attr + " takes arguments: " + attr + "(" + names + ")")
+                c.error(e, t"{attr} takes arguments: {attr}({names})")
                 return c.poison
             c.resolve(e, R_OBSERVER, oi, mp, attr)
             return c.observer_type(vt, mp, oi)
@@ -1712,27 +1545,27 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
             if names[j] == attr:
                 c.resolve(e, R_RECORD_FIELD, j, vt, attr)
                 return c.arg(vt, j)
-        c.error(e, "record " + c.text(vt) + " has no field " + attr)
+        c.error(e, t"record {c.text(vt)} has no field {attr}")
         return c.poison
     if k == ty.QERR:
         if attr == "steps" or attr == "nans":
             c.resolve(e, R_QERR_PART, 0, -1, attr)
             return c.int_
-        c.error(e, "qerr has no part " + attr + ": its parts are steps and nans")
+        c.error(e, t"qerr has no part {attr}: its parts are steps and nans")
         return c.poison
     if k == ty.ANY:
         return c.poison
     if k == ty.TUPLE:
         c.error(e, "tuple fields are numbered: .0, .1, ...")
         return c.poison
-    c.error(e, c.text(vt) + " has no field " + attr)
+    c.error(e, t"{c.text(vt)} has no field {attr}")
     return c.poison
 
 
 def type_const(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
     var stext = c.text(st)
     if c.has_set_constructor(st, attr):
-        c.error(e, stext + "." + attr + " is called: " + stext + "." + attr + "(...)")
+        c.error(e, t"{stext}.{attr} is called: {stext}.{attr}(...)")
         return c.poison
     var t = c.type_constant(st, attr)
     if t < 0:
@@ -1743,10 +1576,7 @@ def type_const(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             names += stext + "." + consts[i]
         c.error(
             e,
-            stext
-            + " has no constant "
-            + attr
-            + ((" (available: " + names + ")") if len(consts) > 0 else ""),
+            String(stext, " has no constant ", attr, ((" (available: " + names + ")") if len(consts) > 0 else "")),
         )
         return c.poison
     c.resolve(e, R_TYPE_CONST, st, -1, attr)
@@ -1756,13 +1586,7 @@ def type_const(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             hint = classifier_hint(attr)
         c.error(
             e,
-            stext
-            + "."
-            + attr
-            + " is a partition set: it only appears in a partition class of a "
-            + stext
-            + " parameter"
-            + ((("; in a clause, test the value with " + hint)) if hint else ""),
+            String(stext, ".", attr, " is a partition set: it only appears in a partition class of a ", stext, " parameter", ((("; in a clause, test the value with " + hint)) if hint else "")),
         )
         return c.poison
     return t
@@ -1779,11 +1603,11 @@ def infer_tuple_index(mut c: Checker, e: Int) -> Int:
     if c.tkind(vt) == ty.TUPLE:
         if index < len(c.spec.types.infos[vt].args):
             return c.arg(vt, index)
-        c.error(e, "." + digits + " is out of range for " + c.text(vt))
+        c.error(e, t".{digits} is out of range for {c.text(vt)}")
         return c.poison
     if c.is_any(vt):
         return c.poison
-    c.error(e, "." + digits + " needs a tuple, but the value is " + c.text(vt))
+    c.error(e, t".{digits} needs a tuple, but the value is {c.text(vt)}")
     return c.poison
 
 
@@ -1799,10 +1623,7 @@ def infer_index(mut c: Checker, e: Int) -> Int:
         if bad >= 0:
             c.error(e, eq_message(c, "map lookup", key, bad))
         elif c.join(it, key) < 0 and not c.is_any(it):
-            c.error(
-                index,
-                "the keys of " + c.text(vt) + " are " + c.text(key) + ", not " + c.text(it),
-            )
+            c.error(index, t"the keys of {c.text(vt)} are {c.text(key)}, not {c.text(it)}")
         return c.arg(vt, 1)
     if k == ty.LIST or k == ty.STRING or k == ty.LITERAL or k == ty.BYTES:
         want_int(c, index, it, "an index")
@@ -1814,7 +1635,7 @@ def infer_index(mut c: Checker, e: Int) -> Int:
     if k == ty.TUPLE:
         c.error(e, "tuple fields are selected with .0, .1, ..., not [i]")
         return c.poison
-    c.error(e, "cannot index a " + c.text(vt))
+    c.error(e, t"cannot index a {c.text(vt)}")
     return c.poison
 
 
@@ -1829,7 +1650,7 @@ def infer_slice(mut c: Checker, e: Int) -> Int:
         return c.string_
     if k == ty.ANY:
         return c.poison
-    c.error(e, "cannot slice a " + c.text(vt))
+    c.error(e, t"cannot slice a {c.text(vt)}")
     return c.poison
 
 
@@ -1845,10 +1666,8 @@ def infer_list(mut c: Checker, e: Int) -> Int:
         if j < 0:
             c.error(
                 x,
-                "the elements of a list have one type, but this is "
-                + c.text(xt)
-                + " and an earlier one is "
-                + c.text(elem),
+                t"the elements of a list have one type, but this is {c.text(xt)} and an earlier one is "
+                t"{c.text(elem)}",
             )
             ok = False
         else:
@@ -1890,12 +1709,7 @@ def infer_set(mut c: Checker, e: Int, expected: Int) -> Int:
         if not good:
             c.error(
                 x,
-                "a member of a set of "
-                + c.text(elem)
-                + " values must be a "
-                + ("number" if c.is_numeric(elem) else c.text(elem))
-                + ", not "
-                + c.text(t),
+                String("a member of a set of ", c.text(elem), " values must be a ", ("number" if c.is_numeric(elem) else c.text(elem)), ", not ", c.text(t)),
             )
             ok = False
     return expected if ok else c.poison

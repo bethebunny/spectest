@@ -12,7 +12,7 @@ from check.state import Checker, Ctx, NO_TYPE, type_hint
 
 def _no_args(mut c: Checker, node: Int, t: Int) -> Int:
     if c.nkids(node) > 0:
-        c.error(node, c.text_of(node) + " takes no type arguments")
+        c.error(node, t"{c.text_of(node)} takes no type arguments")
     return t
 
 
@@ -72,7 +72,7 @@ def _choice(mut c: Checker, node: Int) -> Int:
         var name = c.text_of(kid)
         var found = c.const_index.get(name)
         if not found:
-            c.error(kid, "unknown constant " + name + ": declare it with 'const " + name + ": T'")
+            c.error(kid, t"unknown constant {name}: declare it with 'const {name}: T'")
             ok = False
             continue
         ensure_const(c, found.value())
@@ -82,12 +82,8 @@ def _choice(mut c: Checker, node: Int) -> Int:
         elif elem != t:
             c.error(
                 kid,
-                "the alternatives of a choice are declared with one type, but "
-                + name
-                + " is "
-                + c.text(t)
-                + " and an earlier one is "
-                + c.text(elem),
+                t"the alternatives of a choice are declared with one type, but {name} is {c.text(t)} and "
+                t"an earlier one is {c.text(elem)}",
             )
             ok = False
         var dup = False
@@ -95,7 +91,7 @@ def _choice(mut c: Checker, node: Int) -> Int:
             if x == name:
                 dup = True
         if dup:
-            c.error(kid, "a choice lists " + name + " twice")
+            c.error(kid, t"a choice lists {name} twice")
         else:
             names.append(name^)
     if not ok:
@@ -124,13 +120,7 @@ def _named(mut c: Checker, node: Int, self_model: Int) -> Int:
                 shape = "option<T>"
             c.error(
                 node,
-                name
-                + " takes "
-                + String(n)
-                + " type argument"
-                + ("s" if n > 1 else "")
-                + ": "
-                + shape,
+                String(name, " takes ", n, " type argument", ("s" if n > 1 else ""), ": ", shape),
             )
             return 0
         if name == "list":
@@ -139,7 +129,7 @@ def _named(mut c: Checker, node: Int, self_model: Int) -> Int:
             return c.spec.types.option_of(args[0])
         return c.spec.types.map_of(args[0], args[1])
     if name == "set" or name == "unit":
-        c.error(node, name + " is not a type that can be written in a spec")
+        c.error(node, t"{name} is not a type that can be written in a spec")
         return 0
     var en = c.enum_index.get(name)
     if en:
@@ -154,7 +144,7 @@ def _named(mut c: Checker, node: Int, self_model: Int) -> Int:
     var hint = type_hint(name)
     c.error(
         node,
-        "unknown type " + name + ((" (did you mean " + hint + "?)") if hint else ""),
+        String("unknown type ", name, ((" (did you mean " + hint + "?)") if hint else "")),
     )
     return 0
 
@@ -183,10 +173,7 @@ def _model(
                 shape += ", " if i else ""
                 shape += c.spec.types.infos[tvars[i]].name
             shape += ">"
-        c.error(
-            node,
-            name + " takes " + String(len(tvars)) + " type argument(s): " + shape,
-        )
+        c.error(node, t"{name} takes {len(tvars)} type argument(s): {shape}")
         return 0
     var tparams = c.spec.models[model].tparams.copy()
     var bounds = c.spec.models[model].bounds.copy()
@@ -195,16 +182,7 @@ def _model(
             var what = "canonical equality" if bounds[i] == "Eq" else "a total order"
             c.error(
                 node,
-                c.text(args[i])
-                + " does not satisfy "
-                + tparams[i]
-                + ": "
-                + bounds[i]
-                + " of "
-                + name
-                + " (it needs "
-                + what
-                + ")",
+                t"{c.text(args[i])} does not satisfy {tparams[i]}: {bounds[i]} of {name} (it needs {what})",
             )
     return c.spec.types.model(name, args, is_iface)
 
@@ -215,7 +193,7 @@ def alias_type(mut c: Checker, name: String, at: Int) -> Int:
         return done.value()
     for a in c.active:
         if a == name:
-            c.error(at, "type " + name + " is defined in terms of itself")
+            c.error(at, t"type {name} is defined in terms of itself")
             return 0
     c.active.append(name)
     var decl = c.alias_nodes.get(name).value()
@@ -234,7 +212,7 @@ def record_type(mut c: Checker, name: String, at: Int) -> Int:
         return done.value()
     for a in c.active:
         if a == name:
-            c.error(at, "record " + name + " contains itself")
+            c.error(at, t"record {name} contains itself")
             return 0
     c.active.append(name)
     var decl = c.record_nodes.get(name).value()
@@ -246,7 +224,7 @@ def record_type(mut c: Checker, name: String, at: Int) -> Int:
         var fname = c.text_of(p)
         for f in fields:
             if f == fname:
-                c.error(p, "record " + name + " has two fields named " + fname)
+                c.error(p, t"record {name} has two fields named {fname}")
         if c.kid(p, 1) != 0:
             c.error(c.kid(p, 1), "record fields cannot have defaults")
         fields.append(fname^)
