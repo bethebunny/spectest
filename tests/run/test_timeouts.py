@@ -17,6 +17,16 @@ fn runimpls.stall_at_seven(x: u8) -> u8
 fn runimpls.ident_u8(x: u8) -> u8
   ensures same: result == x
   relates stalls: runimpls.stall_at_seven(x) == x
+
+model runimpls.Gate
+  observe n: int
+  build runimpls.make_gate(n: u8)
+
+fn runimpls.gate_n(g: runimpls.Gate) -> int
+  ensures same: result == g.n
+
+fn runimpls.raises_naming_the_timeout(x: u8) -> u8
+  ensures same: result == x
 """
 
 LIMIT = 0.2
@@ -42,6 +52,7 @@ def test_an_example_that_times_out_judges_nothing(spec):
         assert counts["pass"] == 255
         assert counts["inconclusive"] == 1
         assert counts["skip"] == 0
+    assert_every_example_counted(r)
 
 
 def test_a_planned_call_that_times_out_makes_only_its_clause_inconclusive(spec):
@@ -54,8 +65,27 @@ def test_a_planned_call_that_times_out_makes_only_its_clause_inconclusive(spec):
         "spec_error": 0,
         "inconclusive": 1,
     }
+    assert_every_example_counted(r)
     assert r.counts("runimpls.ident_u8.same")["inconclusive"] == 0
     assert r.counts("runimpls.ident_u8.same")["pass"] == 256
+
+
+def test_a_builder_that_times_out_makes_the_example_inconclusive(spec):
+    r = spec.run("runimpls.gate_n")
+    assert r.failed() == [] and r.spec_errors() == [], r.data
+    assert r.counts("runimpls.gate_n.same")["inconclusive"] > 0
+    assert_every_example_counted(r)
+
+
+def test_an_implementation_error_naming_the_timeout_is_still_an_error(spec):
+    r = spec.run("runimpls.raises_naming_the_timeout")
+    assert r.counts("runimpls.raises_naming_the_timeout.same")["inconclusive"] == 0
+    assert r.failed() or r.spec_errors(), r.data
+
+
+def assert_every_example_counted(r, clauses=None):
+    for clause in clauses or r.clauses:
+        assert sum(r.counts(clause).values()) == r.examples, (clause, r.data)
 
 
 def test_a_step_that_times_out_ends_its_sequence(tmp_path):
@@ -71,3 +101,5 @@ def test_a_step_that_times_out_ends_its_sequence(tmp_path):
     assert r.failed() == [] and r.spec_errors() == [], r.data
     assert r.counts("stateimpls.StallsOnPop.pop.value")["inconclusive"] > 0
     assert r.counts("stateimpls.StallsOnPop.append.items")["inconclusive"] == 0
+    steps = {c: sum(r.counts(c).values()) for c in r.clauses if ".pop." in c}
+    assert len(set(steps.values())) == 1, steps

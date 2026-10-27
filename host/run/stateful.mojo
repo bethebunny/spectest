@@ -26,7 +26,7 @@ from mcheck.source import Many, Source
 from syntax import ast
 from wire.value import ERROR, HANDLE, INT, Value
 
-from .host import RunHost, mentions_timeout
+from .host import RunHost
 from .load import Loaded, fnv
 from .options import RunOptions
 from .results import ClauseResult, Counterexample, RunResult
@@ -487,7 +487,7 @@ struct Machine(Property):
             if j.is_skip():
                 return V_SKIP
             note = located(spec, j.node, j.message) if j.node > 0 else j.message.copy()
-            return V_TIMEOUT if mentions_timeout(note) else V_ERROR
+            return V_TIMEOUT if self.inv_host.take_timeout() else V_ERROR
         return V_PASS
 
     def _capture_invariant(

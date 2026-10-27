@@ -46,7 +46,7 @@ from wire.value import ERROR, HANDLE, LIST, MAP, OPTION, RECORD, STRING, TUPLE, 
 
 from .aggregate import run_aggregate
 from .decode import decode, describe
-from .host import TIMEOUT, RunHost, mentions_timeout
+from .host import TIMEOUT, RunHost
 from .load import Loaded, fnv
 from .options import RunOptions
 from .util import (
@@ -420,11 +420,12 @@ struct Prop(Property, Movable):
     def run(mut self, mut src: Source) raises -> Outcome:
         var counting = src.max_choices < SHRINK_SOURCE
         var args: List[Value]
+        self.host.timed_out = False
         try:
             args = self.draw(src)
         except e:
-            if mentions_timeout(String(e)):
-                return self._inconclusive_all(counting)
+            if self.host.take_timeout():
+                return self._inconclusive_all(counting, List[Value]())
             if src.invalid and counting and src.extend:
                 self.unrep_skips += 1
             raise e^
@@ -459,28 +460,27 @@ struct Prop(Property, Movable):
         return out^
 
     def _spec_error_all(mut self, message: String, counting: Bool, args: List[Value]) -> Outcome:
+        if self.host.take_timeout():
+            return self._inconclusive_all(counting, args)
         var out = Outcome()
-        if mentions_timeout(message):
-            return self._inconclusive_all(counting)
         for i in range(len(self.infos)):
             self.vkind[i] = V_ERROR
             self.vnote[i] = message.copy()
             out.add(i, SKIPPED)
         if counting:
-            for i in range(len(self.infos)):
-                self.te[i] += 1
-                self._note_spec_error(i, message, args)
+            self._tally(args, False)
         return out^
 
-    def _inconclusive_all(mut self, counting: Bool) -> Outcome:
+    def _inconclusive_all(mut self, counting: Bool, args: List[Value]) -> Outcome:
         """The example judged nothing: a call ran past its time limit."""
         var out = Outcome()
         self.timed_out = True
+        _ = self.host.take_timeout()
         for i in range(len(self.infos)):
             self.vkind[i] = V_TIMEOUT
             out.add(i, SKIPPED)
-            if counting:
-                self.tt[i] += 1
+        if counting:
+            self._tally(args, False)
         return out^
 
     def _note_spec_error(mut self, i: Int, message: String, args: List[Value]):
@@ -675,7 +675,7 @@ struct Prop(Property, Movable):
         # The call.
         var reply = self.host.call(self.f, args)
         if reply.kind == ERROR and reply.name() == TIMEOUT:
-            return self._inconclusive_all(counting)
+            return self._inconclusive_all(counting, args)
         var raised = reply.kind == ERROR
         self.last_ran = True
         self.last_reply = reply.copy()
@@ -801,7 +801,7 @@ struct Prop(Property, Movable):
         self.vnote[i] = cause
 
     def _error(mut self, i: Int, message: String):
-        self.vkind[i] = V_TIMEOUT if mentions_timeout(message) else V_ERROR
+        self.vkind[i] = V_TIMEOUT if self.host.take_timeout() else V_ERROR
         self.vnote[i] = message
 
     def _judge_clause(

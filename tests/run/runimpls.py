@@ -21,6 +21,25 @@ def ident_u8(x):
     return x
 
 
+def raises_naming_the_timeout(x):
+    raise ValueError("spectest.CallTimeout is only a name here")
+
+
+class Gate:
+    def __init__(self, n):
+        self.n = n
+
+
+def make_gate(n):
+    if n == 7:
+        NEVER.wait(30)
+    return Gate(n)
+
+
+def gate_n(g):
+    return g.n
+
+
 def clamp(x, lo, hi):
     return max(lo, min(x, hi))
 

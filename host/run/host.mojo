@@ -23,10 +23,6 @@ comptime TIMEOUT = "spectest.CallTimeout"
 """The class of the error a driver returns for a call past its time limit."""
 
 
-def mentions_timeout(message: String) -> Bool:
-    return TIMEOUT in message
-
-
 def error_value(cls: String, message: String) -> Value:
     return Value.error(cls, List[String](), message)
 
@@ -54,6 +50,8 @@ struct RunHost(Builder, EvalHost):
     """Ids of the handles among the current example's arguments."""
     var seen: List[UInt64]
     """Ids of every handle the run met, to release."""
+    var timed_out: Bool
+    """A reply of class TIMEOUT came back since the catch paths last took it."""
 
     def __init__(out self, mut loaded: Loaded, mut client: DriverClient):
         self.loaded = Pointer[Loaded, MutUntrackedOrigin](
@@ -72,10 +70,23 @@ struct RunHost(Builder, EvalHost):
         self.memo_result = []
         self.known = []
         self.seen = []
+        self.timed_out = False
 
     # Example bookkeeping
 
+    def take_timeout(mut self) -> Bool:
+        """Whether a call timed out since the last take; clears the mark."""
+        var out = self.timed_out
+        self.timed_out = False
+        return out
+
+    def _reply(mut self, var reply: Value) -> Value:
+        if reply.kind == ERROR and reply.name() == TIMEOUT:
+            self.timed_out = True
+        return reply^
+
     def begin_example(mut self, args: List[Value]):
+        self.timed_out = False
         if len(self.memo_result) > 0:
             self.memo.clear()
             self.memo_result.clear()
@@ -113,14 +124,14 @@ struct RunHost(Builder, EvalHost):
 
     def call(mut self, f: Int, args: List[Value]) raises -> Value:
         """Calls Spec.fns[f]; a library error comes back as an ERROR value."""
-        return self.client[].call(self.fn_target(f), args)
+        return self._reply(self.client[].call(self.fn_target(f), args))
 
     # Builder
 
     def build(mut self, model: Int, build: Int, args: List[Value]) raises -> Value:
         ref b = self.loaded[].spec.models[model].builds[build]
         var target = self.named_target(b.target)
-        var out = self.client[].call(target, args)
+        var out = self._reply(self.client[].call(target, args))
         if out.kind == ERROR:
             raise Error(String("building ", b.target, " raised ", out.name(), ": ", out.text()))
         if out.kind != HANDLE:
@@ -144,6 +155,7 @@ struct RunHost(Builder, EvalHost):
             else:
                 reply = self.client[].observe(obj, o.name, Optional(args.copy()))
             if reply.kind == ERROR:
+                self.timed_out = self.timed_out or reply.name() == TIMEOUT
                 raise Error(
                     String(
                         "observer ", self.loaded[].spec.models[model].name, ".", o.name,
@@ -173,6 +185,7 @@ struct RunHost(Builder, EvalHost):
             self.memo[key^] = len(self.memo_result)
             self.memo_result.append(out.copy())
         if out.kind == ERROR and out.name() == TIMEOUT:
+            self.timed_out = True
             raise Error(String("planned call of ", self.loaded[].spec.fns[`fn`].name, " raised ", TIMEOUT, ": ", out.text()))
         return out^
 
@@ -244,7 +257,7 @@ struct RunHost(Builder, EvalHost):
 
     def call_extern(mut self, name: String, args: List[Value]) raises -> Value:
         var target = self.named_target(name)
-        var out = self.client[].call(target, args)
+        var out = self._reply(self.client[].call(target, args))
         if out.kind == ERROR:
             raise Error(String(name, " raised ", out.name(), ": ", out.text()))
         return out^
