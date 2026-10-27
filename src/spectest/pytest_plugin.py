@@ -86,7 +86,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         metavar="SECONDS",
         help="per-call time limit; a call that exceeds it is inconclusive, never a failure "
-        "(only Python code is interrupted)",
+        "(only Python code is interrupted, and code that catches BaseException can defeat it)",
     )
     group.addoption(
         "--spectest-report",
@@ -247,6 +247,8 @@ def _property(report: pytest.TestReport, key: str) -> str | None:
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "spectest: an item collected from a spectest Conformance")
     config.addinivalue_line("markers", "xdist_group(name): items that pytest-xdist runs together")
+    if (limit := config.getoption("spectest_timeout")) is not None and limit <= 0:
+        raise pytest.UsageError(f"--spectest-timeout must be positive, not {limit:g}")
     if getattr(config.option, "dist", None) == "load":
         # a v2 declaration's items share one run, so they go to one worker
         config.option.dist = "loadgroup"

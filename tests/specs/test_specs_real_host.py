@@ -127,3 +127,16 @@ def test_without_a_timeout_a_prompt_implementation_passes(
     make_test(pytester, 'test_stalls = spectest.check("stalls.spec")\n')
     result = pytester.runpytest(*ARGS)
     result.assert_outcomes(passed=3)
+
+
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_a_non_positive_timeout_is_a_usage_error(
+    pytester: pytest.Pytester, limit: str
+) -> None:
+    real_host()
+    pytester.makefile(".spec", stalls=TIMEOUT_SPEC)
+    pytester.makepyfile(stalling=PROMPT)
+    make_test(pytester, 'test_stalls = spectest.check("stalls.spec")\n')
+    result = pytester.runpytest(*ARGS, f"--spectest-timeout={limit}")
+    assert result.ret != 0
+    assert "--spectest-timeout must be positive" in result.stderr.str()

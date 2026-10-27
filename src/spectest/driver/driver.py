@@ -150,7 +150,7 @@ class Driver:
 
     def _timed(self, run: Callable[[], T]) -> T | Error:
         """`run()`, or a CallTimeout error when it passes `timeout` seconds."""
-        if not self.timeout or not can_time_out():
+        if self.timeout is None or not can_time_out():
             return run()
         try:
             with alarm(self.timeout):

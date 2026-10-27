@@ -22,14 +22,22 @@ def alarm(seconds: float) -> Iterator[None]:
         if armed:
             raise CallTimeout(f"timed out after {seconds:g}s")
 
-    previous = signal.signal(signal.SIGALRM, expire)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
+    previous = signal.SIG_DFL
     try:
+        previous = signal.signal(signal.SIGALRM, expire)
+        signal.setitimer(signal.ITIMER_REAL, seconds)
         yield
     finally:
         armed = False
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
+        # blocked, so a late signal stays pending instead of raising out of here
+        old_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            # ignoring discards a pending signal, so the restored handler never sees it
+            signal.signal(signal.SIGALRM, signal.SIG_IGN)
+            signal.signal(signal.SIGALRM, previous)
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
 
 
 def can_time_out() -> bool:
