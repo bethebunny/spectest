@@ -128,7 +128,7 @@ def build(path: Path) -> Path:
     includes = [arg for p in INCLUDES for arg in ("-I", str(p))]
     partial = BUILDS / f".partial-{os.getpid()}-{binary.name}"
     proc = subprocess.run(
-        [str(mojo), "build", *includes, str(path), "-o", str(partial)],
+        [str(mojo), "build", *includes, "-strip-file-prefix", f"{ROOT}/", str(path), "-o", str(partial)],
         capture_output=True,
         text=True,
         check=False,

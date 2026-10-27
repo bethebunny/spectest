@@ -30,7 +30,12 @@ A cached rerun takes about a second.
 - A cold compile of a small test takes 4 to 10 s, and `mojo run` spends 1 to 3 s even
   when its cache is warm. So the conftest keeps each built test in `.mojo-tests/`,
   keyed by the compiler version, the test file and every module it imports. An
-  unchanged test reruns at once. `-O0` is not faster.
+  unchanged test reruns at once. `-O0` is slower, and `-O1` equals `-O3`.
+- The compiler's own cache (`~/.modular/cache`) keeps two entries per binary, and both
+  cover the whole program. So test binaries share no work, and a cold test costs 6 to
+  45 s. Source locations are part of the key: an edit that shifts lines misses for every
+  test that reaches code below it. The conftest passes `-strip-file-prefix`, so builds
+  of the same sources in different workspaces share entries.
 - A Mojo test can scale its sample counts with `getenv("SPECTEST_STRENGTH")`: `dev` in
   the dev loop, `full` under `--ci`.
 - The standard library is imported from `std`, eg. `from std.collections import Set`.
@@ -393,8 +398,9 @@ A cached rerun takes about a second.
       return None
   ```
 - `atof(text)` and `Float64(text)` parse decimal floats, `inf` and `nan`.
-- `String(x)` prints a Float64 the way Python does. Float16 and BFloat16 print with
-  Float32 digits.
+- `String(x)` on a Float64 doesn't always print the shortest text that reads back: some
+  17-digit values print with 16 digits that parse as a neighbouring float. Float16 and
+  BFloat16 print with Float32 digits. Print floats with `numeric.text.float_text`.
 - `std.bit` has the bit tricks: `rotate_bits_left[7](x)`, `pop_count(n) == 1` for a power
   of two, `count_trailing_zeros`, `count_leading_zeros` and `bit_width`.
 - `bitcast[DType.uint64](x)` (`from std.memory`) gives a float's bits, and back.
