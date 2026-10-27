@@ -133,7 +133,7 @@ def judge_clause(spec: Spec, id: String, env: Env, mut host: Mock) raises -> Jud
 
 def fragment(params: String, expr: String, returns: String = "") -> String:
     var arrow = (" -> " + returns) if returns else String()
-    return "fn f(" + params + ")" + arrow + "\n  ensures e: let v = " + expr + " in true\n"
+    return "fn f(" + params + ")" + arrow + "\n  ensures e: let v = (" + expr + ") in true\n"
 
 
 def expr_node(spec: Spec) raises -> Int:
@@ -209,3 +209,28 @@ def two(var a: Value, var b: Value) -> List[Value]:
     out.append(a^)
     out.append(b^)
     return out^
+
+
+def bytes_of(text: String) -> Value:
+    var out = List[UInt8]()
+    for b in text.as_bytes():
+        out.append(b)
+    return Value.bytes(out^)
+
+
+def real_v(n: Int, d: Int = 1) -> Value:
+    """The REAL n/d, in lowest terms with a positive denominator (d may be 0 for the
+    infinities: n is then 1 or -1)."""
+    return Value.real(BigInt(n), BigInt(d))
+
+
+def nan64() -> Value:
+    return Value.float(F64, UInt64(0x7FF8000000000000))
+
+
+def inf64(negative: Bool = False) -> Value:
+    return Value.float(F64, UInt64(0xFFF0000000000000) if negative else UInt64(0x7FF0000000000000))
+
+
+def big(text: String) raises -> Value:
+    return Value.int(BigInt.parse(text))
