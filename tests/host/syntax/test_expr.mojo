@@ -1,6 +1,6 @@
 from std.testing import assert_equal, TestSuite
 
-from syntax.testkit import expr
+from syntax_testkit import expr
 
 
 def check(source: String, expected: String) raises:

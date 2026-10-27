@@ -1,6 +1,6 @@
 from std.testing import assert_equal, TestSuite
 
-from syntax.testkit import spec_error, prelude_error
+from syntax_testkit import spec_error, prelude_error
 
 
 def check(source: String, expected: String) raises:

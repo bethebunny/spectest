@@ -1,32 +1,26 @@
-"""Helpers for the package's tests: parse a fragment and dump the part under test."""
+"""Helpers for the syntax tests: parse a fragment and dump the part under test."""
 
+from syntax.lexer import tokenize
 from syntax.ast import Ast
-from syntax.dump import dump
-from syntax.parser import parse_spec, parse_prelude
+from syntax.parser import Parser, parse_spec
+from syntax_dump import dump
 
 
 def decls(body: String) raises -> String:
     """The dump of each top-level declaration of `spec t` followed by `body`, one per line."""
-    var ast = parse_spec("spec t\n" + body, "t.spec")
-    var out = String()
-    var first = True
-    for d in ast.nodes[ast.root].kids:
-        if not first:
-            out += "\n"
-        first = False
-        out += dump(ast, d)
-    return out^
+    var ast = parse_spec(String("spec t\n", body), "t.spec")
+    return "\n".join([dump(ast, d) for d in ast.nodes[ast.root].kids])
 
 
 def expr(source: String) raises -> String:
     """The dump of an expression, parsed as the clause of a function."""
-    var ast = parse_spec("spec t\nfn f()\n  ensures " + source + "\n", "t.spec")
+    var ast = parse_spec(String("spec t\nfn f()\n  ensures ", source, "\n"), "t.spec")
     return dump(ast, ast.kid(ast.kid(ast.kid(ast.root, 0), 3), 0))
 
 
 def type_(source: String) raises -> String:
     """The dump of a type, parsed as an alias's right side."""
-    var ast = parse_spec("spec t\ntype T = " + source + "\n", "t.spec")
+    var ast = parse_spec(String("spec t\ntype T = ", source, "\n"), "t.spec")
     return dump(ast, ast.kid(ast.kid(ast.root, 0), 0))
 
 
@@ -39,14 +33,20 @@ def spec_error(source: String) -> String:
     return String()
 
 
+def _parse_prelude(source: String) raises -> Ast:
+    var parser = Parser(tokenize(source, "t.prelude"), source.copy(), "t.prelude")
+    _ = parser.parse_prelude_file()
+    return parser^.into_ast()
+
+
 def prelude_dump(source: String) raises -> String:
-    var ast = parse_prelude(source, "t.prelude")
+    var ast = _parse_prelude(source)
     return dump(ast, ast.root)
 
 
 def prelude_error(source: String) -> String:
     try:
-        _ = parse_prelude(source, "t.prelude")
+        _ = _parse_prelude(source)
     except e:
         return String(e)
     return String()

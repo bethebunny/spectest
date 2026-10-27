@@ -1238,14 +1238,6 @@ def parse_spec(source: String, path: String) raises -> Ast:
     return parser^.into_ast()
 
 
-def parse_prelude(source: String, path: String) raises -> Ast:
-    """Parse a user prelude file: definitions and `use` lines, with no `spec` header."""
-    var tokens = tokenize(source, path)
-    var parser = Parser(tokens^, source.copy(), path.copy())
-    _ = parser.parse_prelude_file()
-    return parser^.into_ast()
-
-
 def parse_into(mut ast: Ast, source: String, path: String) raises -> Int:
     """Parse a spec file or a user prelude (told apart by a leading `spec`) and append
     it to `ast` as another file: its nodes follow the existing ones and its source

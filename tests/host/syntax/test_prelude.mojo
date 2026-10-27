@@ -1,6 +1,6 @@
 from std.testing import assert_equal, TestSuite
 
-from syntax.testkit import prelude_dump, prelude_error
+from syntax_testkit import prelude_dump, prelude_error
 
 
 def test_empty_prelude() raises:

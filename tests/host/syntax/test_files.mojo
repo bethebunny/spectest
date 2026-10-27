@@ -2,9 +2,9 @@ from std.testing import assert_equal, assert_true, TestSuite
 from std.time import perf_counter_ns
 
 from syntax.ast import Ast, FILE, FN, CLAUSE
-from syntax.dump import dump
+from syntax_dump import dump
 from syntax.parser import parse_spec
-from syntax.testkit import spec_error
+from syntax_testkit import spec_error
 
 
 def read(path: String) raises -> String:

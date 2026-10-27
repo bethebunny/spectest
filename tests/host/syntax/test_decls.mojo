@@ -1,6 +1,6 @@
 from std.testing import assert_equal, TestSuite
 
-from syntax.testkit import decls, type_
+from syntax_testkit import decls, type_
 
 
 def test_types() raises:
