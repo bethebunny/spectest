@@ -6,6 +6,7 @@ fn imin(a: int, b: int) -> int = if a < b then a else b
 # The members of a set of at most 512 elements, ascending.
 fn small(s: bitpattern.intset.IntSet) -> bool = s.size <= 512
 fn elems(s: bitpattern.intset.IntSet) -> list<int> = s.head(s.size)
+fn elems_p(s: bitpattern.pattern.Pattern) -> list<int> = s.head(s.size)
 
 fn union_of(a: list<int>, b: list<int>) -> list<int> = sorted(a + filter(x in b: not (x in a)))
 fn inter_of(a: list<int>, b: list<int>) -> list<int> = filter(x in a: x in b)
@@ -34,3 +35,28 @@ fn path_matches(p: string, x: int) -> bool = all(i in range(0, len(p)): codepoin
 # bitpattern.bdd.count_repr: decimal, or "2**k" for an exact power of two with k >= 10.
 fn is_big_pow2(n: int) -> bool = n >= 1024 and n & (n - 1) == 0
 fn count_repr_text(n: int) -> string = if is_big_pow2(n) then "2**" + dec(bit_length(n) - 1) else dec(n)
+
+# Integers joined by ", " (up to ten).
+fn join_ints(xs: list<int>) -> string = if len(xs) == 0 then "" else if len(xs) == 1 then dec(xs[0]) else if len(xs) == 2 then dec(xs[0]) + ", " + dec(xs[1]) else if len(xs) == 3 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) else if len(xs) == 4 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) else if len(xs) == 5 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) else if len(xs) == 6 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) else if len(xs) == 7 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) + ", " + dec(xs[6]) else if len(xs) == 8 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) + ", " + dec(xs[6]) + ", " + dec(xs[7]) else if len(xs) == 9 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) + ", " + dec(xs[6]) + ", " + dec(xs[7]) + ", " + dec(xs[8]) else if len(xs) == 10 then dec(xs[0]) + ", " + dec(xs[1]) + ", " + dec(xs[2]) + ", " + dec(xs[3]) + ", " + dec(xs[4]) + ", " + dec(xs[5]) + ", " + dec(xs[6]) + ", " + dec(xs[7]) + ", " + dec(xs[8]) + ", " + dec(xs[9]) else ""
+
+# Pattern text: the dotted form of a bit string, and back.
+fn undot(s: string) -> string = from_codepoints(filter(c in codepoints(s): c != 46))
+fn dotted(bits: string) -> string = let n = len(bits) in let q = (n + 3) // 4 in let first = n - 4 * (q - 1) in from_codepoints(map(j in range(0, n + q - 1): if j >= first and (j - first) % 5 == 0 then 46 else codepoints(bits)[j - (if j < first then 0 else (j - first) // 5 + 1)]))
+fn bmatch(branch: string, x: int) -> bool = path_matches(undot(branch), x)
+fn smallest(branch: string) -> int = let bits = codepoints(undot(branch)) in sum(i in range(0, len(bits)): if bits[i] == 49 then 2 ** (len(bits) - 1 - i) else 0)
+fn free_count(branch: string) -> int = count(c in codepoints(branch): c == 63)
+
+# The syntax of Pattern(text), over the tokens 0 1 ? * . |.
+fn pat_dots(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> list<int> = filter(i in range(0, len(t)): t[i] == ".")
+fn pat_count(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> int = len(pat_dots(t)) + 1
+fn pat_from(t: list<"0" | "1" | "?" | "*" | "." | "|">, k: int) -> int = if k == 0 then 0 else pat_dots(t)[k - 1] + 1
+fn pat_to(t: list<"0" | "1" | "?" | "*" | "." | "|">, k: int) -> int = if k == pat_count(t) - 1 then len(t) else pat_dots(t)[k]
+fn pat_quartet(t: list<"0" | "1" | "?" | "*" | "." | "|">, k: int) -> list<"0" | "1" | "?" | "*" | "." | "|"> = t[pat_from(t, k):pat_to(t, k)]
+fn pat_stars(q: list<"0" | "1" | "?" | "*" | "." | "|">) -> int = count(c in q: c == "*")
+fn pat_quartet_bad(t: list<"0" | "1" | "?" | "*" | "." | "|">, k: int) -> bool = len(pat_quartet(t, k)) == 0 or pat_stars(pat_quartet(t, k)) > 1 or (if pat_stars(pat_quartet(t, k)) == 1 then len(pat_quartet(t, k)) > 5 else (if k == 0 then len(pat_quartet(t, k)) > 4 else len(pat_quartet(t, k)) != 4))
+fn pat_invalid(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> bool = len(t) == 0 or exists(c in t: c == "|") or exists(k in range(0, pat_count(t)): pat_quartet_bad(t, k))
+fn pat_ambiguous(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> bool = exists(k in range(0, pat_count(t)): pat_stars(pat_quartet(t, k)) == 1 and len(pat_quartet(t, k)) == 5)
+fn pat_width(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> int = sum(k in range(0, pat_count(t)): if pat_stars(pat_quartet(t, k)) == 1 then 4 else len(pat_quartet(t, k)))
+fn pat_free(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> int = sum(k in range(0, pat_count(t)): count(c in pat_quartet(t, k): c == "?") + (if pat_stars(pat_quartet(t, k)) == 1 then 5 - len(pat_quartet(t, k)) else 0))
+fn pat_has_star(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> bool = exists(c in t: c == "*")
+fn pat_bits(t: list<"0" | "1" | "?" | "*" | "." | "|">) -> string = from_codepoints(map(c in filter(c in t: c != "."): if c == "0" then 48 else if c == "1" then 49 else 63))

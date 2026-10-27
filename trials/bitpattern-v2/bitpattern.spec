@@ -23,12 +23,12 @@ model bitpattern.bdd.BDD
   # How many values below 2 ** width the diagram accepts.
   observe total(width: int): int = support.bdd_count(self, width)
   build variant.diagram_cells(cells: list<"0" | "1" | "?">)
-  build bitpattern.bdd.interval(start: u8, stop: u8, width: u8)
+  build bitpattern.bdd.interval(start: u8, stop: u8, width: i8)
   build bitpattern.bdd.BDD.__or__(a: bitpattern.bdd.BDD, b: bitpattern.bdd.BDD)
   build bitpattern.bdd.BDD.__and__(a: bitpattern.bdd.BDD, b: bitpattern.bdd.BDD)
   build bitpattern.bdd.BDD.__sub__(a: bitpattern.bdd.BDD, b: bitpattern.bdd.BDD)
   build bitpattern.bdd.BDD.__invert__(a: bitpattern.bdd.BDD)
-  build bitpattern.bdd.lshift(node: bitpattern.bdd.BDD, by: u8)
+  build bitpattern.bdd.lshift(node: bitpattern.bdd.BDD, by: i8)
 
 model bitpattern.intset.IntSet
   observe width: int
@@ -41,16 +41,16 @@ model bitpattern.intset.IntSet
   observe has(x: int): bool = operator.contains(self, x)
   observe rank(x: int): int = support.bdd_rank(bdd, x, width)
   build bitpattern.IntSet(items: list<u8>)
-  build variant.IntSet_with_width(items: list<u16>, width: u8)
-  build bitpattern.IntSet.range(start: u8, stop: u8, width: option<u8>)
-  build support.scaled_range(start: u8, stop: u8, shift: u8)
+  build variant.IntSet_with_width(items: list<u16>, width: i8)
+  build bitpattern.IntSet.range(start: u8, stop: u8, width: option<i8>)
+  build support.scaled_range(start: u8, stop: u8, shift: i8)
   build bitpattern.intset.IntSet.__or__(a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet)
   build bitpattern.intset.IntSet.__and__(a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet)
   build bitpattern.intset.IntSet.__sub__(a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet)
   build bitpattern.intset.IntSet.__xor__(a: bitpattern.intset.IntSet, b: bitpattern.intset.IntSet)
   build bitpattern.intset.IntSet.__invert__(a: bitpattern.intset.IntSet)
-  build bitpattern.intset.IntSet.widened(a: bitpattern.intset.IntSet, width: u8)
-  build bitpattern.IntSet.from_bdd(node: bitpattern.bdd.BDD, width: u8)
+  build bitpattern.intset.IntSet.widened(a: bitpattern.intset.IntSet, width: i8)
+  build bitpattern.IntSet.from_bdd(node: bitpattern.bdd.BDD, width: i8)
   # Section 1: the set is the members below 2 ** width, ascending, with no repeats.
   invariant bounded: size <= 2 ** width
   invariant ascending: size <= 512 implies is_sorted(head(size)) and distinct(head(size))
@@ -73,16 +73,16 @@ fn variant.IntSet_with_width(items: list<int>, width: int) -> bitpattern.intset.
   ensures members: small(result) implies same_members(elems(result), items)
   ensures width: result.width == imax(imax(width, 0), if len(items) == 0 then 0 else bit_length(max(x in items: x)))
 
-fn bitpattern.IntSet.range(start: int, stop: int, width: option<int>) -> bitpattern.intset.IntSet
+fn bitpattern.IntSet.range(start: int, stop: int, width: option<i16>) -> bitpattern.intset.IntSet
   raises ValueError when start < 0 or (is_some(width) and unwrap(width) < 0)
   ensures default_width: is_none(width) implies result.width == bit_length(imax(stop - 1, 0))
   ensures size: result.size == imax(0, imin(stop, 2 ** (if is_some(width) then unwrap(width) else bit_length(imax(stop - 1, 0)))) - start)
   ensures members: small(result) implies elems(result) == range(start, start + result.size)
 
-fn bitpattern.IntSet.from_bdd(bdd: bitpattern.bdd.BDD, width: int) -> bitpattern.intset.IntSet
+fn bitpattern.IntSet.from_bdd(bdd: bitpattern.bdd.BDD, width: i16) -> bitpattern.intset.IntSet
   raises ValueError when bdd.bit >= width
   ensures width: result.width == width
-  ensures size: width <= 4096 implies result.size == bitpattern.bdd.count(bdd, width)
+  ensures size: width >= 0 and width <= 127 implies result.size == bitpattern.bdd.count(bdd, width)
   ensures members: width <= 8 implies elems(result) == filter(x in range(0, 2 ** width): bitpattern.bdd.accepts(bdd, x))
 
 # -- 1. IntSet: size, membership, order --------------------------------------------
@@ -468,21 +468,21 @@ fn bitpattern.bdd.accepts(node: bitpattern.bdd.BDD, value: int) -> bool
   ensures leaf_sizes: bitpattern.bdd.BDD.ACCEPT.size == 1 and bitpattern.bdd.BDD.REJECT.size == 0
   ensures negation_of_leaves: same_object(bitpattern.bdd.BDD.__invert__(bitpattern.bdd.BDD.ACCEPT), bitpattern.bdd.BDD.REJECT)
 
-fn bitpattern.bdd.count(node: bitpattern.bdd.BDD, width: i8) -> int
+fn bitpattern.bdd.count(node: bitpattern.bdd.BDD, width: i16) -> int
   raises ValueError when width < 0 or node.bit >= width
   ensures leaf: node.leaf implies result == (if node.size == 1 then 2 ** width else 0)
   ensures split: not node.leaf implies 2 * result == bitpattern.bdd.count(node.left, width) + bitpattern.bdd.count(node.right, width)
   ensures bounded: 0 <= result and result <= 2 ** width
   ensures size: result == node.size * 2 ** (width - node.bit - 1)
 
-fn bitpattern.bdd.nth(node: bitpattern.bdd.BDD, n: int, width: i8) -> int
+fn bitpattern.bdd.nth(node: bitpattern.bdd.BDD, n: int, width: i16) -> int
   raises ValueError when width < 0 or node.bit >= width
   raises IndexError when width >= 0 and node.bit < width and (n < -node.total(width) or n >= node.total(width))
   ensures accepted: bitpattern.bdd.accepts(node, result) and 0 <= result and result < 2 ** width
   ensures position: bitpattern.bdd.rank(node, result, width) == (if n < 0 then n + node.total(width) else n)
 
-fn bitpattern.bdd.rank(node: bitpattern.bdd.BDD, value: int, width: i8) -> int
-  requires 0 <= value and value <= 2 ** width
+fn bitpattern.bdd.rank(node: bitpattern.bdd.BDD, value: int, width: i16) -> int
+  requires width < 0 or (0 <= value and value <= 2 ** width)
   raises ValueError when width < 0 or node.bit >= width
   ensures counted: width <= 8 implies result == len(filter(x in range(0, value): bitpattern.bdd.accepts(node, x)))
   ensures step: value >= 1 implies result == bitpattern.bdd.rank(node, value - 1, width) + (if bitpattern.bdd.accepts(node, value - 1) then 1 else 0)
@@ -490,7 +490,7 @@ fn bitpattern.bdd.rank(node: bitpattern.bdd.BDD, value: int, width: i8) -> int
   ensures zero: bitpattern.bdd.rank(node, 0, width) == 0
 
 # Iterators cross as lists of their first 513 items (support.py).
-fn bitpattern.bdd.members(node: bitpattern.bdd.BDD, width: i8) -> list<int>
+fn bitpattern.bdd.members(node: bitpattern.bdd.BDD, width: i16) -> list<int>
   raises ValueError when width < 0 or node.bit >= width
   ensures count: len(result) == imin(node.total(width), 513)
   ensures ascending: is_sorted(result) and distinct(result)
@@ -499,17 +499,17 @@ fn bitpattern.bdd.members(node: bitpattern.bdd.BDD, width: i8) -> list<int>
   ensures nth: all(i in range(0, imin(len(result), 8)): result[i] == bitpattern.bdd.nth(node, i, width))
 
 # An ascending iterator of aligned blocks (start, free), disjoint, covering the set, as few as possible.
-fn bitpattern.bdd.blocks(node: bitpattern.bdd.BDD, width: i8) -> list<(int, int)>
+fn bitpattern.bdd.blocks(node: bitpattern.bdd.BDD, width: i16) -> list<(int, int)>
   raises ValueError when width < 0 or node.bit >= width
   ensures aligned: all(b in result: b.0 % 2 ** b.1 == 0 and b.0 + 2 ** b.1 <= 2 ** width)
   ensures ascending_disjoint: all(i in range(0, imax(len(result) - 1, 0)): result[i].0 + 2 ** result[i].1 <= result[i + 1].0)
   ensures covers: len(result) <= 512 implies sum(b in result: 2 ** b.1) == node.total(width)
   ensures accepted: all(b in result: bitpattern.bdd.accepts(node, b.0) and bitpattern.bdd.accepts(node, b.0 + 2 ** b.1 - 1))
   ensures no_buddies: all(i in range(0, imax(len(result) - 1, 0)): not (result[i].1 == result[i + 1].1 and result[i + 1].0 == result[i].0 + 2 ** result[i].1 and result[i].0 % 2 ** (result[i].1 + 1) == 0))
-  ensures maximal: all(b in result[0:imin(len(result), 8)]: bitpattern.bdd.rank(node, (if (b.0 >> b.1) & 1 == 0 then b.0 + 2 ** (b.1 + 1) else b.0 + 2 ** b.1), width) - bitpattern.bdd.rank(node, (if (b.0 >> b.1) & 1 == 0 then b.0 + 2 ** b.1 else b.0 - 2 ** b.1), width) < 2 ** b.1 or (b.0 >> b.1) & 1 == 1 and bitpattern.bdd.rank(node, b.0, width) - bitpattern.bdd.rank(node, b.0 - 2 ** b.1, width) < 2 ** b.1)
+  ensures maximal: all(b in result[0:imin(len(result), 8)]: let bs = (if (b.0 >> b.1) % 2 == 0 then b.0 + 2 ** b.1 else b.0 - 2 ** b.1) in bs + 2 ** b.1 > 2 ** width or bitpattern.bdd.rank(node, bs + 2 ** b.1, width) - bitpattern.bdd.rank(node, bs, width) < 2 ** b.1)
 
 # Strings of width characters over 0 1 ?, most significant bit first; disjoint, covering.
-fn bitpattern.bdd.paths(node: bitpattern.bdd.BDD, width: i8) -> list<string>
+fn bitpattern.bdd.paths(node: bitpattern.bdd.BDD, width: i16) -> list<string>
   raises ValueError when width < 0 or node.bit >= width
   ensures shape: all(p in result: len(p) == width and all(c in codepoints(p): c == 48 or c == 49 or c == 63))
   ensures reject_has_none: node.leaf and node.size == 0 implies len(result) == 0
@@ -539,14 +539,14 @@ fn variant.diagram_cells(cells: list<"0" | "1" | "?">) -> bitpattern.bdd.BDD
   ensures free_above: len(cells) <= 8 implies all(x in range(0, 256): bitpattern.bdd.accepts(result, x) == bitpattern.bdd.accepts(result, x % 2 ** len(cells)))
   ensures size: bitpattern.bdd.count(result, len(cells) + 2) == 4 * 2 ** count(c in cells: c == "?")
 
-fn bitpattern.bdd.exactly_these(values: list<int>, width: i8) -> (bitpattern.bdd.BDD, int)
+fn bitpattern.bdd.exactly_these(values: list<int>, width: i16) -> (bitpattern.bdd.BDD, int)
   raises ValueError when exists(x in values: x < 0)
   ensures width: result.1 == imax(imax(width, 0), if len(values) == 0 then 0 else bit_length(max(x in values: x)))
   ensures accepts_values: all(x in values: bitpattern.bdd.accepts(result.0, x))
   ensures exact: result.1 <= 8 implies bitpattern.bdd.members(result.0, result.1) == sorted(filter(i in range(0, 2 ** result.1): i in values))
   ensures count: bitpattern.bdd.count(result.0, result.1) == len(filter(i in range(0, len(values)): not (values[i] in values[0:i])))
 
-fn bitpattern.bdd.interval(start: int, stop: int, width: i8) -> bitpattern.bdd.BDD
+fn bitpattern.bdd.interval(start: int, stop: int, width: i16) -> bitpattern.bdd.BDD
   raises ValueError when width < 0
   ensures count: bitpattern.bdd.count(result, width) == imax(0, imin(stop, 2 ** width) - imax(start, 0))
   ensures pointwise: width <= 8 implies all(x in range(0, 2 ** width): bitpattern.bdd.accepts(result, x) == (imax(start, 0) <= x and x < imin(stop, 2 ** width)))
@@ -554,7 +554,7 @@ fn bitpattern.bdd.interval(start: int, stop: int, width: i8) -> bitpattern.bdd.B
   ensures full_is_accept: start <= 0 and stop >= 2 ** width implies result.leaf and result.size == 1
   ensures blocks_example: start == 3 and stop == 17 and width == 5 implies bitpattern.bdd.blocks(result, 5) == [(3, 0), (4, 2), (8, 3), (16, 0)]
 
-fn bitpattern.bdd.lshift(node: bitpattern.bdd.BDD, by: i8) -> bitpattern.bdd.BDD
+fn bitpattern.bdd.lshift(node: bitpattern.bdd.BDD, by: i16) -> bitpattern.bdd.BDD
   may_raise ValueError when by < 0
   ensures shifted: all(x in range(0, 128): bitpattern.bdd.accepts(result, x) == bitpattern.bdd.accepts(node, if by >= 0 then x >> by else x << (-by)))
   ensures bit: not node.leaf and by >= 0 implies result.bit == node.bit + by
@@ -577,11 +577,10 @@ fn bitpattern.bdd.disjoint(a: bitpattern.bdd.BDD, b: bitpattern.bdd.BDD) -> bool
   ensures pointwise: result implies all(x in range(0, 128): not (bitpattern.bdd.accepts(a, x) and bitpattern.bdd.accepts(b, x)))
 
 # A diagram that tests no bit at or above width and agrees with node below 2 ** width.
-fn bitpattern.bdd.narrowed(node: bitpattern.bdd.BDD, width: i8) -> bitpattern.bdd.BDD
+fn bitpattern.bdd.narrowed(node: bitpattern.bdd.BDD, width: i16) -> bitpattern.bdd.BDD
   raises ValueError when width < 0
   ensures narrow: result.bit < width
   ensures agrees: width <= 8 implies all(x in range(0, 2 ** width): bitpattern.bdd.accepts(result, x) == bitpattern.bdd.accepts(node, x))
-  ensures unchanged: node.bit < width implies same_object(result, node)
 
 # Decimal, except an exact power of two 2 ** k with k >= 10, written "2**k".
 fn bitpattern.bdd.count_repr(total: int) -> string
@@ -597,3 +596,147 @@ fn bitpattern.bdd.collect() -> int
 fn bitpattern.bdd.stats() -> map<string, int>
   ensures keys: sorted(keys(result)) == ["free", "memo", "memo_room", "nodes", "room", "wrapped"]
   ensures nonnegative: all(v in values(result): v >= 0)
+
+# -- 1. IntSet: repr and export ----------------------------------------------------
+
+# At most ten members: all of them. More: the first four and the last two, then the size.
+fn variant.IntSet_repr(s: bitpattern.intset.IntSet) -> string
+  ensures listed: s.size <= 10 implies result == "IntSet([" + join_ints(s.head(10)) + "], width=" + dec(s.width) + ")"
+  ensures abbreviated: s.size > 10 implies result == "IntSet([" + join_ints(s.head(4)) + ", ..., " + dec(s.last(2)[1]) + ", " + dec(s.last(2)[0]) + "], size=" + count_repr_text(s.size) + ", width=" + dec(s.width) + ")"
+
+fn bitpattern.intset.IntSet.__dlpack_device__(self) -> (int, int)
+  ensures host_memory: result == (1, 0)
+
+# numpy.from_dlpack(s) -> its dtype name, shape and flattened items.
+fn numpy.from_dlpack(s: bitpattern.intset.IntSet) -> (string, list<int>, list<int>)
+  requires s.size <= 512
+  ensures dtype: result.0 == (if s.size == 0 then "uint8" else if s.width <= 8 then "uint8" else if s.width <= 16 then "uint16" else if s.width <= 32 then "uint32" else if s.width <= 64 then "uint64" else "uint8")
+  ensures narrow_values: s.size > 0 and s.width <= 64 implies result.1 == [s.size] and result.2 == s.head(s.size)
+  ensures wide_rows: s.size > 0 and s.width > 64 implies result.1 == [s.size, (s.width + 7) // 8]
+  ensures big_endian: s.size > 0 and s.width > 64 implies result.2 == map(i in range(0, s.size * ((s.width + 7) // 8)): (s.head(s.size)[i // ((s.width + 7) // 8)] >> (8 * ((s.width + 7) // 8 - 1 - i % ((s.width + 7) // 8)))) % 256)
+  ensures empty: s.size == 0 implies len(result.2) == 0
+
+# __dlpack__(stream, max_version, dl_device, copy): a stream raises ValueError, another
+# device or copy=False raises BufferError.
+fn bitpattern.intset.IntSet.__dlpack__(self, stream: option<i64>, max_version: option<(int, int)>, dl_device: option<(int, int)>, copy: option<bool>)
+  requires self.size <= 512
+  raises ValueError when is_some(stream)
+  raises BufferError when is_none(stream) and ((is_some(dl_device) and unwrap(dl_device) != (1, 0)) or (is_some(copy) and not unwrap(copy)))
+
+# -- 2. Pattern --------------------------------------------------------------------
+
+model bitpattern.pattern.Pattern
+  observe width: int
+  observe size: int
+  observe bdd: bitpattern.bdd.BDD
+  observe head(n: int): list<int> = builtins.list(itertools.islice(self, n))
+  observe last(n: int): list<int> = builtins.list(itertools.islice(builtins.reversed(self), n))
+  observe has(x: int): bool = operator.contains(self, x)
+  observe branch_list(n: int): list<string> = builtins.list(itertools.islice(builtins.getattr(self, "branches"), n))
+  build variant.Pattern_cells(cells: list<"0" | "1" | "?">)
+  build bitpattern.pattern.Pattern.__or__(a: bitpattern.pattern.Pattern, b: bitpattern.intset.IntSet)
+  build bitpattern.pattern.Pattern.__and__(a: bitpattern.pattern.Pattern, b: bitpattern.intset.IntSet)
+  build bitpattern.pattern.Pattern.__invert__(a: bitpattern.pattern.Pattern)
+  build bitpattern.pattern.Pattern.widened(a: bitpattern.pattern.Pattern, width: i8)
+  build bitpattern.pattern.Pattern.from_bdd(node: bitpattern.bdd.BDD, width: i8)
+  invariant bounded: size <= 2 ** width
+  invariant ascending: size <= 512 implies is_sorted(head(size)) and distinct(head(size))
+  invariant below_universe: size <= 512 implies all(x in head(size): 0 <= x and x < 2 ** width)
+
+# Pattern(text) over the tokens of the syntax: quartets of 0 1 ? with at most one * each,
+# split on dots, the first quartet of one to four bits.
+fn variant.Pattern_new(tokens: list<"0" | "1" | "?" | "*" | "." | "|">) -> bitpattern.pattern.Pattern
+  raises ValueError when pat_invalid(tokens)
+  may_raise ValueError when pat_ambiguous(tokens)
+  ensures width: pat_width(tokens) == result.width
+  ensures size: result.size == 2 ** pat_free(tokens)
+  ensures single_branch: len(result.branch_list(2)) == 1
+  ensures bits: not pat_has_star(tokens) implies bitpattern.pattern.Pattern.bits(result) == pat_bits(tokens)
+  ensures dotted_branch: not pat_has_star(tokens) implies result.branch_list(2) == [dotted(pat_bits(tokens))]
+  ensures free: not pat_has_star(tokens) implies bitpattern.pattern.Pattern.free(result) == pat_free(tokens)
+  ensures members: not pat_has_star(tokens) and result.width <= 9 implies elems_p(result) == filter(x in range(0, 2 ** result.width): path_matches(pat_bits(tokens), x))
+
+fn variant.Pattern_cells(cells: list<"0" | "1" | "?">) -> bitpattern.pattern.Pattern
+  requires len(cells) > 0
+  ensures width: result.width == len(cells)
+  ensures size: result.size == 2 ** count(c in cells: c == "?")
+  ensures bits: bitpattern.pattern.Pattern.bits(result) == from_codepoints(map(c in cells: if c == "0" then 48 else if c == "1" then 49 else 63))
+  ensures free: bitpattern.pattern.Pattern.free(result) == count(c in cells: c == "?")
+  ensures str: variant.Pattern_str(result) == dotted(bitpattern.pattern.Pattern.bits(result))
+  ensures matches: result.width <= 9 implies elems_p(result) == filter(x in range(0, 2 ** result.width): cells_match(cells, x))
+
+# The expanded bits of a single-branch pattern; ValueError for none or several branches.
+fn bitpattern.pattern.Pattern.bits(self) -> string
+  raises ValueError when len(self.branch_list(2)) != 1
+  ensures expanded: result == undot(self.branch_list(1)[0])
+  ensures width: len(result) == self.width
+
+fn bitpattern.pattern.Pattern.free(self) -> int
+  raises ValueError when len(self.branch_list(2)) != 1
+  ensures question_marks: result == free_count(self.branch_list(1)[0])
+  ensures size: self.size == 2 ** result
+
+# Branches: single-branch patterns in dotted form, disjoint, covering, ordered by their
+# smallest member, determined by the set and the width.
+fn bitpattern.pattern.Pattern.branches(self) -> list<string>
+  ensures empty: (self.size == 0) == (len(result) == 0)
+  ensures dotted_form: all(b in result: dotted(undot(b)) == b and len(undot(b)) == self.width)
+  ensures exact_cover: self.width >= 1 and self.width <= 9 implies all(x in range(0, 2 ** self.width): count(b in result: bmatch(b, x)) == (if x in elems_p(self) then 1 else 0))
+  ensures by_smallest: self.width >= 1 and self.width <= 40 implies is_sorted(map(b in result: smallest(b))) and distinct(map(b in result: smallest(b)))
+  ensures sizes: self.width >= 1 and self.width <= 40 and len(result) <= 512 implies sum(b in result: 2 ** free_count(b)) == self.size
+  relates set_and_width_only: result == bitpattern.pattern.Pattern.branches(bitpattern.pattern.Pattern.from_bdd(self.bdd, self.width))
+
+fn variant.Pattern_str(p: bitpattern.pattern.Pattern) -> string
+  ensures empty: p.size == 0 implies result == ""
+  ensures one: len(p.branch_list(9)) == 1 implies result == p.branch_list(1)[0]
+  ensures two: len(p.branch_list(9)) == 2 implies result == p.branch_list(2)[0] + " | " + p.branch_list(2)[1]
+  ensures three: len(p.branch_list(9)) == 3 implies result == p.branch_list(3)[0] + " | " + p.branch_list(3)[1] + " | " + p.branch_list(3)[2]
+
+fn variant.Pattern_repr(p: bitpattern.pattern.Pattern) -> string
+  ensures zero_width: p.width == 0 implies result == "<Pattern: width=0, size=" + dec(p.size) + ">"
+  ensures empty: p.width >= 1 and p.size == 0 implies result == "~Pattern('" + dotted(from_codepoints(map(i in range(0, p.width): 63))) + "')"
+  ensures one: p.width >= 1 and p.width <= 40 and len(p.branch_list(9)) == 1 implies result == "Pattern('" + p.branch_list(1)[0] + "')"
+  ensures two: p.width >= 1 and p.width <= 40 and len(p.branch_list(9)) == 2 implies result == "Pattern('" + p.branch_list(2)[0] + "') | Pattern('" + p.branch_list(2)[1] + "')"
+  ensures three: p.width >= 1 and p.width <= 40 and len(p.branch_list(9)) == 3 implies result == "Pattern('" + p.branch_list(3)[0] + "') | Pattern('" + p.branch_list(3)[1] + "') | Pattern('" + p.branch_list(3)[2] + "')"
+  ensures summary: p.width >= 1 and len(p.branch_list(9)) > 8 implies result == "<Pattern: " + dec(len(p.branch_list(100000))) + " branches, width=" + dec(p.width) + ", size=" + dec(p.size) + ">"
+
+fn bitpattern.pattern.Pattern.from_bdd(bdd: bitpattern.bdd.BDD, width: i16) -> bitpattern.pattern.Pattern
+  raises ValueError when bdd.bit >= width
+  ensures width: result.width == width
+  ensures size: width >= 0 and width <= 127 implies result.size == bitpattern.bdd.count(bdd, width)
+  ensures members: width <= 8 implies elems_p(result) == filter(x in range(0, 2 ** width): bitpattern.bdd.accepts(bdd, x))
+
+# Operators keep the type of the left operand.
+fn bitpattern.pattern.Pattern.__or__(self, other: bitpattern.intset.IntSet) -> bitpattern.pattern.Pattern
+  ensures members: self.size <= 512 and other.size <= 512 implies same_members(elems_p(result), elems_p(self) + elems(other))
+  ensures width: result.width == imax(self.width, other.width)
+
+fn bitpattern.pattern.Pattern.__and__(self, other: bitpattern.intset.IntSet) -> bitpattern.pattern.Pattern
+  ensures members: self.size <= 512 and other.size <= 512 implies same_members(elems_p(result), inter_of(elems_p(self), elems(other)))
+  ensures width: result.width == imax(self.width, other.width)
+
+fn bitpattern.pattern.Pattern.__invert__(self) -> bitpattern.pattern.Pattern
+  ensures width: result.width == self.width
+  ensures size: result.size == 2 ** self.width - self.size
+  ensures members: self.width <= 9 implies elems_p(result) == filter(x in range(0, 2 ** self.width): not (x in elems_p(self)))
+
+fn bitpattern.pattern.Pattern.widened(self, width: int) -> bitpattern.pattern.Pattern
+  ensures width: result.width == imax(self.width, width)
+  ensures same_size: result.size == self.size
+  ensures single_branch_dotted: width <= 64 and len(self.branch_list(2)) == 1 implies result.branch_list(2) == [dotted(from_codepoints(map(i in range(0, imax(width - self.width, 0)): 48)) + undot(self.branch_list(1)[0]))]
+  relates equal_to_original: variant.Pattern_eq_pattern(result, self)
+
+# Equality ignores width, across Pattern and IntSet.
+fn bitpattern.pattern.Pattern.__eq__(self, other: bitpattern.intset.IntSet) -> bool
+  ensures members: self.size <= 512 and other.size <= 512 implies result == same_members(elems_p(self), elems(other))
+  ensures same_set: bitpattern.pattern.Pattern.__eq__(self, bitpattern.IntSet.from_bdd(self.bdd, self.width))
+
+fn variant.Pattern_eq_pattern(a: bitpattern.pattern.Pattern, b: bitpattern.pattern.Pattern) -> bool
+  ensures members: a.size <= 512 and b.size <= 512 implies result == same_members(elems_p(a), elems_p(b))
+  ensures symmetric: result == variant.Pattern_eq_pattern(b, a)
+
+fn variant.Pattern_hash(p: bitpattern.pattern.Pattern) -> int
+  relates widths_and_types: builtins.hash(bitpattern.intset.IntSet.widened(bitpattern.IntSet.from_bdd(p.bdd, p.width), 200)) == result
+
+fn variant.IntSet_index_float(s: bitpattern.intset.IntSet, value: f64, start: i8 = 0) -> int
+  raises ValueError when true
