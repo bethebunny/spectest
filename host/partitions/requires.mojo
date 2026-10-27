@@ -10,7 +10,7 @@ from numeric.real import Real
 from sets import BitSet, SetContext
 from syntax.ast import Ast
 
-from .compile import Elem, SetCompiler, alias_elems, elem_of
+from .compile import Elem, SetCompiler, alias_elems, elem_of, positional_args
 from .ranges import float_equal, float_range
 
 
@@ -28,7 +28,7 @@ def _not_a_set() -> Error:
 
 
 struct Predicate(Movable):
-    """A predicate over one parameter as sets, in v1's analysis."""
+    """A predicate over one parameter as sets."""
 
     var comp: SetCompiler
     var param: String
@@ -58,9 +58,9 @@ struct Predicate(Movable):
     def admitted(mut self, mut ctx: SetContext, ast: Ast, e: Int) -> List[BitSet]:
         """Sets that contain every value the clause admits, splitting top-level
         `and`."""
-        var v = self.compile(ctx, ast, e)
-        if v:
-            return [v.value().true]
+        var verdicts = self.compile(ctx, ast, e)
+        if verdicts is not None:
+            return [verdicts.value().true]
         ref n = ast.nodes[e]
         if n.kind == sx.BINARY and n.op == sx.AND:
             var out = self.admitted(ctx, ast, n.kids[0])
@@ -72,15 +72,17 @@ struct Predicate(Movable):
         ref n = ast.nodes[e]
         if n.kind == sx.NAME:
             return n.text == self.param
-        if n.kind == sx.CALL and len(n.kids) == 3:
+        if n.kind == sx.CALL:
+            var args = positional_args(ast, e)
             ref callee = ast.nodes[n.kids[0]]
             if (
-                callee.kind == sx.NAME
+                args is not None
+                and len(args.value()) == 1
+                and callee.kind == sx.NAME
                 and callee.text == "real"
                 and len(ast.nodes[n.kids[1]].kids) == 0
-                and ast.nodes[n.kids[2]].text == ""
             ):
-                return self.is_param(ast, ast.kid(n.kids[2], 0))
+                return self.is_param(ast, args.value()[0])
         return False
 
     def _complement(mut self, mut ctx: SetContext, true: BitSet) -> Verdicts:
@@ -98,9 +100,7 @@ struct Predicate(Movable):
         if n.kind == sx.UNARY and n.op == sx.NOT:
             var v = self.pred(ctx, ast, n.kids[0])
             return Verdicts(v.false, v.true)
-        if n.kind == sx.BINARY and (
-            n.op == sx.AND or n.op == sx.OR or n.op == sx.IMPLIES
-        ):
+        if n.kind == sx.BINARY and n.op in [sx.AND, sx.OR, sx.IMPLIES]:
             var a = self.pred(ctx, ast, n.kids[0])
             var b = self.pred(ctx, ast, n.kids[1])
             if n.op == sx.AND:
@@ -132,11 +132,12 @@ struct Predicate(Movable):
             )
         if n.kind == sx.CALL:
             ref callee = ast.nodes[n.kids[0]]
+            var args = positional_args(ast, e)
             if (
                 callee.kind == sx.NAME
-                and len(n.kids) == 3
-                and ast.nodes[n.kids[2]].text == ""
-                and self.is_param(ast, ast.kid(n.kids[2], 0))
+                and args is not None
+                and len(args.value()) == 1
+                and self.is_param(ast, args.value()[0])
             ):
                 return self._complement(ctx, self.test(ctx, ast, callee.text, e))
             raise _not_a_set()
@@ -148,9 +149,7 @@ struct Predicate(Movable):
                 raise _not_a_set()
             var true = self.nothing
             for x in right.kids:
-                true = ctx.union(
-                    true, self.int_compare(ctx, sx.EQ, self.comp.const(ast, x))
-                )
+                true = ctx.union(true, self.int_compare(ctx, sx.EQ, self.comp.const(ast, x)))
             return self._complement(ctx, true)
         if n.kind == sx.BINARY and n.op >= sx.EQ and n.op <= sx.GE:
             if self.is_param(ast, n.kids[0]):
@@ -167,32 +166,19 @@ struct Predicate(Movable):
         var elem = self.comp.elem
         ref typeargs = ast.nodes[ast.kid(call, 1)]
         if elem.is_float() and len(typeargs.kids) == 0:
-            var name = String()
-            if name_of_fn == "is_nan":
-                name = "nan"
-            elif name_of_fn == "is_inf":
-                name = "inf"
-            elif name_of_fn == "is_finite":
-                name = "finite"
-            elif name_of_fn == "is_zero":
-                name = "zero"
-            elif name_of_fn == "is_subnormal":
-                name = "subnormal"
-            elif name_of_fn == "signbit":
-                name = "negative"
-            if name != "":
-                return ctx.float_named(elem.format(), name)
+            var float_set = _float_set_named(name_of_fn)
+            if float_set != "":
+                return ctx.float_named(elem.format(), float_set)
         if elem.is_int() and name_of_fn == "fits" and len(typeargs.kids) == 1:
             ref texpr = ast.nodes[typeargs.kids[0]]
             if texpr.kind == sx.TYPE and len(texpr.kids) == 0:
-                var t = self.comp.type_named(texpr.text)
-                if t and t.value().is_int():
-                    var target = t.value()
+                var target = self.comp.type_named(texpr.text)
+                if target is not None and target.value().is_int():
                     return ctx.int_range(
                         elem.width,
                         elem.signed,
-                        Optional[BigInt](target.int_min()),
-                        Optional[BigInt](target.int_max() + BigInt(1)),
+                        target.value().int_min(),
+                        target.value().int_max() + BigInt(1),
                     )
         raise _not_a_set()
 
@@ -206,7 +192,7 @@ struct Predicate(Movable):
             raise _not_a_set()
         var f = elem.format()
         var ordered = ctx.difference(self.everything, ctx.float_named(f, "nan"))
-        var below = float_range(ctx, f, None, Optional[Real](c.copy()))
+        var below = float_range(ctx, f, None, c.copy())
         var at_most = ctx.union(below, float_equal(ctx, f, c))
         var true: BitSet
         if op == sx.LT:
@@ -223,12 +209,8 @@ struct Predicate(Movable):
         mut self, mut ctx: SetContext, op: UInt8, c: Real
     ) raises -> BitSet:
         var elem = self.comp.elem
-        var below = ctx.int_range(
-            elem.width, elem.signed, None, Optional[BigInt](c.ceil())
-        )
-        var at_most = ctx.int_range(
-            elem.width, elem.signed, None, Optional[BigInt](c.floor() + BigInt(1))
-        )
+        var below = ctx.int_range(elem.width, elem.signed, None, c.ceil())
+        var at_most = ctx.int_range(elem.width, elem.signed, None, c.floor() + BigInt(1))
         if op == sx.LT:
             return below
         if op == sx.LE:
@@ -241,6 +223,25 @@ struct Predicate(Movable):
         if op == sx.EQ:
             return equal
         return ctx.difference(self.everything, equal)
+
+
+def _float_set_named(fn_name: String) -> String:
+    """The float set that the predicate function `fn_name` tests, or empty."""
+    match fn_name:
+        case "is_nan":
+            return "nan"
+        case "is_inf":
+            return "inf"
+        case "is_finite":
+            return "finite"
+        case "is_zero":
+            return "zero"
+        case "is_subnormal":
+            return "subnormal"
+        case "signbit":
+            return "negative"
+        case _:
+            return ""
 
 
 def _flipped(op: UInt8) -> UInt8:
@@ -265,19 +266,14 @@ def admitted(
     ref f = spec.fns[fn_pos]
     ref p = f.params[param]
     var elem = elem_of(spec.types, p.type)
-    if not elem:
+    if elem is None:
         return None
-    var pred = Predicate(
-        ctx, p.name, elem.value(), alias_elems(spec.types, spec.aliases)
-    )
+    var pred = Predicate(ctx, p.name, elem.value(), alias_elems(spec.types, spec.aliases))
     var target: Optional[BitSet] = None
     for ci in f.clauses:
         ref clause = spec.clauses[ci]
         if clause.kind != sx.REQUIRES or clause.expr == 0:
             continue
         for s in pred.admitted(ctx, spec.ast, clause.expr):
-            if target:
-                target = ctx.intersection(target.value(), s)
-            else:
-                target = s
+            target = s if target is None else ctx.intersection(target.value(), s)
     return target
