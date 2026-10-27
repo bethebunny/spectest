@@ -8,6 +8,7 @@ import check.types as ty
 import syntax.ast as sx
 from bigint import BigUInt
 from check.spec import Partition, Spec
+from numeric.digits import hex_digits
 from numeric.fixed import low_mask, signed_of
 from numeric.floats import is_nan
 from numeric.formats import format_by_id
@@ -69,19 +70,12 @@ def _count_text(n: BigUInt) -> String:
     return String("about 2^", tenths // 10, ".", tenths % 10, noun)
 
 
-def _hex(bits: UInt64, digits: Int) -> String:
-    comptime DIGITS = "0123456789abcdef"
-    return String("").join(
-        [String(DIGITS[byte=Int((bits >> UInt64(4 * k)) & 15)]) for k in range(digits - 1, -1, -1)]
-    )
-
-
 def value_text(elem: Elem, bits: UInt64) raises -> String:
     """A pattern as a value: `0.0 (0x0000000000000000)`, `-3`, `true`."""
     if elem.kind == ty.BOOL:
         return "true" if bits != 0 else "false"
     if elem.is_float():
-        return String(float_text(elem.format_id, bits), " (0x", _hex(bits, elem.width // 4), ")")
+        return String(float_text(elem.format_id, bits), " (0x", hex_digits(bits, width=elem.width // 4), ")")
     if elem.signed:
         return String(signed_of(bits, elem.width))
     return String(bits)

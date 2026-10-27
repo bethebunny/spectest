@@ -8,16 +8,14 @@ from .choices import Choices, Span
 
 comptime HEADER = "mcheck-choices 1"
 comptime PLAIN = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
-comptime HEX = "0123456789abcdef"
 
 
 def file_name(dir: String, key: String, suffix: String) -> String:
     """`dir`/`key` with every byte outside `PLAIN` escaped as `.` and two hex digits."""
     var name = String()
     for b in key.as_bytes():
-        var c = Int(b)
-        var hi, lo = c // 16, c % 16
-        name += chr(c) if chr(c) in PLAIN else String(".", HEX[byte=hi : hi + 1], HEX[byte=lo : lo + 1])
+        var c = chr(Int(b))
+        name += c if c in PLAIN else String(".", hex(b, prefix="").ascii_rjust(2, "0"))
     return String(dir, "/", name, suffix)
 
 

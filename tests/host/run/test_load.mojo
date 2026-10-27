@@ -1,8 +1,9 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from check.spec import Spec
+from numeric.digits import hex_digits
 from run.items import items_of
-from run.load import fnv, hex16, load, load_source
+from run.load import fnv, load, load_source
 from run.options import RunOptions
 from run.results import (
     AggregateSummary,
@@ -45,8 +46,8 @@ def has(text: String, fragment: String) raises:
 def test_fnv_is_the_standard_hash() raises:
     assert_equal(fnv(""), UInt64(0xCBF29CE484222325))
     assert_equal(fnv("a"), UInt64(0xAF63DC4C8601EC8C))
-    assert_equal(hex16(UInt64(0xAF63DC4C8601EC8C)), "af63dc4c8601ec8c")
-    assert_equal(hex16(UInt64(255)), "00000000000000ff")
+    assert_equal(hex_digits(UInt64(0xAF63DC4C8601EC8C), width=16), "af63dc4c8601ec8c")
+    assert_equal(hex_digits(UInt64(255), width=16), "00000000000000ff")
 
 
 def test_load_keeps_the_spec_its_sets_and_a_hash() raises:

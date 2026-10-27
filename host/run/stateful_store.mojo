@@ -10,6 +10,7 @@ from std.os.path import exists
 from std.pathlib import Path
 
 from mcheck.choices import Choices
+from mcheck.store import file_name
 
 comptime HEADER = "stateful-steps 1"
 
@@ -29,16 +30,6 @@ struct Stored(Movable):
         self.arg_value = []
 
 
-def _file_name(dir: String, key: String) -> String:
-    comptime DIGITS = "0123456789abcdef"
-    var name = String()
-    for b in key.as_bytes():
-        var c = Int(b)
-        var plain = (c >= ord("a") and c <= ord("z")) or (c >= ord("A") and c <= ord("Z")) or (c >= ord("0") and c <= ord("9")) or c == ord("-") or c == ord("_")
-        name += chr(c) if plain else String(".", DIGITS[byte = c // 16 : c // 16 + 1], DIGITS[byte = c % 16 : c % 16 + 1])
-    return String(dir, "/", name, ".steps")
-
-
 def save_stored(dir: String, key: String, stored: Stored) raises:
     makedirs(dir, exist_ok=True)
     var text = String(HEADER, "\n")
@@ -48,11 +39,11 @@ def save_stored(dir: String, key: String, stored: Stored) raises:
         text += String("d ", sid, "\n")
     for sid, index, value in zip(stored.arg_sid, stored.arg_index, stored.arg_value):
         text += String("a ", sid, " ", index, " ", value, "\n")
-    Path(_file_name(dir, key)).write_text(text)
+    Path(file_name(dir, key, ".steps")).write_text(text)
 
 
 def load_stored(dir: String, key: String) raises -> Optional[Stored]:
-    var path = _file_name(dir, key)
+    var path = file_name(dir, key, ".steps")
     if not exists(path):
         return None
     var lines = Path(path).read_text().split("\n")
