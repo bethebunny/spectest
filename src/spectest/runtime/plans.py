@@ -11,16 +11,14 @@ optional timeout), the outcome and a verdict per requested item.
 
 from __future__ import annotations
 
-import signal
-import threading
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from spectest import ast
 from spectest import eval as ev
+from spectest.alarm import CallTimeout, alarm, can_time_out
 from spectest.lang.spec import Spec
 from spectest.runtime import binding
 from spectest.runtime.binding import Conformance, TypeMismatch
@@ -69,10 +67,6 @@ class ClauseFailure(AssertionError):
         self.counterexample = counterexample
 
 
-class CallTimeout(BaseException):
-    """An implementation call ran past ``--spectest-timeout``: the verdict is inconclusive."""
-
-
 # ---------------------------------------------------------------------------
 # Calling an implementation
 
@@ -89,25 +83,6 @@ class CallOutcome:
     value: Any = None
     exc: BaseException | None = None
     warnings: list[str] = field(default_factory=list)
-
-
-@contextmanager
-def _alarm(seconds: float) -> Iterator[None]:
-    def expire(signum: int, frame: Any) -> None:
-        raise CallTimeout(f"timed out after {seconds:g}s")
-
-    previous = signal.signal(signal.SIGALRM, expire)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
-    try:
-        yield
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
-
-
-def can_time_out() -> bool:
-    """Timeouts need SIGALRM and the main thread."""
-    return hasattr(signal, "setitimer") and threading.current_thread() is threading.main_thread()
 
 
 def invoke(
@@ -136,7 +111,7 @@ def _invoke(
         except Exception as exc:  # noqa: BLE001
             return CallOutcome("raised", exc=exc)
     try:
-        with _alarm(timeout):
+        with alarm(timeout):
             try:
                 value = fn(*args, **kwargs)
             except Exception as exc:  # noqa: BLE001
