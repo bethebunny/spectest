@@ -3,8 +3,8 @@ docs/v2/protocol.md).
 
 Untyped: a wire object becomes the Value of its own kind, `None` an empty OPTION, and
 `Converted(cls, v)` the Value of `v` (the class is dropped). A present OPTION goes to
-Python unwrapped. Every reference taken here is released; `to_python` returns a new
-reference."""
+Python unwrapped.
+"""
 
 from std.ffi import c_int
 from std.python._cpython import PyObjectPtr
@@ -12,26 +12,14 @@ from std.python._cpython import PyObjectPtr
 from numeric.bigint import BigInt
 from numeric.formats import format_by_id, format_by_name
 from wire.value import (
-    BOOL,
-    BYTES,
-    ENUM,
-    ERROR,
-    FLOAT,
-    HANDLE,
-    INT,
-    LIST,
-    MAP,
-    OPTION,
-    RECORD,
-    STRING,
-    TUPLE,
-    Value,
+    BOOL, BYTES, ENUM, ERROR, FLOAT, HANDLE, INT, LIST, MAP, OPTION, RECORD, STRING, TUPLE, Value,
 )
 
 from .capi import (
-    Py_DecRef,
     Py_NewRef,
+    Py_TPFLAGS_BYTES_SUBCLASS,
     Py_TPFLAGS_LIST_SUBCLASS,
+    Py_TPFLAGS_LONG_SUBCLASS,
     Py_TPFLAGS_TUPLE_SUBCLASS,
     Py_TPFLAGS_UNICODE_SUBCLASS,
     PyBool_FromLong,
@@ -46,7 +34,6 @@ from .capi import (
     PyLong_AsUnsignedLongLong,
     PyLong_FromLongLong,
     PyLong_FromString,
-    PyLong_FromUnsignedLongLong,
     PyNumber_ToBase,
     PySequence_GetItem,
     PySequence_Size,
@@ -56,32 +43,21 @@ from .capi import (
     PyTuple_Size,
     PyType_GetFlags,
     PyType_GetQualName,
-    PyUnicode_FromStringAndSize,
     ob_type,
 )
 from .pyutil import (
-    Owned,
-    Wire,
-    attr,
-    call_stealing,
-    checked,
-    new_string,
-    python_error,
-    string_of,
-    wire,
+    Owned, Wire, attr, call, checked, new_string, new_u64, python_error, span_at, string_of, wire,
 )
-
-
-comptime Py_TPFLAGS_LONG_SUBCLASS: UInt64 = 1 << 24
-comptime Py_TPFLAGS_BYTES_SUBCLASS: UInt64 = 1 << 27
-
-
-# Python to Value
 
 
 def from_python(obj: PyObjectPtr) raises -> Value:
     """The Value of a wire object. Raises `TypeError: ...` for anything else."""
     return _from_py(obj, wire())
+
+
+def to_python(value: Value) raises -> PyObjectPtr:
+    """The wire object for a Value, a new reference."""
+    return _to_py(value, wire()).take()
 
 
 def _int_value(obj: PyObjectPtr) raises -> Value:
@@ -104,38 +80,27 @@ def _u64(obj: PyObjectPtr) raises -> UInt64:
 
 def _str(obj: PyObjectPtr) raises -> String:
     if not (PyType_GetFlags(ob_type(obj)) & Py_TPFLAGS_UNICODE_SUBCLASS):
-        raise Error("TypeError: expected a str, got " + _type_name(obj))
+        raise Error(t"TypeError: expected a str, got {_type_name(obj)}")
     var text = string_of(obj)
     if text == "?" and PyErr_Occurred():
         raise python_error()
     return text^
 
 
-def _str(obj: Owned) raises -> String:
-    return _str(obj.ptr)
+# The attribute stays alive through `obj`, so its owner may die before the call.
+def _str_attr(obj: PyObjectPtr, name: PyObjectPtr) raises -> String:
+    var value = attr(obj, name)
+    return _str(value.ptr)
 
 
-def _u64(obj: Owned) raises -> UInt64:
-    return _u64(obj.ptr)
+def _u64_attr(obj: PyObjectPtr, name: PyObjectPtr) raises -> UInt64:
+    var value = attr(obj, name)
+    return _u64(value.ptr)
 
 
 def _type_name(obj: PyObjectPtr) -> String:
     var qual = Owned(PyType_GetQualName(ob_type(obj)))
-    if not qual.ptr:
-        return "an object"
-    return string_of(qual)
-
-
-def _items(obj: Owned) raises -> List[Owned]:
-    return _items(obj.ptr)
-
-
-def _pair(obj: Owned) raises -> List[Owned]:
-    return _pair(obj.ptr)
-
-
-def _from_py(obj: Owned, w: Pointer[Wire, MutUntrackedOrigin]) raises -> Value:
-    return _from_py(obj.ptr, w)
+    return string_of(qual) if qual.ptr else "an object"
 
 
 def _items(obj: PyObjectPtr) raises -> List[Owned]:
@@ -149,10 +114,15 @@ def _items(obj: PyObjectPtr) raises -> List[Owned]:
     return out^
 
 
-def _pair(obj: PyObjectPtr) raises -> List[Owned]:
-    var items = _items(obj)
+def _items_attr(obj: PyObjectPtr, name: PyObjectPtr) raises -> List[Owned]:
+    var value = attr(obj, name)
+    return _items(value.ptr)
+
+
+def _pair(obj: Owned) raises -> List[Owned]:
+    var items = _items(obj.ptr)
     if len(items) != 2:
-        raise Error("TypeError: expected a pair, got " + String(len(items)) + " items")
+        raise Error(t"TypeError: expected a pair, got {len(items)} items")
     return items^
 
 
@@ -174,198 +144,107 @@ def _from_py(obj: PyObjectPtr, w: Pointer[Wire, MutUntrackedOrigin]) raises -> V
         var size = 0
         if PyBytes_AsStringAndSize(obj, data, size) < 0:
             raise python_error()
-        var bytes = List[UInt8](capacity=size)
-        var src = Pointer[UInt8, MutAnyOrigin](unsafe_from_address=data)
-        for i in range(size):
-            bytes.append(src[unsafe_offset=i])
-        return Value.bytes(bytes^)
+        return Value.bytes(List[UInt8](span_at(data, size)))
     if flags & Py_TPFLAGS_LIST_SUBCLASS:
-        var n = PyList_Size(obj)
-        var out = List[Value](capacity=n)
-        for i in range(n):
-            out.append(_from_py(PyList_GetItem(obj, i), w))
-        return Value.list(out^)
+        return Value.list([_from_py(PyList_GetItem(obj, i), w) for i in range(PyList_Size(obj))])
     if flags & Py_TPFLAGS_TUPLE_SUBCLASS:
-        var n = PyTuple_Size(obj)
-        var out = List[Value](capacity=n)
-        for i in range(n):
-            out.append(_from_py(PyTuple_GetItem(obj, i), w))
-        return Value.tuple(out^)
+        return Value.tuple([_from_py(PyTuple_GetItem(obj, i), w) for i in range(PyTuple_Size(obj))])
     if t == w[].float_cls:
-        var fmt = attr(obj, w[].n_fmt)
-        var bits = attr(obj, w[].n_bits)
-        return Value.float(format_by_name(_str(fmt)), _u64(bits))
+        return Value.float(
+            format_by_name(_str_attr(obj, w[].n_fmt)), _u64_attr(obj, w[].n_bits)
+        )
     if t == w[].map_cls:
-        var pairs = attr(obj, w[].n_pairs)
         var keys = List[Value]()
         var values = List[Value]()
-        for p in _items(pairs):
+        for p in _items_attr(obj, w[].n_pairs):
             var kv = _pair(p)
-            keys.append(_from_py(kv[0], w))
-            values.append(_from_py(kv[1], w))
+            keys.append(_from_py(kv[0].ptr, w))
+            values.append(_from_py(kv[1].ptr, w))
         return Value.map(keys^, values^)
     if t == w[].record_cls:
-        var type = attr(obj, w[].n_type)
-        var fields = attr(obj, w[].n_fields)
         var names = List[String]()
         var values = List[Value]()
-        for p in _items(fields):
+        for p in _items_attr(obj, w[].n_fields):
             var kv = _pair(p)
-            names.append(_str(kv[0]))
-            values.append(_from_py(kv[1], w))
-        return Value.record(_str(type), names, values^)
+            names.append(_str(kv[0].ptr))
+            values.append(_from_py(kv[1].ptr, w))
+        return Value.record(_str_attr(obj, w[].n_type), names, values^)
     if t == w[].enum_cls:
-        var type = attr(obj, w[].n_type)
-        var member = attr(obj, w[].n_member)
-        return Value.enum(_str(type), _str(member))
+        return Value.enum(_str_attr(obj, w[].n_type), _str_attr(obj, w[].n_member))
     if t == w[].handle_cls:
-        var id = attr(obj, w[].n_id)
-        var cls = attr(obj, w[].n_cls)
-        return Value.handle(_u64(id), _str(cls))
+        return Value.handle(_u64_attr(obj, w[].n_id), _str_attr(obj, w[].n_cls))
     if t == w[].error_cls:
-        var cls = attr(obj, w[].n_cls)
-        var bases = attr(obj, w[].n_bases)
-        var message = attr(obj, w[].n_message)
-        var names = List[String]()
-        for b in _items(bases):
-            names.append(_str(b))
-        return Value.error(_str(cls), names, _str(message))
+        var bases = List[String]()
+        for b in _items_attr(obj, w[].n_bases):
+            bases.append(_str(b.ptr))
+        return Value.error(
+            _str_attr(obj, w[].n_cls), bases, _str_attr(obj, w[].n_message)
+        )
     if t == w[].converted_cls:
         var inner = attr(obj, w[].n_value)
-        return _from_py(inner, w)
-    raise Error("TypeError: not a wire object: " + _type_name(obj))
+        return _from_py(inner.ptr, w)
+    raise Error(t"TypeError: not a wire object: {_type_name(obj)}")
 
 
-# Value to Python
-
-
-def to_python(value: Value) raises -> PyObjectPtr:
-    """The wire object for a Value, a new reference."""
-    return _to_py(value, wire())
-
-
-def _tuple2(first: PyObjectPtr, second: PyObjectPtr) -> PyObjectPtr:
-    var made = PyTuple_New(2) if first and second else PyObjectPtr()
-    if not made:
-        Py_DecRef(first)
-        Py_DecRef(second)
-        return made
-    _ = PyTuple_SetItem(made, 0, first)
-    _ = PyTuple_SetItem(made, 1, second)
-    return made
-
-
-def _to_py(value: Value, w: Pointer[Wire, MutUntrackedOrigin]) raises -> PyObjectPtr:
+def _to_py(value: Value, w: Pointer[Wire, MutUntrackedOrigin]) raises -> Owned:
     var kind = value.kind
     if kind == BOOL:
-        return checked(PyBool_FromLong(value.as_bool()))
+        return Owned(checked(PyBool_FromLong(value.as_bool())))
     if kind == INT:
-        var small = value.small_int()
-        if small:
-            return checked(PyLong_FromLongLong(Int64(small.value())))
-        var text = value.as_bigint().hex()
-        var bytes = List[UInt8](capacity=text.byte_length() + 1)
-        for b in text.as_bytes():
-            bytes.append(b)
-        bytes.append(0)
-        var made = PyLong_FromString(Int(bytes.unsafe_ptr()), 16)
-        _ = len(bytes)  # keeps the text alive through the call
-        return checked(made)
+        var small: Optional[Int]
+        if (small := value.small_int()) is not None:
+            return Owned(checked(PyLong_FromLongLong(Int64(small.value()))))
+        var digits: List[UInt8] = [b for b in value.as_bigint().hex().as_bytes()]
+        digits.append(0)
+        var made = PyLong_FromString(Int(digits.unsafe_ptr()), 16)
+        _ = len(digits)  # keeps the text alive through the call
+        return Owned(checked(made))
     if kind == FLOAT:
         var fmt = format_by_id(value.float_format_id())
-        var args = List[PyObjectPtr]()
-        args.append(PyUnicode_FromStringAndSize(String(fmt.name())))
-        args.append(PyLong_FromUnsignedLongLong(value.float_bits()))
-        return call_stealing(w[].float_cls, args)
+        return call(w[].float_cls, [new_string(String(fmt.name())), new_u64(value.float_bits())])
     if kind == STRING:
         return new_string(value.text())
     if kind == BYTES:
         ref data = value.data()
-        return checked(PyBytes_FromStringAndSize(Int(data.unsafe_ptr()), len(data)))
+        return Owned(checked(PyBytes_FromStringAndSize(Int(data.unsafe_ptr()), len(data))))
     if kind == LIST:
-        var n = value.count()
-        var out = checked(PyList_New(n))
-        for i in range(n):
-            var item: PyObjectPtr
-            try:
-                item = _to_py(value.item(i), w)
-            except e:
-                Py_DecRef(out)
-                raise e^
-            _ = PyList_SetItem(out, i, item)
-        return out
+        var out = Owned(checked(PyList_New(value.count())))
+        for i in range(value.count()):
+            _ = PyList_SetItem(out.ptr, i, _to_py(value.item(i), w).take())
+        return out^
     if kind == TUPLE:
-        return _tuple_of(value, 0, 1, w)
+        return _tuple_of_items(value, w)
     if kind == OPTION:
-        if value.count() == 0:
-            return Py_NewRef(w[].none)
-        return _to_py(value.item(0), w)
+        return Owned(Py_NewRef(w[].none)) if value.count() == 0 else _to_py(value.item(0), w)
     if kind == MAP:
-        var args = List[PyObjectPtr]()
-        args.append(_pairs(value, w))
-        return call_stealing(w[].map_cls, args)
+        return call(w[].map_cls, [_pairs(value, w)])
     if kind == RECORD:
-        var args = List[PyObjectPtr]()
-        args.append(PyUnicode_FromStringAndSize(value.name()))
-        args.append(_pairs(value, w))
-        return call_stealing(w[].record_cls, args)
+        return call(w[].record_cls, [new_string(value.name()), _pairs(value, w)])
     if kind == ENUM:
-        var args = List[PyObjectPtr]()
-        args.append(PyUnicode_FromStringAndSize(value.name()))
-        args.append(PyUnicode_FromStringAndSize(value.text()))
-        return call_stealing(w[].enum_cls, args)
+        return call(w[].enum_cls, [new_string(value.name()), new_string(value.text())])
     if kind == HANDLE:
-        var args = List[PyObjectPtr]()
-        args.append(PyLong_FromUnsignedLongLong(value.handle_id()))
-        args.append(PyUnicode_FromStringAndSize(value.name()))
-        return call_stealing(w[].handle_cls, args)
+        return call(w[].handle_cls, [new_u64(value.handle_id()), new_string(value.name())])
     if kind == ERROR:
-        var args = List[PyObjectPtr]()
-        args.append(PyUnicode_FromStringAndSize(value.name()))
-        args.append(_tuple_of(value, 0, 1, w))
-        args.append(PyUnicode_FromStringAndSize(value.text()))
-        return call_stealing(w[].error_cls, args)
-    raise Error("TypeError: a " + String(kind) + " value has no wire form")
+        return call(
+            w[].error_cls,
+            [new_string(value.name()), _tuple_of_items(value, w), new_string(value.text())],
+        )
+    raise Error(t"TypeError: a {kind} value has no wire form")
 
 
-def _tuple_of(
-    value: Value, start: Int, step: Int, w: Pointer[Wire, MutUntrackedOrigin]
-) raises -> PyObjectPtr:
-    """A tuple of the value's heap items at `start`, `start + step`, ..."""
-    var n = value.item_count() // step
-    var out = checked(PyTuple_New(n))
-    for i in range(n):
-        var item: PyObjectPtr
-        try:
-            item = _to_py(value.item(start + i * step), w)
-        except e:
-            Py_DecRef(out)
-            raise e^
-        _ = PyTuple_SetItem(out, i, item)
-    return out
+def _tuple_of_items(value: Value, w: Pointer[Wire, MutUntrackedOrigin]) raises -> Owned:
+    var out = Owned(checked(PyTuple_New(value.item_count())))
+    for i in range(value.item_count()):
+        _ = PyTuple_SetItem(out.ptr, i, _to_py(value.item(i), w).take())
+    return out^
 
 
-def _pairs(value: Value, w: Pointer[Wire, MutUntrackedOrigin]) raises -> PyObjectPtr:
-    """A MAP's or RECORD's items as a tuple of (key, value) pairs. A RECORD's field
-    names are STRING values, which come out as str."""
-    var n = value.count()
-    var out = checked(PyTuple_New(n))
-    for i in range(n):
-        var made: PyObjectPtr
-        try:
-            var key = _to_py(value.item(2 * i), w)
-            var item: PyObjectPtr
-            try:
-                item = _to_py(value.item(2 * i + 1), w)
-            except e:
-                Py_DecRef(key)
-                raise e^
-            made = _tuple2(key, item)
-        except e:
-            Py_DecRef(out)
-            raise e^
-        if not made:
-            Py_DecRef(out)
-            raise python_error()
-        _ = PyTuple_SetItem(out, i, made)
-    return out
+def _pairs(value: Value, w: Pointer[Wire, MutUntrackedOrigin]) raises -> Owned:
+    """A MAP's or RECORD's items as a tuple of (key, value) pairs."""
+    var out = Owned(checked(PyTuple_New(value.count())))
+    for i in range(value.count()):
+        var pair = Owned(checked(PyTuple_New(2)))
+        _ = PyTuple_SetItem(pair.ptr, 0, _to_py(value.item(2 * i), w).take())
+        _ = PyTuple_SetItem(pair.ptr, 1, _to_py(value.item(2 * i + 1), w).take())
+        _ = PyTuple_SetItem(out.ptr, i, pair^.take())
+    return out^
