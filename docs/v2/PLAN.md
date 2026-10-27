@@ -166,4 +166,4 @@ author.
 | plugin | landed. `spectest.check` and `.spec` arguments run through the host |
 | stateful | landed. A 100-sequence run of a deque-like class takes about 0.5 s |
 | preludes | landed. User preludes and `use`, each file named in diagnostics and items |
-| shrinking | landed. Equal-value and pair passes, long lists that shorten, shrunk spec errors (functions only, not interfaces) |
+| shrinking | landed. Equal-value and pair passes, long lists that shorten, shrunk spec errors (functions only; interfaces don't shrink them) |

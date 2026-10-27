@@ -85,7 +85,7 @@ Prefer these Python-like forms. Each was compiled on 1.2:
   `assert_equal` rejects it; compare with `assert_true(a == b)`.
 - `BigInt`, `BigUInt` and `Real` are `Copyable` but not `ImplicitlyCopyable`: pass them
   with `.copy()` or `^`, also inside call arguments and when returning a local (`r^`).
-  `BigUInt(x)` takes a `UInt64`, `UInt128` or literal, not a runtime `Int`.
+  `BigUInt(x)` takes a `UInt64`, `UInt128` or literal (a runtime `Int` is rejected).
 - A list literal of one element type can infer a fixed-size array: write
   `var xs: List[T] = [a, b]` where a `List` is expected. `for x in xs` needs a
   copyable element type; use `for i in range(len(xs))` otherwise. A module-level
@@ -135,7 +135,7 @@ Prefer these Python-like forms. Each was compiled on 1.2:
   v0.3.0:src/python/capi.mojo` (and `lib.mojo`, `objects.mojo`, `errors.mojo`,
   `args.mojo` in the same directory), and `git -C ~/bitpattern show
   v0.3.0:hatch_build.py` for building and loading the shared library. It defines the
-  module with the C API directly rather than with `PythonModuleBuilder`; the reasons
+  module with the C API directly (`PythonModuleBuilder` is avoided); the reasons
   are in `~/bitpattern/upstream/` (`bug-python-import-changes-process-environment.md`,
   `bug-python-errors-lose-exception-types.md` and others).
 - `~/bitpattern/upstream/*.md`: Mojo bugs met so far, with workarounds.

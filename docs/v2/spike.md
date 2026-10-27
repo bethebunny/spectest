@@ -41,14 +41,14 @@ about 0.25 us for a call with trivial arguments, and in the low single digits of
 microseconds for realistic arguments. That is about four orders of magnitude under v1
 and 1 to 10 percent of the v2 budget.
 
-So the bridge does not threaten the 50 us target on its own. What the floor says:
+The bridge alone does not threaten the 50 us target. The floor implies:
 
 - An example with a handful of scalar arguments costs about 1 us in the bridge, plus
   whatever the driver and the code under test spend. The driver's marshalling (its
   `to_python` and `to_wire` in Python) is the larger share, as the stub column shows:
   Python-side conversion of a 100-element list costs several times what the host spends
   converting it.
-- Large arguments are the risk, not call counts: about 0.07 us per list element
+- Large arguments are the risk (call counts are cheap): about 0.07 us per list element
   round-tripped. A 1,000-element argument spends about 70 us in the bridge, past the
   whole per-example budget. Generators that routinely produce arguments of that size
   need the driver and host to avoid converting them (by handle) or the target to be
