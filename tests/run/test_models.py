@@ -82,6 +82,16 @@ fn runimpls.half(x: i32) -> i32
   relates odd_neighbour: runimpls.half(x + 1) * 2 == x + 1
   relates doubled: runimpls.half(2 * x) == x
 
+fn runimpls.Box.get(self, i: int) -> option<i32>
+  ensures in_range: 0 <= i and i < len(self.items) implies unwrap(result) == self.items[i]
+  ensures out_of_range: (i < 0 or i >= len(self.items)) implies is_none(result)
+
+fn runimpls.Box.size(self) -> int
+  ensures length: result == len(self.items)
+
+fn runimpls.Box.get_wrong(self, i: int) -> option<i32>
+  ensures in_range: 0 <= i and i < len(self.items) implies unwrap(result) == self.items[i]
+
 fn runimpls.counted(x: i32) -> i32
   relates twice: runimpls.counted(x) == runimpls.counted(x)
 """
@@ -203,3 +213,21 @@ def test_identical_planned_calls_are_made_once(spec):
     assert r.passed_all(), r.data
     # One call per example for the clauses, plus one planned call (the two are identical).
     assert len(runimpls.CALLS) == 2 * r.examples
+
+
+def test_a_method_takes_its_receiver_first(spec):
+    r = spec.run("runimpls.Box.get", max_examples=200)
+    assert r.passed_all(), r.data
+    assert r["runimpls.Box.get.in_range"]["counts"]["pass"] == 200
+    assert r["runimpls.Box.get#frame"]["counts"]["pass"] == 200
+
+
+def test_a_property_is_read_through_its_receiver(spec):
+    r = spec.run("runimpls.Box.size", max_examples=50)
+    assert r.passed_all(), r.data
+
+
+def test_a_method_the_driver_cannot_resolve_is_a_spec_error(spec):
+    r = spec.run("runimpls.Box.get_wrong", max_examples=100)
+    assert r.failed() == []
+    assert any("no attribute get_wrong" in e for e in r.spec_errors())

@@ -28,8 +28,12 @@ One dict per clause that a run judges, and per built-in clause:
 }
 ```
 
-`requires` clauses and freedoms (`unspecified`, `impl_defined`, `perf`) are not items.
-An aggregate clause is an item of its function, judged in the same `run`.
+`requires` clauses and freedoms (`may_raise`, `unspecified`, `impl_defined`, `perf`) are
+not items. An aggregate clause is an item of its function, judged in the same `run`.
+Besides the written clauses a function has `<decl>#type` and `<decl>#raises`, a
+`<decl>#frame` item (kind `"frame"`) when it takes a model and has no `modifies`, and
+one `<decl>:<invariant id>` item (kind `"invariant"`) per invariant of each model it
+returns or modifies. A `modifies` clause is an item of kind `"modifies"`.
 
 ## Options
 
@@ -41,7 +45,8 @@ An aggregate clause is an item of its function, judged in the same `run`.
     "store": ".spectest/store",  # failure store directory, or None
     "instantiation": {"T": "i64"},  # type arguments for a generic declaration
     "examples": [{"x": 1.0}],  # explicit inputs, judged before the search (wire objects)
-    "strength": "dev",         # "dev" or "full"
+    "strength": "dev",         # "dev" or "full": the shrink budget, 5000 or 20000 steps
+    "aggregate_samples": 10000,  # members an aggregate clause visits of a set above exhaustive_limit
 }
 ```
 
