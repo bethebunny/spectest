@@ -4,7 +4,8 @@ subexpressions that matter, following the failing structure."""
 from check import types as ty
 from check.spec import Spec, R_OLD
 from syntax import ast
-from wire.value import Value, BOOL
+from wire import value as wv
+from wire.value import Value
 
 from .core import ev, tkind, set_members
 from .env import Env, Run
@@ -35,10 +36,13 @@ struct Outcome(Copyable, Movable):
         self.note = note^
 
     def is_bool(self, want: Bool) -> Bool:
-        return self.ok and self.value.kind == BOOL and self.value.as_bool() == want
+        return self.ok and self.value.kind == wv.BOOL and self.value.as_bool() == want
 
     def is_any_bool(self) -> Bool:
-        return self.ok and self.value.kind == BOOL
+        return self.ok and self.value.kind == wv.BOOL
+
+    def text(self) -> String:
+        return self.note.copy() if not self.ok else show(self.value)
 
 
 struct Explainer(Movable):
@@ -47,8 +51,8 @@ struct Explainer(Movable):
     var limit: Int
 
     def __init__(out self, limit: Int):
-        self.pairs = List[Tuple[String, String]]()
-        self.seen = List[String]()
+        self.pairs = []
+        self.seen = []
         self.limit = limit
 
     def full(self) -> Bool:
@@ -57,23 +61,17 @@ struct Explainer(Movable):
     def into_pairs(deinit self) -> List[Tuple[String, String]]:
         return self.pairs^
 
-    def has_seen(self, text: String) -> Bool:
-        for s in self.seen:
-            if s == text:
-                return True
-        return False
+    def accepts(self, text: String) -> Bool:
+        return text not in self.seen and not self.full()
 
     def add_text(mut self, text: String, shown: String):
-        if self.has_seen(text) or self.full():
-            return
-        self.seen.append(text.copy())
-        self.pairs.append((text.copy(), short(shown, VALUE_CHARS)))
+        if self.accepts(text):
+            self.seen.append(text.copy())
+            self.pairs.append((text.copy(), short(shown, VALUE_CHARS)))
 
 
-def outcome_of[
-    H: EvalHost
-](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) -> Outcome:
-    var base = len(run.local_nodes)
+def outcome_of[H: EvalHost](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) -> Outcome:
+    var base = len(run.locals)
     try:
         return Outcome(ev(spec, e, env, run, host))
     except err:
@@ -84,13 +82,7 @@ def outcome_of[
         run.truncate(base)
         run.err_node = -1
         run.skipped = False
-        return Outcome(String("skipped: " if skipped else "error: ") + text)
-
-
-def shown(o: Outcome) -> String:
-    if not o.ok:
-        return o.note.copy()
-    return show(o.value)
+        return Outcome(String("skipped: " if skipped else "error: ", text))
 
 
 def is_literal(spec: Spec, e: Int) -> Bool:
@@ -101,10 +93,7 @@ def is_literal(spec: Spec, e: Int) -> Bool:
     if k == ast.UNARY and n.op == ast.NEG:
         return is_literal(spec, n.kids[0])
     if k == ast.LIST or k == ast.TUPLE:
-        for kid in n.kids:
-            if not is_literal(spec, kid):
-                return False
-        return True
+        return all([is_literal(spec, kid) for kid in n.kids])
     return False
 
 
@@ -119,43 +108,20 @@ def chain(spec: Spec, e: Int, op: UInt8, mut out: List[Int]):
 
 def is_old(spec: Spec, e: Int) -> Bool:
     var r = spec.resolutions.get(e)
-    return Bool(r) and r.value().kind == R_OLD
+    return r is not None and r.value().kind == R_OLD
 
 
-def add[
-    H: EvalHost
-](
-    mut ex: Explainer,
-    spec: Spec,
-    e: Int,
-    env: Env,
-    mut run: Run,
-    mut host: H,
-):
+def add[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, env: Env, mut run: Run, mut host: H):
     var text = source_text(spec, e)
-    if ex.has_seen(text) or ex.full():
-        return
-    var o = outcome_of(spec, e, env, run, host)
-    ex.add_text(text, shown(o))
+    if ex.accepts(text):
+        ex.add_text(text, outcome_of(spec, e, env, run, host).text())
 
 
 def add_known(mut ex: Explainer, spec: Spec, e: Int, o: Outcome):
-    var text = source_text(spec, e)
-    if ex.has_seen(text) or ex.full():
-        return
-    ex.add_text(text, shown(o))
+    ex.add_text(source_text(spec, e), o.text())
 
 
-def operand[
-    H: EvalHost
-](
-    mut ex: Explainer,
-    spec: Spec,
-    e: Int,
-    env: Env,
-    mut run: Run,
-    mut host: H,
-):
+def operand[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, env: Env, mut run: Run, mut host: H):
     """An operand's value, with the values that feed it when that helps."""
     if is_literal(spec, e):
         return
@@ -179,17 +145,7 @@ def operand[
     add(ex, spec, e, env, run, host)
 
 
-def walk[
-    H: EvalHost
-](
-    mut ex: Explainer,
-    spec: Spec,
-    e: Int,
-    value: Outcome,
-    env: Env,
-    mut run: Run,
-    mut host: H,
-):
+def walk[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     if ex.full():
         return
     ref n = spec.ast.nodes[e]
@@ -252,17 +208,7 @@ def walk[
     add_known(ex, spec, e, value)
 
 
-def walk_chain[
-    H: EvalHost
-](
-    mut ex: Explainer,
-    spec: Spec,
-    e: Int,
-    value: Outcome,
-    env: Env,
-    mut run: Run,
-    mut host: H,
-):
+def walk_chain[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     var op = spec.ast.nodes[e].op
     var parts = List[Int]()
     chain(spec, e, op, parts)
@@ -280,41 +226,21 @@ def walk_chain[
             walk(ex, spec, part, v, env, run, host)
 
 
-def walk_let[
-    H: EvalHost
-](
-    mut ex: Explainer,
-    spec: Spec,
-    e: Int,
-    value: Outcome,
-    env: Env,
-    mut run: Run,
-    mut host: H,
-):
+def walk_let[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     ref n = spec.ast.nodes[e]
     var bound = outcome_of(spec, n.kids[0], env, run, host)
     if not bound.ok:
         add_known(ex, spec, n.kids[0], bound)
         return
-    ex.add_text(n.text, shown(bound))
-    var base = len(run.local_nodes)
+    ex.add_text(n.text, bound.text())
+    var base = len(run.locals)
     run.push(e, bound.value.copy())
     var body = outcome_of(spec, n.kids[1], env, run, host)
     walk(ex, spec, n.kids[1], body, env, run, host)
     run.truncate(base)
 
 
-def walk_quantifier[
-    H: EvalHost
-](
-    mut ex: Explainer,
-    spec: Spec,
-    e: Int,
-    value: Outcome,
-    env: Env,
-    mut run: Run,
-    mut host: H,
-):
+def walk_quantifier[H: EvalHost](mut ex: Explainer, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     ref n = spec.ast.nodes[e]
     var witness = (n.op == ast.ALL and value.is_bool(False)) or (
         n.op == ast.EXISTS and value.is_bool(True)
@@ -335,15 +261,15 @@ def walk_quantifier[
         else:
             items = elements(coll.value, String(ast.op_name(n.op), "(...)"))
     except err:
-        add_known(ex, spec, iterable, Outcome(String("error: ") + String(err)))
+        add_known(ex, spec, iterable, Outcome(String("error: ", err)))
         return
-    var base = len(run.local_nodes)
+    var base = len(run.locals)
     run.push(e, Value.none())
-    for i in range(len(items)):
-        run.set_top(items[i].copy())
+    for item in items:
+        run.set_top(item.copy())
         var v = outcome_of(spec, n.kids[1], env, run, host)
         if not v.ok or v.is_bool(value.value.as_bool()):
-            ex.add_text(n.text, show(items[i]))
+            ex.add_text(n.text, show(item))
             if not v.ok:
                 add_known(ex, spec, n.kids[1], v)
             else:
