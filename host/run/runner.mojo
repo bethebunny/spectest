@@ -12,6 +12,7 @@ from bridge.client import DriverClient
 from check import types as ty
 from check.spec import Spec
 from eval.api import (
+    Judgment,
     class_holds,
     collect_olds,
     evaluate,
@@ -80,6 +81,11 @@ comptime SHRINK_SOURCE = 1 << 30
 """mcheck's shrinker replays through a source with this many choices at most; a
 source with a smaller limit belongs to the search proper, whose examples are counted."""
 comptime KEPT_SPEC_ERRORS = 20
+
+
+def _is_handle(spec: Spec, t: Int) -> Bool:
+    ref info = spec.types.info(t)
+    return info.kind == ty.MODEL and not info.signed
 
 
 @fieldwise_init
@@ -184,10 +190,10 @@ struct Prop(Property, Movable):
         stateful: Bool = False,
     ) raises:
         self.stateful = stateful
-        self.live = List[Value]()
-        self.live_names = List[String]()
-        self.live_text = List[String]()
-        self.self_name = String()
+        self.live = []
+        self.live_names = []
+        self.live_text = []
+        self.self_name = ""
         self.last_ran = False
         self.last_reply = Value.none()
         self.last_result = Value.none()
@@ -201,69 +207,56 @@ struct Prop(Property, Movable):
         self.seed = Int(options.seed)
         ref func = loaded.spec.fns[f]
         self.decl = func.decl_id.copy()
-        self.tenv = List[Int]()
-        # The instantiation.
-        for j in range(len(func.tparams)):
-            var found = -1
-            for k in range(len(options.inst_names)):
-                if options.inst_names[k] == func.tparams[j]:
-                    found = k
-            if found < 0:
-                raise Error(
-                    String(func.decl_id, " is generic: the run needs a type for ", func.tparams[j])
-                )
-            var t = parse_type(options.inst_types[found], loaded.spec.types)
+        self.tenv = []
+        for tparam in func.tparams:
+            if tparam not in options.inst_names:
+                raise Error(String(func.decl_id, " is generic: the run needs a type for ", tparam))
+            var t = parse_type(options.inst_types[options.inst_names.index(tparam)], loaded.spec.types)
             self.tenv.append(t)
-            self.host.tnames.append(func.tparams[j])
+            self.host.tnames.append(tparam)
             self.host.tids.append(t)
-        self.ptypes = List[Int]()
-        for p in func.params:
-            if len(func.tparams) > 0:
-                self.ptypes.append(loaded.spec.types.substitute(p.type, func.tparams, self.tenv))
-            else:
-                self.ptypes.append(p.type)
-        if len(func.tparams) > 0:
-            self.rtype = loaded.spec.types.substitute(func.result, func.tparams, self.tenv)
-        else:
-            self.rtype = func.result
-        self.infos = List[PropInfo]()
-        self.requires = List[Int]()
-        self.cond_clauses = List[Int]()
-        self.old_clauses = List[Int]()
-        self.modified = List[String]()
-        self.checked = List[Int]()
+        ref types = loaded.spec.types
+        var generic = len(func.tparams) > 0
+        self.ptypes = [types.substitute(p.type, func.tparams, self.tenv) if generic else p.type for p in func.params]
+        self.rtype = types.substitute(func.result, func.tparams, self.tenv) if generic else func.result
+        self.infos = []
+        self.requires = []
+        self.cond_clauses = []
+        self.old_clauses = []
+        self.modified = []
+        self.checked = []
         self.errors = loaded.spec.errors.copy()
-        self.result_has_model = type_has_model(loaded.spec.types, self.rtype)
+        self.result_has_model = type_has_model(types, self.rtype)
         self.domain = 0
-        self.cov_start = List[Int]()
-        self.cov_names = List[String]()
-        self.tp = List[Int]()
-        self.tf = List[Int]()
-        self.ts = List[Int]()
-        self.te = List[Int]()
-        self.causes = List[Int]()
-        self.cov = List[Int]()
-        self.fail_seen = List[Bool]()
-        self.replayed = List[Bool]()
+        self.cov_start = []
+        self.cov_names = []
+        self.tp = []
+        self.tf = []
+        self.ts = []
+        self.te = []
+        self.causes = []
+        self.cov = []
+        self.fail_seen = []
+        self.replayed = []
         self.req_skips = 0
         self.unrep_skips = 0
-        self.se_pid = List[Int]()
-        self.se_msg = List[String]()
-        self.se_input = List[String]()
-        self.se_choices = List[Choices]()
-        self.target = String()
-        self.hit_message = String()
-        self.hit_input = String()
-        self.inv_source = List[String]()
-        self.inv_value = List[String]()
-        self.vkind = List[Int]()
-        self.vnote = List[String]()
-        self.part_class = List[Int]()
-        self.defaulted = List[Bool]()
+        self.se_pid = []
+        self.se_msg = []
+        self.se_input = []
+        self.se_choices = []
+        self.target = ""
+        self.hit_message = ""
+        self.hit_input = ""
+        self.inv_source = []
+        self.inv_value = []
+        self.vkind = []
+        self.vnote = []
+        self.part_class = []
+        self.defaulted = []
         self.explain_all = False
         self.focus = -1
-        self.details = List[Detail]()
-        self._plan(loaded.spec.fns[f].clauses.copy(), options)
+        self.details = []
+        self._plan(func.clauses.copy(), options)
 
     # Planning
 
@@ -297,37 +290,20 @@ struct Prop(Property, Movable):
         self.infos.append(PropInfo(K_TYPE, -1, decl + "#type", String("built-in: the result of ", func.name, " reads as ", spec.types.text(self.rtype)), "type", -1))
         self.infos.append(PropInfo(K_ANY_RAISES, -1, decl + "#raises", String("built-in: ", func.name, " raises only what a raises or may_raise admits"), "raises", -1))
         # Handle parameters that the call may not change.
-        for i in range(len(func.params)):
-            ref t = spec.types.info(self.ptypes[i])
-            if t.kind == ty.MODEL and not t.signed:
-                var listed = False
-                for n in self.modified:
-                    if n == func.params[i].name:
-                        listed = True
-                if not listed:
-                    self.checked.append(i)
-        var handle_params = self.stateful and func.receiver
-        for i in range(len(func.params)):
-            ref t = spec.types.info(self.ptypes[i])
-            if t.kind == ty.MODEL and not t.signed:
-                handle_params = True
-        if handle_params and not has_modifies:
-            var names = String()
-            for i in self.checked:
-                names += (", " if names else "") + func.params[i].name
-            if self.stateful:
-                names = String("every live object")
+        var handles = [i for i in range(len(func.params)) if _is_handle(spec, self.ptypes[i])]
+        self.checked = [i for i in handles if func.params[i].name not in self.modified]
+        if (len(handles) > 0 or (self.stateful and func.receiver)) and not has_modifies:
+            var names = "every live object" if self.stateful else ", ".join([func.params[i].name for i in self.checked])
             self.infos.append(PropInfo(K_FRAME, -1, decl + "#frame", String("built-in: ", func.name, " leaves ", names, " unchanged (no modifies clause)"), "frame", -1))
         # Invariants of the models the function returns or modifies.
         var models = List[String]()
         collect_models(spec.types, self.rtype, models)
-        for i in range(len(func.params)):
-            for n in self.modified:
-                if n == func.params[i].name:
-                    collect_models(spec.types, self.ptypes[i], models)
+        for i, param in enumerate(func.params):
+            if param.name in self.modified:
+                collect_models(spec.types, self.ptypes[i], models)
         for name in models:
             var m = spec.model_named(name)
-            if not m or self.stateful:
+            if m is None or self.stateful:
                 continue
             for c in spec.models[m.value()].clauses:
                 ref cl = spec.clauses[c]
@@ -335,28 +311,22 @@ struct Prop(Property, Movable):
                     self.infos.append(PropInfo(K_INVARIANT, c, decl + ":" + cl.id, source_text(spec, cl.node), "invariant", m.value()))
         # Tallies.
         var n = len(self.infos)
-        for _ in range(n):
-            self.tp.append(0)
-            self.tf.append(0)
-            self.ts.append(0)
-            self.te.append(0)
-            self.fail_seen.append(False)
-            self.replayed.append(False)
-            self.vkind.append(V_PASS)
-            self.vnote.append(String())
-            self.details.append(Detail())
-        for _ in range(n * N_CAUSES):
-            self.causes.append(0)
-        for p in range(len(func.partitions)):
+        self.tp = [0 for _ in range(n)]
+        self.tf = [0 for _ in range(n)]
+        self.ts = [0 for _ in range(n)]
+        self.te = [0 for _ in range(n)]
+        self.fail_seen = [False for _ in range(n)]
+        self.replayed = [False for _ in range(n)]
+        self.vkind = [V_PASS for _ in range(n)]
+        self.vnote = [String() for _ in range(n)]
+        self.details = [Detail() for _ in range(n)]
+        self.causes = [0 for _ in range(n * N_CAUSES)]
+        for part in func.partitions:
             self.cov_start.append(len(self.cov_names))
-            ref part = func.partitions[p]
-            for k in range(len(part.classes)):
-                self.cov_names.append(String(func.params[part.param].name, ": ", part.classes[k].name))
+            self.cov_names += [String(func.params[part.param].name, ": ", cls.name) for cls in part.classes]
             self.part_class.append(-1)
-        for _ in range(n * len(self.cov_names)):
-            self.cov.append(0)
-        for _ in range(len(func.params)):
-            self.defaulted.append(False)
+        self.cov = [0 for _ in range(n * len(self.cov_names))]
+        self.defaulted = [False for _ in func.params]
         # A domain small enough to run every input.
         var size = UInt64(1)
         var small = True
@@ -376,10 +346,7 @@ struct Prop(Property, Movable):
             self.domain = size
 
     def keys(self) -> List[String]:
-        var out = List[String]()
-        for i in range(len(self.infos)):
-            out.append(self.loaded[].hash + "/" + self.infos[i].id)
-        return out^
+        return [String(self.loaded[].hash, "/", info.id) for info in self.infos]
 
     # Drawing
 
@@ -387,29 +354,15 @@ struct Prop(Property, Movable):
         ref spec = self.loaded[].spec
         if self.domain > 0:
             var index = src.draw_below(self.domain)
-            var n = len(spec.fns[self.f].params)
-            var args = List[Value](capacity=n)
-            for _ in range(n):
-                args.append(Value.none())
-            var j = n - 1
-            while j >= 0:
-                var s = domain_size(spec.types, self.ptypes[j]).value()
-                args[j] = value_at(spec.types, self.ptypes[j], index % s)
-                index //= s
-                j -= 1
+            var args = [Value.none() for _ in self.ptypes]
+            for j in reversed(range(len(args))):
+                var size = domain_size(spec.types, self.ptypes[j]).value()
+                args[j] = value_at(spec.types, self.ptypes[j], index % size)
+                index //= size
             return args^
-        var args = draw_args(
-            src,
-            self.loaded[].spec,
-            self.f,
-            self.loaded[].sizes,
-            self.host,
-            self.tenv,
-            True,
-        )
+        var args = draw_args(src, spec, self.f, self.loaded[].sizes, self.host, self.tenv, True)
         if spec.fns[self.f].receiver:
-            var m = spec.fns[self.f].owner
-            args[0] = draw_model(src, self.loaded[].spec, m, self.host, self.loaded[].sizes)
+            args[0] = draw_model(src, spec, spec.fns[self.f].owner, self.host, self.loaded[].sizes)
         for p in range(len(spec.fns[self.f].partitions)):
             self._steer(src, p, args)
         return args^
@@ -417,16 +370,9 @@ struct Prop(Property, Movable):
     def draw_stateful(mut self, mut src: Source) raises -> List[Value]:
         """The arguments of a constructor or method of an interface; a receiver is left
         as `not_drawn_marker` for the caller."""
-        var args = draw_args(
-            src,
-            self.loaded[].spec,
-            self.f,
-            self.loaded[].sizes,
-            self.host,
-            self.tenv,
-            True,
-        )
-        for p in range(len(self.loaded[].spec.fns[self.f].partitions)):
+        ref spec = self.loaded[].spec
+        var args = draw_args(src, spec, self.f, self.loaded[].sizes, self.host, self.tenv, True)
+        for p in range(len(spec.fns[self.f].partitions)):
             self._steer(src, p, args)
         return args^
 
@@ -440,11 +386,8 @@ struct Prop(Property, Movable):
         var n = len(part.classes)
         if n == 0:
             return
-        var predicate = self.loaded[].sets.is_predicate(self.f, p, 0)
-        if not predicate:
-            var classes = List[BitSet]()
-            for k in range(n):
-                classes.append(self.loaded[].sets.set_of(self.f, p, k))
+        if not self.loaded[].sets.is_predicate(self.f, p, 0):
+            var classes = [self.loaded[].sets.set_of(self.f, p, k) for k in range(n)]
             args[i] = draw_in_classes(src, self.loaded[].ctx, spec.types, classes, t)
             return
         if spec.types.kind(t) == ty.MODEL:
@@ -454,7 +397,7 @@ struct Prop(Property, Movable):
         if k >= n:
             return
         for _ in range(8):
-            var v = draw_value(src, self.loaded[].spec.types, t, self.loaded[].sizes, 0)
+            var v = draw_value(src, spec.types, t, self.loaded[].sizes, 0)
             var ok = False
             try:
                 ok = class_holds(spec, part.classes[k].node, v, self.host)
@@ -478,7 +421,7 @@ struct Prop(Property, Movable):
         var before = len(self.se_pid)
         if self.target:
             return self._examine_target(args^)
-        var out = self.examine(args^, counting, counting and not src.extend)
+        var out = self.examine(args^, counting=counting, is_replay=counting and not src.extend)
         if counting:
             for k in range(before, len(self.se_pid)):
                 self.se_choices[k] = src.rec.copy()
@@ -488,7 +431,7 @@ struct Prop(Property, Movable):
         """Judges an example while a spec error is shrunk: it fails when it raises the
         target error (up to the values in its message)."""
         var shown = args.copy()
-        var out = self.examine(args^, False, False)
+        var out = self.examine(args^, counting=False, is_replay=False)
         if out.is_invalid:
             return out^
         for i in range(len(self.infos)):
@@ -501,7 +444,7 @@ struct Prop(Property, Movable):
     def run_fixed(mut self, var args: List[Value]) raises -> Outcome:
         """Judges explicit inputs; the counterexamples keep them as given."""
         self.explain_all = True
-        var out = self.examine(args^, True, False)
+        var out = self.examine(args^, counting=True, is_replay=False)
         self.explain_all = False
         return out^
 
@@ -518,13 +461,11 @@ struct Prop(Property, Movable):
         return out^
 
     def _note_spec_error(mut self, i: Int, message: String, args: List[Value]):
-        var seen = 0
+        var kept = List[String]()
         for k in range(len(self.se_pid)):
             if self.se_pid[k] == i:
-                seen += 1
-                if self.se_msg[k] == message:
-                    return
-        if seen >= KEPT_SPEC_ERRORS:
+                kept.append(self.se_msg[k].copy())
+        if message in kept or len(kept) >= KEPT_SPEC_ERRORS:
             return
         self.se_pid.append(i)
         self.se_msg.append(message.copy())
@@ -532,11 +473,11 @@ struct Prop(Property, Movable):
         self.se_choices.append(Choices())
 
     def _inputs_text(mut self, args: List[Value]) -> String:
-        var out = String()
         ref func = self.loaded[].spec.fns[self.f]
+        var shown = List[String]()
         for i in range(len(args)):
-            out += (", " if out else "") + func.params[i].name + " = " + self.show(args[i], self.ptypes[i])
-        return out if out else String("(no inputs)")
+            shown.append(String(func.params[i].name, " = ", self.show(args[i], self.ptypes[i])))
+        return ", ".join(shown) if len(shown) > 0 else "(no inputs)"
 
     def show(mut self, v: Value, t: Int) -> String:
         """A value for a counterexample: a handle by its observed fields."""
@@ -564,9 +505,7 @@ struct Prop(Property, Movable):
     def _model_type(mut self, name: String) -> Int:
         """The handle type of the model called `name`."""
         var m = self.loaded[].spec.model_named(name)
-        if m:
-            return self.loaded[].spec.models[m.value()].type
-        return 0
+        return self.loaded[].spec.models[m.value()].type if m is not None else 0
 
     def digest(mut self, v: Value, t: Int) raises -> Value:
         ref spec = self.loaded[].spec
@@ -610,21 +549,19 @@ struct Prop(Property, Movable):
     def map_error(self, err: Value) -> String:
         """The spec's name for a raised error: the nearest class of the error, then of
         its bases, that a `raises`, `may_raise` or `error` declaration names."""
-        var names = List[String]()
-        names.append(norm_name(err.name()))
-        for i in range(err.item_count()):
-            names.append(norm_name(err.item(i).text()))
+        var names: List[String] = [norm_name(err.name())]
+        names += [norm_name(err.item(i).text()) for i in range(err.item_count())]
         ref spec = self.loaded[].spec
-        for n in names:
+        for name in names:
             for c in self.cond_clauses:
-                if norm_name(spec.clauses[c].error) == n:
+                if norm_name(spec.clauses[c].error) == name:
                     return spec.clauses[c].error.copy()
-            for e in self.errors:
-                if norm_name(e) == n:
-                    return e.copy()
-        return String()
+            for error in self.errors:
+                if norm_name(error) == name:
+                    return error.copy()
+        return ""
 
-    def examine(mut self, var args: List[Value], counting: Bool, is_replay: Bool) raises -> Outcome:
+    def examine(mut self, var args: List[Value], *, counting: Bool, is_replay: Bool) raises -> Outcome:
         ref spec = self.loaded[].spec
         ref func = spec.fns[self.f]
         var n = len(self.infos)
@@ -642,8 +579,8 @@ struct Prop(Property, Movable):
                     return self._spec_error_all(String("default of ", func.params[i].name, ": ", e), counting, args)
         self.host.begin_example(args)
         var env = Env(args.copy())
-        for j in range(len(self.host.tnames)):
-            env.bind_type(self.host.tnames[j].copy(), self.host.tids[j])
+        for name, id in zip(self.host.tnames, self.host.tids):
+            env.bind_type(name, id)
         # requires
         for c in self.requires:
             var j = judge(spec, c, env, self.host)
@@ -685,9 +622,7 @@ struct Prop(Property, Movable):
         var own = False
         if self.stateful:
             self.live_text.clear()
-            for q in self.modified:
-                if q == "self":
-                    own = True
+            own = "self" in self.modified
             for k in range(len(self.live)):
                 if own and len(args) > 0 and args[0].kind == HANDLE and self.live[k].handle_id() == args[0].handle_id():
                     continue
@@ -854,13 +789,16 @@ struct Prop(Property, Movable):
             self.vkind[i] = V_FAIL
             self.vnote[i] = String(spec.clauses[c].id, " is false", due_notes)
             return
+        self._unjudged(i, j, due_ids)
+
+    def _unjudged(mut self, i: Int, j: Judgment, due_ids: String):
+        """A clause that is neither true nor false: skipped when a planned call or a due raise explains it."""
         if j.is_skip():
             self._skip(i, "planned call")
-            return
-        if due_ids:
+        elif due_ids:
             self._skip(i, "raise due")
-            return
-        self._error(i, located(spec, j.node, j.message) if j.node > 0 else j.message.copy())
+        else:
+            self._error(i, located(self.loaded[].spec, j.node, j.message) if j.node > 0 else j.message.copy())
 
     def _raises_clause(
         mut self,
@@ -873,12 +811,9 @@ struct Prop(Property, Movable):
         mapped: String,
         must: List[String],
         may: List[String],
-    ):
+    ) raises:
         ref spec = self.loaded[].spec
-        var k = 0
-        for q in range(len(self.cond_clauses)):
-            if self.cond_clauses[q] == c:
-                k = q
+        var k = self.cond_clauses.index(c)
         ref cl = spec.clauses[c]
         if conds[k] < 0:
             self._error(i, cond_msg[k])
@@ -919,9 +854,8 @@ struct Prop(Property, Movable):
             return
         if contains_name(must, mapped) or contains_name(may, mapped):
             return
-        for c in self.cond_clauses:
-            if spec.clauses[c].kind == ast.RAISES and spec.clauses[c].error == mapped:
-                return
+        if any([spec.clauses[c].kind == ast.RAISES and spec.clauses[c].error == mapped for c in self.cond_clauses]):
+            return
         for k in range(len(self.cond_clauses)):
             ref cl = spec.clauses[self.cond_clauses[k]]
             if cl.kind == ast.MAY_RAISE and cl.error == mapped and conds[k] < 0:
@@ -953,7 +887,7 @@ struct Prop(Property, Movable):
         collect_models(spec.types, self.rtype, models)
         for name in models:
             var m = spec.model_named(name)
-            if not m:
+            if m is None:
                 continue
             var hs = List[Value]()
             handles_of(spec.types, result, self.rtype, name, hs)
@@ -995,21 +929,20 @@ struct Prop(Property, Movable):
                 hs.append(h.copy())
                 where.append(String("result"))
         for p in range(len(func.params)):
-            for q in self.modified:
-                if q == func.params[p].name:
-                    var found = List[Value]()
-                    handles_of(spec.types, args[p], self.ptypes[p], name, found)
-                    for h in found:
-                        hs.append(h.copy())
-                        where.append(func.params[p].name.copy())
+            if func.params[p].name in self.modified:
+                var found = List[Value]()
+                handles_of(spec.types, args[p], self.ptypes[p], name, found)
+                for h in found:
+                    hs.append(h.copy())
+                    where.append(func.params[p].name.copy())
         if len(hs) == 0:
             self._skip(i, "other")
             return
         for q in range(len(hs)):
             var env = Env()
             env.set_self(hs[q].copy())
-            for j in range(len(self.host.tnames)):
-                env.bind_type(self.host.tnames[j].copy(), self.host.tids[j])
+            for name, id in zip(self.host.tnames, self.host.tids):
+                env.bind_type(name, id)
             var j = judge(spec, c, env, self.host)
             if j.is_true():
                 continue
@@ -1026,13 +959,7 @@ struct Prop(Property, Movable):
                         self.inv_source.append(pair[0])
                         self.inv_value.append(pair[1])
                 return
-            if j.is_skip():
-                self._skip(i, "planned call")
-                return
-            if due_ids:
-                self._skip(i, "raise due")
-                return
-            self._error(i, located(spec, j.node, j.message) if j.node > 0 else j.message.copy())
+            self._unjudged(i, j, due_ids)
             return
 
     def _tally(mut self, args: List[Value], is_replay: Bool):
@@ -1104,9 +1031,8 @@ struct Prop(Property, Movable):
         var afters = String()
         if not raised:
             for p in range(len(func.params)):
-                for q in self.modified:
-                    if q == func.params[p].name and args[p].kind == HANDLE:
-                        afters += String("\n", q, " after = ", self.show(args[p], self.ptypes[p]))
+                if func.params[p].name in self.modified and args[p].kind == HANDLE:
+                    afters += String("\n", func.params[p].name, " after = ", self.show(args[p], self.ptypes[p]))
         if afters:
             if spec.types.kind(self.rtype) == ty.UNIT:
                 obs = String(afters[byte = 1 :])
@@ -1142,9 +1068,8 @@ struct Prop(Property, Movable):
                 d.expl_source.append(q[0])
                 d.expl_value.append(q[1])
         elif kind == K_INVARIANT:
-            for q in range(len(self.inv_source)):
-                d.expl_source.append(self.inv_source[q].copy())
-                d.expl_value.append(self.inv_value[q].copy())
+            d.expl_source = self.inv_source.copy()
+            d.expl_value = self.inv_value.copy()
         elif kind == K_RAISES or kind == K_ANY_RAISES:
             for k in range(len(self.cond_clauses)):
                 ref cl = spec.clauses[self.cond_clauses[k]]
@@ -1159,33 +1084,62 @@ struct Prop(Property, Movable):
         self.details[i].cx = d^
 
 
+    def clause_result(self, i: Int, mode: String, failure: String) raises -> ClauseResult:
+        """The counts of clause `i`; the caller adds the counterexample and the duration."""
+        ref info = self.infos[i]
+        var result = ClauseResult(info.id.copy(), info.text.copy(), info.label.copy(), self.decl.copy())
+        result.instantiation_names = self.host.tnames.copy()
+        result.instantiation_types = [self.loaded[].spec.types.text(t) for t in self.host.tids]
+        result.mode = mode
+        result.passed = self.tp[i]
+        result.failed = self.tf[i]
+        result.skipped = self.ts[i] + self.req_skips + self.unrep_skips
+        result.spec_error = self.te[i]
+        if failure:
+            result.spec_error += 1
+            result.spec_errors.append(failure.copy())
+        var slots = len(self.cov_names)
+        result.coverage_names = self.cov_names.copy()
+        result.coverage_counts = [self.cov[i * slots + s] for s in range(slots)]
+        for q in range(N_CAUSES):
+            var count = self.causes[i * N_CAUSES + q]
+            count += self.req_skips if q == cause_index("requires") else 0
+            count += self.unrep_skips if q == cause_index("unrepresentable") else 0
+            if count > 0:
+                result.skip_names.append(cause_name(q))
+                result.skip_counts.append(count)
+        for k in range(len(self.se_pid)):
+            if self.se_pid[k] == i:
+                result.spec_errors.append(String(self.se_msg[k], "\nexample: ", self.se_input[k]))
+        return result^
+
+
 # The driver of a run
 
 
+def _is_digit(b: Int) -> Bool:
+    return b >= ord("0") and b <= ord("9")
+
+
+def _is_word(b: Int) -> Bool:
+    return _is_digit(b) or (b >= ord("a") and b <= ord("z")) or (b >= ord("A") and b <= ord("Z")) or b == ord("_")
+
+
 def error_shape(message: String) -> String:
-    """A spec error message with each number in it (and its minus sign) replaced by `#`, so errors that differ
-    only in the values they mention have one shape."""
+    """`message` with each number (and its minus sign) replaced by `#`, so errors that differ only in values share a shape."""
     var out = String()
     var in_number = False
     var bytes = message.as_bytes()
-    var n = len(bytes)
-    for i in range(n):
+    for i in range(len(bytes)):
         var b = Int(bytes[i])
-        var digit = b >= ord("0") and b <= ord("9")
-        if digit:
+        if _is_digit(b):
             if not in_number:
                 out += "#"
             in_number = True
             continue
-        if b == ord("-") and not in_number and i + 1 < n:
-            var next = Int(bytes[i + 1])
-            var sign = next >= ord("0") and next <= ord("9")
-            if sign and i > 0:
-                var prev = Int(bytes[i - 1])
-                var word = (prev >= ord("0") and prev <= ord("9")) or (prev >= ord("a") and prev <= ord("z")) or (prev >= ord("A") and prev <= ord("Z")) or prev == ord("_")
-                sign = not word
-            if sign:
-                continue
+        var minus = b == ord("-") and not in_number and i + 1 < len(bytes) and _is_digit(Int(bytes[i + 1]))
+        if minus and (i == 0 or not _is_word(Int(bytes[i - 1]))):
+            continue
         in_number = False
         out += chr(b)
     return out^
@@ -1196,39 +1150,25 @@ def _shrink_spec_errors(
 ) raises:
     """Shrinks the first example of each distinct spec error message, as a failure is
     shrunk, and reports the shrunk example and its message in place of the first."""
-    var done_msg = List[String]()
-    var new_msg = List[String]()
-    var new_input = List[String]()
-    var distinct = 0
+    var distinct = List[String]()
     for k in range(len(prop.se_msg)):
-        if len(prop.se_choices[k].values) == 0:
-            continue
-        var seen = False
-        for m in done_msg:
-            if m == prop.se_msg[k]:
-                seen = True
-        if not seen:
-            done_msg.append(prop.se_msg[k].copy())
-            distinct += 1
-    if distinct == 0:
+        if len(prop.se_choices[k].values) > 0 and prop.se_msg[k] not in distinct:
+            distinct.append(prop.se_msg[k].copy())
+    if len(distinct) == 0:
         return
-    var budget = settings.max_shrink_steps // distinct
-    if budget < 200:
-        budget = 200
-    var cache_from = List[String]()
-    var cache_msg = List[String]()
-    var cache_input = List[String]()
+    var budget = max(settings.max_shrink_steps // len(distinct), 200)
+    var shrunk_msg = Dict[String, String]()
+    var shrunk_input = Dict[String, String]()
+    var keys = List[String]()
+    var kept = List[Int]()
     for k in range(len(prop.se_msg)):
-        var found = -1
-        for q in range(len(cache_from)):
-            if cache_from[q] == prop.se_msg[k]:
-                found = q
-        if found < 0:
-            var msg = prop.se_msg[k].copy()
-            var input = prop.se_input[k].copy()
+        var original = prop.se_msg[k].copy()
+        if original not in shrunk_msg:
+            shrunk_msg[original] = original.copy()
+            shrunk_input[original] = prop.se_input[k].copy()
             if len(prop.se_choices[k].values) > 0:
-                prop.target = error_shape(msg)
-                prop.hit_message = String()
+                prop.target = error_shape(original)
+                prop.hit_message = ""
                 var first = prop.se_choices[k].copy()
                 var shrunk = shrink(prop, first, 0, budget)
                 var src = Source(seed, SHRINK_SOURCE)
@@ -1237,34 +1177,27 @@ def _shrink_spec_errors(
                     _ = prop.run(src)
                 except e:
                     if not src.invalid:
-                        prop.target = String()
+                        prop.target = ""
                         raise e^
                 if prop.hit_message:
-                    msg = prop.hit_message.copy()
-                    input = prop.hit_input.copy()
-                prop.target = String()
-            cache_from.append(prop.se_msg[k].copy())
-            cache_msg.append(msg^)
-            cache_input.append(input^)
-            found = len(cache_from) - 1
-        new_msg.append(cache_msg[found].copy())
-        new_input.append(cache_input[found].copy())
-    # Spec errors that shrank to one message are reported once.
-    var keep_pid = List[Int]()
-    var keep_msg = List[String]()
-    var keep_input = List[String]()
-    for k in range(len(new_msg)):
-        var dup = False
-        for q in range(len(keep_pid)):
-            if keep_pid[q] == prop.se_pid[k] and keep_msg[q] == new_msg[k]:
-                dup = True
-        if not dup:
-            keep_pid.append(prop.se_pid[k])
-            keep_msg.append(new_msg[k].copy())
-            keep_input.append(new_input[k].copy())
-    prop.se_pid = keep_pid^
-    prop.se_msg = keep_msg^
-    prop.se_input = keep_input^
+                    shrunk_msg[original] = prop.hit_message.copy()
+                    shrunk_input[original] = prop.hit_input.copy()
+                prop.target = ""
+        # Spec errors that shrank to one message are reported once.
+        var key = String(prop.se_pid[k], "|", shrunk_msg[original])
+        if key not in keys:
+            keys.append(key^)
+            kept.append(k)
+    var pids = List[Int]()
+    var messages = List[String]()
+    var inputs = List[String]()
+    for k in kept:
+        pids.append(prop.se_pid[k])
+        messages.append(shrunk_msg[prop.se_msg[k]].copy())
+        inputs.append(shrunk_input[prop.se_msg[k]].copy())
+    prop.se_pid = pids^
+    prop.se_msg = messages^
+    prop.se_input = inputs^
     prop.se_choices = List[Choices]()
 
 
@@ -1344,7 +1277,7 @@ def run(
             settings.max_exhaustive = Int(prop.domain)
             res = enumerate_all(prop, Int(prop.domain), settings)
         else:
-            if options.store:
+            if options.store is not None:
                 settings.store_dir = options.store.value()
                 settings.keys = prop.keys()
             res = search(prop, settings)
@@ -1367,42 +1300,13 @@ def run(
         _shrink_spec_errors(prop, settings, seed)
     except e:
         failure = String(e)
-    for k in range(len(prop.replayed)):
-        if prop.replayed[k]:
-            result.mode = "replay"
+    if any(prop.replayed):
+        result.mode = "replay"
     result.examples = res.examples
     result.invalid = res.invalid
     var elapsed = Float64(perf_counter_ns() - started) / 1e9
-    var slots = len(prop.cov_names)
     for i in range(n):
-        ref info = prop.infos[i]
-        var c = ClauseResult(info.id.copy(), info.text.copy(), info.label.copy(), prop.decl.copy())
-        for j in range(len(prop.host.tnames)):
-            c.instantiation_names.append(prop.host.tnames[j].copy())
-            c.instantiation_types.append(loaded.spec.types.text(prop.host.tids[j]))
-        c.mode = "exhaustive" if prop.domain > 0 else "hypothesis"
-        c.passed = prop.tp[i]
-        c.failed = prop.tf[i]
-        c.skipped = prop.ts[i] + prop.req_skips + prop.unrep_skips
-        c.spec_error = prop.te[i]
-        if failure:
-            c.spec_error += 1
-            c.spec_errors.append(failure.copy())
-        for s in range(slots):
-            c.coverage_names.append(prop.cov_names[s].copy())
-            c.coverage_counts.append(prop.cov[i * slots + s])
-        for q in range(N_CAUSES):
-            var count = prop.causes[i * N_CAUSES + q]
-            if q == 0:
-                count += prop.req_skips
-            if q == 4:
-                count += prop.unrep_skips
-            if count > 0:
-                c.skip_names.append(cause_name(q))
-                c.skip_counts.append(count)
-        for k in range(len(prop.se_pid)):
-            if prop.se_pid[k] == i:
-                c.spec_errors.append(String(prop.se_msg[k], "\nexample: ", prop.se_input[k]))
+        var c = prop.clause_result(i, "exhaustive" if prop.domain > 0 else "hypothesis", failure)
         if prop.details[i].present:
             c.counterexample = prop.details[i].cx.copy()
             c.failing_inputs = max(1, prop.tf[i])
@@ -1416,9 +1320,7 @@ def run(
         ref func = loaded.spec.fns[f]
         for ci in func.clauses:
             if loaded.spec.clauses[ci].kind == ast.AGGREGATE:
-                result.clauses.append(
-                    run_aggregate(loaded.spec, loaded.ctx, prop.host, f, ci, options, seed)
-                )
+                result.clauses.append(run_aggregate(loaded.spec, loaded.ctx, prop.host, f, ci, options, seed))
     prop.host.release_all()
     result.seconds = Float64(perf_counter_ns() - started) / 1e9
     return result^

@@ -43,13 +43,13 @@ from .runner import (
     Prop,
 )
 from .stateful_store import Stored, load_stored, save_stored
-from .util import N_CAUSES, cause_index, cause_name
 
 comptime UNSET = -1
 comptime MAX_REPLAYS = 600
 """Runs of a sequence that minimizing may spend on one clause."""
 
 
+@fieldwise_init
 struct Step(Copyable, Movable):
     """One call of a program: a constructor (`target` -1) or a method on the object
     the constructor step `target` made. `sid` numbers the steps as generated."""
@@ -59,46 +59,32 @@ struct Step(Copyable, Movable):
     var args: List[Value]
     var target: Int
 
-    def __init__(out self, sid: Int, callable: Int, var args: List[Value], target: Int):
-        self.sid = sid
-        self.callable = callable
-        self.args = args^
-        self.target = target
-
 
 def _without(program: List[Step], sid: Int) -> List[Step]:
     """The program without a step and every step on an object it made."""
-    var removed = List[Int]()
-    removed.append(sid)
+    var removed: List[Int] = [sid]
     var out = List[Step]()
     for step in program:
-        var gone = False
-        for r in removed:
-            if r == step.sid or r == step.target:
-                gone = True
-        if gone:
+        if step.sid in removed or step.target in removed:
             removed.append(step.sid)
         else:
             out.append(step.copy())
     return out^
 
 
-def _with_arg(program: List[Step], sid: Int, index: Int, value: Int) -> List[Step]:
-    var out = List[Step]()
-    for step in program:
-        var copy = step.copy()
+def _with_arg(program: List[Step], *, sid: Int, index: Int, value: Int) -> List[Step]:
+    var out = program.copy()
+    for ref step in out:
         if step.sid == sid:
-            copy.args[index] = Value.int(value)
-        out.append(copy^)
+            step.args[index] = Value.int(value)
     return out^
 
 
 def _toward_zero(v: Int) -> List[Int]:
     """Smaller candidates for a nonzero integer: 0, half of it, one step closer."""
-    var out = List[Int]()
-    out.append(0)
     var half = v // 2 if v > 0 else -((-v) // 2)
     var near = v - 1 if v > 0 else v + 1
+    var out: List[Int] = [0]
     if half != 0:
         out.append(half)
     if near != 0 and near != half:
@@ -108,7 +94,6 @@ def _toward_zero(v: Int) -> List[Int]:
 
 struct InvTally(Movable):
     var clause: Int
-    var model: Int
     var id: String
     var text: String
     var tp: Int
@@ -120,9 +105,8 @@ struct InvTally(Movable):
     var errors: List[String]
     var detail: Detail
 
-    def __init__(out self, clause: Int, model: Int, var id: String, var text: String):
+    def __init__(out self, clause: Int, var id: String, var text: String):
         self.clause = clause
-        self.model = model
         self.id = id^
         self.text = text^
         self.tp = 0
@@ -131,24 +115,18 @@ struct InvTally(Movable):
         self.te = 0
         self.fail_seen = False
         self.replayed = False
-        self.errors = List[String]()
+        self.errors = []
         self.detail = Detail()
 
 
+@fieldwise_init
 struct Found(Movable):
     """A failing program of one clause: the choices it was generated from and the
     program as shortened."""
 
-    var gid: Int
     var choices: Choices
     var program: List[Step]
     var replayed: Bool
-
-    def __init__(out self, gid: Int, var choices: Choices, var program: List[Step], replayed: Bool):
-        self.gid = gid
-        self.choices = choices^
-        self.program = program^
-        self.replayed = replayed
 
 
 struct Machine(Property):
@@ -187,17 +165,13 @@ struct Machine(Property):
         )
         self.iface = iface
         self.name = loaded.spec.models[iface].name.copy()
-        var last = self.name.copy()
         var parts = self.name.split(".")
-        if len(parts) > 0:
-            last = String(parts[len(parts) - 1])
-        self.prefix = String(last[byte=0:1]).lower() if last.byte_length() > 0 else String("h")
-        self.props = List[Prop]()
-        self.base = List[Int]()
-        var fns = loaded.spec.models[iface].ctors.copy()
-        self.n_ctors = len(fns)
-        for m in loaded.spec.models[iface].methods:
-            fns.append(m)
+        var last = String(parts[len(parts) - 1])
+        self.prefix = String(last[byte=0:1]).lower() if last.byte_length() > 0 else "h"
+        self.props = []
+        self.base = []
+        self.n_ctors = len(loaded.spec.models[iface].ctors)
+        var fns = loaded.spec.models[iface].ctors + loaded.spec.models[iface].methods.copy()
         if self.n_ctors == 0:
             raise Error(String(self.name, " has no constructor: the run has no way to make an object"))
         var total = 0
@@ -206,27 +180,24 @@ struct Machine(Property):
             self.props.append(Prop(loaded, client, f, options, True))
             total += len(self.props[len(self.props) - 1].infos)
         self.inv_base = total
-        self.invs = List[InvTally]()
+        self.invs = []
         for c in loaded.spec.models[iface].clauses:
             ref cl = loaded.spec.clauses[c]
             if cl.kind == ast.INVARIANT:
-                self.invs.append(InvTally(c, iface, cl.id.copy(), source_text(loaded.spec, cl.node)))
+                self.invs.append(InvTally(c, cl.id.copy(), source_text(loaded.spec, cl.node)))
         self.inv_host = RunHost(loaded, client)
-        for j in range(len(self.props[0].host.tnames)):
-            self.inv_host.tnames.append(self.props[0].host.tnames[j].copy())
-            self.inv_host.tids.append(self.props[0].host.tids[j])
+        self.inv_host.tnames = self.props[0].host.tnames.copy()
+        self.inv_host.tids = self.props[0].host.tids.copy()
         self.steps = options.steps
         self.max_handles = options.max_handles
         self.seed = Int(options.seed)
         self.agg = List[Int](length=total + len(self.invs), fill=UNSET)
         self.fail_index = -1
-        self.log = List[String]()
+        self.log = []
         self.replays = 0
-        self.fail_receiver = String()
-        self.cxs = List[Counterexample]()
+        self.fail_receiver = ""
+        self.cxs = [Counterexample() for _ in range(total + len(self.invs))]
         self.has_cx = List[Bool](length=total + len(self.invs), fill=False)
-        for _ in range(total + len(self.invs)):
-            self.cxs.append(Counterexample())
 
     def gid_count(self) -> Int:
         return self.inv_base + len(self.invs)
@@ -251,13 +222,11 @@ struct Machine(Property):
         var many = Many(1, self.steps, Float64(self.steps) / 2.0)
         var n_methods = len(self.props) - self.n_ctors
         while many.more(src):
-            var options = List[Int]()
+            var options: List[Int] = []
             if len(recent) < self.max_handles or n_methods == 0:
-                for c in range(self.n_ctors):
-                    options.append(c)
+                options += [c for c in range(self.n_ctors)]
             if len(recent) > 0:
-                for c in range(self.n_ctors, len(self.props)):
-                    options.append(c)
+                options += [c for c in range(self.n_ctors, len(self.props))]
             var c = options[src.draw_choice(len(options))]
             var sid = len(program)
             var target = -1
@@ -307,13 +276,14 @@ struct Machine(Property):
     def run(mut self, mut src: Source) raises -> Outcome:
         var counting = src.max_choices < SHRINK_SOURCE
         var program = self.generate(src)
-        return self.execute(program, counting, counting and not src.extend, -1, False)
+        return self.execute(program, counting=counting, is_replay=counting and not src.extend, focus=-1, want_log=False)
 
     # Execution
 
     def execute(
         mut self,
         program: List[Step],
+        *,
         counting: Bool,
         is_replay: Bool,
         focus: Int,
@@ -386,19 +356,16 @@ struct Machine(Property):
         var args = step.args.copy()
         var receiver = String()
         if c >= self.n_ctors:
-            var at = -1
-            for k in range(len(made)):
-                if made[k] == step.target:
-                    at = k
-            if at < 0:
+            if step.target not in made:
                 return False
+            var at = made.index(step.target)
             args[0] = live[at].copy()
             receiver = names[at].copy()
         self.props[c].live = live.copy()
         self.props[c].live_names = names.copy()
         self.props[c].self_name = receiver.copy()
         self.props[c].last_ran = False
-        var out = self.props[c].examine(args^, counting, is_replay)
+        var out = self.props[c].examine(args^, counting=counting, is_replay=is_replay)
         if out.is_invalid:
             return False
         var stop = False
@@ -479,11 +446,7 @@ struct Machine(Property):
                     self.invs[q].ts += 1
                 else:
                     self.invs[q].te += 1
-                    var seen = False
-                    for e in self.invs[q].errors:
-                        if e == note:
-                            seen = True
-                    if not seen and len(self.invs[q].errors) < KEPT_SPEC_ERRORS:
+                    if note not in self.invs[q].errors and len(self.invs[q].errors) < KEPT_SPEC_ERRORS:
                         self.invs[q].errors.append(note^)
             if verdict == V_FAIL and focus == gid:
                 stop = True
@@ -505,8 +468,8 @@ struct Machine(Property):
         for k in range(len(live)):
             var env = Env()
             env.set_self(live[k].copy())
-            for j in range(len(self.inv_host.tnames)):
-                env.bind_type(self.inv_host.tnames[j].copy(), self.inv_host.tids[j])
+            for name, id in zip(self.inv_host.tnames, self.inv_host.tids):
+                env.bind_type(name, id)
             var j = judge(spec, c, env, self.inv_host)
             if j.is_true():
                 continue
@@ -578,48 +541,17 @@ struct Machine(Property):
     ) raises:
         """One ClauseResult per clause of every constructor and method, then per
         invariant."""
-        ref spec = loaded.spec
         for c in range(len(self.props)):
             ref prop = self.props[c]
-            var slots = len(prop.cov_names)
             for i in range(len(prop.infos)):
-                ref info = prop.infos[i]
-                var gid = self.base[c] + i
-                var cr = ClauseResult(info.id.copy(), info.text.copy(), info.label.copy(), spec.fns[prop.f].decl_id.copy())
-                for j in range(len(prop.host.tnames)):
-                    cr.instantiation_names.append(prop.host.tnames[j].copy())
-                    cr.instantiation_types.append(spec.types.text(prop.host.tids[j]))
-                cr.mode = "stateful"
-                cr.passed = prop.tp[i]
-                cr.failed = prop.tf[i]
-                cr.skipped = prop.ts[i] + prop.req_skips + prop.unrep_skips
-                cr.spec_error = prop.te[i]
-                if failure:
-                    cr.spec_error += 1
-                    cr.spec_errors.append(failure.copy())
-                for s in range(slots):
-                    cr.coverage_names.append(prop.cov_names[s].copy())
-                    cr.coverage_counts.append(prop.cov[i * slots + s])
-                for q in range(N_CAUSES):
-                    var count = prop.causes[i * N_CAUSES + q]
-                    if q == 0:
-                        count += prop.req_skips
-                    if q == 4:
-                        count += prop.unrep_skips
-                    if count > 0:
-                        cr.skip_names.append(cause_name(q))
-                        cr.skip_counts.append(count)
-                for k in range(len(prop.se_pid)):
-                    if prop.se_pid[k] == i:
-                        cr.spec_errors.append(String(prop.se_msg[k], "\nexample: ", prop.se_input[k]))
-                self._finish(cr, gid, prop.tf[i], prop.replayed[i], found, options, elapsed)
+                var cr = prop.clause_result(i, "stateful", failure)
+                self._finish(cr, self.base[c] + i, prop.tf[i], prop.replayed[i], found, options, elapsed)
                 result.clauses.append(cr^)
         for q in range(len(self.invs)):
             ref inv = self.invs[q]
-            var cr = ClauseResult(inv.id.copy(), inv.text.copy(), String("invariant"), self.name.copy())
-            for j in range(len(self.props[0].host.tnames)):
-                cr.instantiation_names.append(self.props[0].host.tnames[j].copy())
-                cr.instantiation_types.append(spec.types.text(self.props[0].host.tids[j]))
+            var cr = ClauseResult(inv.id.copy(), inv.text.copy(), "invariant", self.name.copy())
+            cr.instantiation_names = self.props[0].host.tnames.copy()
+            cr.instantiation_types = [loaded.spec.types.text(t) for t in self.props[0].host.tids]
             cr.mode = "stateful"
             cr.passed = inv.tp
             cr.failed = inv.tf
@@ -628,10 +560,9 @@ struct Machine(Property):
             if failure:
                 cr.spec_error += 1
                 cr.spec_errors.append(failure.copy())
-            for e in inv.errors:
-                cr.spec_errors.append(e.copy())
+            cr.spec_errors += inv.errors.copy()
             if inv.ts > 0:
-                cr.skip_names.append(String("other"))
+                cr.skip_names.append("other")
                 cr.skip_counts.append(inv.ts)
             self._finish(cr, self.inv_base + q, inv.tf, inv.replayed, found, options, elapsed)
             result.clauses.append(cr^)
@@ -658,17 +589,12 @@ struct Machine(Property):
 
     def fails(mut self, program: List[Step], gid: Int) raises -> Bool:
         self.replays += 1
-        _ = self.execute(program, False, False, gid, False)
+        _ = self.execute(program, counting=False, is_replay=False, focus=gid, want_log=False)
         return self.fail_index >= 0
 
     def trimmed(self, program: List[Step]) -> List[Step]:
         """The program up to the step that failed the clause last executed."""
-        var out = List[Step]()
-        for k in range(len(program)):
-            if k > self.fail_index:
-                break
-            out.append(program[k].copy())
-        return out^
+        return [step.copy() for k, step in enumerate(program) if k <= self.fail_index]
 
     def shorten(mut self, var program: List[Step], gid: Int) raises -> List[Step]:
         var improved = True
@@ -690,23 +616,18 @@ struct Machine(Property):
         for step in program:
             if step.target >= 0:
                 continue
-            var dependents = List[Int]()
-            for other in program:
-                if other.target == step.sid:
-                    dependents.append(other.sid)
+            var dependents = [other.sid for other in program if other.target == step.sid]
             for j in range(len(step.args)):
-                if step.args[j].kind != INT or not step.args[j].small_int():
+                if step.args[j].kind != INT or step.args[j].small_int() is None:
                     continue
                 var v = step.args[j].small_int().value()
                 if v == 0:
                     continue
                 for w in _toward_zero(v):
-                    var lowered = _with_arg(program, step.sid, j, w)
-                    var tries = List[List[Step]]()
-                    tries.append(lowered.copy())
+                    var lowered = _with_arg(program, sid=step.sid, index=j, value=w)
+                    var tries: List[List[Step]] = [lowered.copy()]
                     if abs(v - w) == 1:
-                        for d in dependents:
-                            tries.append(_without(lowered, d))
+                        tries += [_without(lowered, d) for d in dependents]
                     for candidate in tries:
                         if self.replays >= MAX_REPLAYS:
                             return None
@@ -721,7 +642,7 @@ struct Machine(Property):
         program = self.shorten(program^, gid)
         while self.replays < MAX_REPLAYS:
             var lowered = self.lower(program, gid)
-            if not lowered:
+            if lowered is None:
                 break
             program = self.shorten(lowered.take(), gid)
         return program^
@@ -732,29 +653,23 @@ struct Machine(Property):
         var out = Stored()
         out.choices = found.choices.copy()
         for step in orig:
-            var kept = -1
-            for k in range(len(found.program)):
-                if found.program[k].sid == step.sid:
-                    kept = k
-            if kept < 0:
+            var kept = [k for k, other in enumerate(found.program) if other.sid == step.sid]
+            if len(kept) == 0:
                 out.deleted.append(step.sid)
                 continue
+            ref args = found.program[kept[0]].args
             for j in range(len(step.args)):
-                if found.program[kept].args[j] != step.args[j] and found.program[kept].args[j].small_int():
+                if args[j] != step.args[j] and args[j].small_int() is not None:
                     out.arg_sid.append(step.sid)
                     out.arg_index.append(j)
-                    out.arg_value.append(found.program[kept].args[j].small_int().value())
+                    out.arg_value.append(args[j].small_int().value())
         return out^
 
     def from_stored(mut self, stored: Stored) -> List[Step]:
         var orig = self.regenerate(stored.choices)
         var out = List[Step]()
         for step in orig:
-            var gone = False
-            for d in stored.deleted:
-                if d == step.sid:
-                    gone = True
-            if gone:
+            if step.sid in stored.deleted:
                 continue
             var copy = step.copy()
             for i in range(len(stored.arg_sid)):
@@ -776,15 +691,13 @@ def apply_targets(mut loaded: Loaded):
 
 def interface_named(loaded: Loaded, decl: String) -> Optional[Int]:
     var m = loaded.spec.model_named(decl)
-    if m and loaded.spec.models[m.value()].is_interface:
-        return m
-    return None
+    return m if m is not None and loaded.spec.models[m.value()].is_interface else None
 
 
 def _key(loaded: Loaded, options: RunOptions, id: String) -> String:
     var key = String(loaded.hash, "/", id)
-    for k in range(len(options.inst_names)):
-        key += String("[", options.inst_names[k], "=", options.inst_types[k], "]")
+    for name, type in zip(options.inst_names, options.inst_types):
+        key += String("[", name, "=", type, "]")
     return key^
 
 
@@ -814,30 +727,30 @@ def run_interface(
     var res = SearchResult()
     var failure = String()
     try:
-        if options.store:
+        if options.store is not None:
             for g in range(n):
                 var stored = load_stored(options.store.value(), _key(loaded, options, m.gid_id(g)))
-                if not stored:
+                if stored is None:
                     continue
                 var program = m.from_stored(stored.value())
                 if len(program) == 0:
                     continue
-                _ = m.execute(program, True, True, -1, False)
+                _ = m.execute(program, counting=True, is_replay=True, focus=-1, want_log=False)
                 if m.agg[g] == V_FAIL:
-                    found[g] = Found(g, stored.take().choices.copy(), program^, True)
+                    found[g] = Found(stored.take().choices.copy(), program^, True)
                     result.mode = "replay"
         res = search(m, settings)
         result.examples = res.examples
         result.invalid = res.invalid
         for k in range(len(res.properties)):
             ref pr = res.properties[k]
-            if not pr.failed or pr.id < 0 or pr.id >= n or Bool(found[pr.id]):
+            if not pr.failed or pr.id < 0 or pr.id >= n or found[pr.id] is not None:
                 continue
             m.replays = 0
             var program = m.regenerate(pr.choices)
             program = m.minimize(program^, pr.id)
-            found[pr.id] = Found(pr.id, pr.choices.copy(), program^, False)
-            if options.store:
+            found[pr.id] = Found(pr.choices.copy(), program^, False)
+            if options.store is not None:
                 try:
                     save_stored(
                         options.store.value(),
@@ -848,8 +761,8 @@ def run_interface(
                     pass
         # What each failure shows.
         for g in range(n):
-            if found[g]:
-                _ = m.execute(found[g].value().program, False, False, g, True)
+            if found[g] is not None:
+                _ = m.execute(found[g].value().program, counting=False, is_replay=False, focus=g, want_log=True)
                 m.capture(g)
     except e:
         failure = String(e)
@@ -869,6 +782,6 @@ def run_declaration(
     """Runs a function, or an interface by its name: the entry point of the host API's
     `run`."""
     var iface = interface_named(loaded, decl)
-    if iface:
+    if iface is not None:
         return run_interface(loaded, iface.value(), options, driver)
     return run_function(loaded, decl, options, driver)
