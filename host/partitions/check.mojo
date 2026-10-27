@@ -39,12 +39,11 @@ struct PartitionSets(Movable):
         return self.counts[f][p]
 
     def set_of(self, f: Int, p: Int, k: Int) -> BitSet:
-        """The set of class `k` of partition `p` of function `f` (a placeholder when
-        the class is a predicate)."""
+        """The set of class `k` of partition `p` of function `f` (empty for a predicate)."""
         return self.sets[self.starts[f][p] + k]
 
     def is_predicate(self, f: Int, p: Int, k: Int) -> Bool:
-        """Whether the class is a predicate on a parameter that isn't fixed-width."""
+        """Whether the class is on a parameter that isn't fixed-width."""
         return self.predicates[self.starts[f][p] + k]
 
 
@@ -70,11 +69,10 @@ def _count_text(n: BigUInt) -> String:
 
 
 def _hex(bits: UInt64, digits: Int) -> String:
-    var out = String()
-    for i in range(digits):
-        var nibble = Int((bits >> UInt64(4 * (digits - 1 - i))) & 15)
-        out += String(nibble) if nibble < 10 else chr(ord("a") + nibble - 10)
-    return out
+    comptime DIGITS = "0123456789abcdef"
+    return String("").join(
+        [String(DIGITS[byte=Int((bits >> UInt64(4 * k)) & 15)]) for k in range(digits - 1, -1, -1)]
+    )
 
 
 def value_text(elem: Elem, bits: UInt64) raises -> String:
@@ -82,26 +80,23 @@ def value_text(elem: Elem, bits: UInt64) raises -> String:
     if elem.kind == ty.BOOL:
         return "true" if bits != 0 else "false"
     if elem.is_float():
-        return float_text(elem.format_id, bits) + " (0x" + _hex(bits, elem.width // 4) + ")"
+        return String(float_text(elem.format_id, bits), " (0x", _hex(bits, elem.width // 4), ")")
     if elem.signed:
         var shift = UInt64(64 - elem.width)
-        var extended = Int64(bits << shift) >> Int64(shift)
-        return String(Int(extended))
+        return String(Int(Int64(bits << shift) >> Int64(shift)))
     return String(bits)
 
 
 def _example(mut ctx: SetContext, elem: Elem, s: BitSet) raises -> String:
     """A member of `s`, preferring simple values: 0, 1 and -1."""
-    var candidates = List[UInt64]()
-    candidates.append(0)
+    var candidates: List[UInt64] = [0]
     if elem.is_float():
-        var f = elem.format()
-        var one = UInt64(f.bias()) << UInt64(f.fraction_bits)
-        candidates.append(one)
-        candidates.append(one | f.sign_mask())
+        var format = elem.format()
+        var one = UInt64(format.bias()) << UInt64(format.fraction_bits)
+        candidates.extend([one, one | format.sign_mask()])
     elif elem.is_int():
-        candidates.append(1)
-        candidates.append(UInt64.MAX if elem.width == 64 else (UInt64(1) << UInt64(elem.width)) - 1)
+        var minus_one = UInt64.MAX if elem.width == 64 else (UInt64(1) << UInt64(elem.width)) - 1
+        candidates.extend([1, minus_one])
     else:
         candidates.append(1)
     for c in candidates:
@@ -112,12 +107,7 @@ def _example(mut ctx: SetContext, elem: Elem, s: BitSet) raises -> String:
 
 def _uses(ast: Ast, e: Int, names: Dict[String, Bool]) -> Bool:
     ref n = ast.nodes[e]
-    if n.kind == sx.NAME and n.text in names:
-        return True
-    for k in n.kids:
-        if _uses(ast, k, names):
-            return True
-    return False
+    return (n.kind == sx.NAME and n.text in names) or any([_uses(ast, k, names) for k in n.kids])
 
 
 def compile_partitions(mut ctx: SetContext, spec: Spec) raises -> PartitionSets:
@@ -138,7 +128,7 @@ def compile_partitions(mut ctx: SetContext, spec: Spec) raises -> PartitionSets:
             starts.append(len(out.sets))
             counts.append(len(part.classes))
             var elem = elem_of(spec.types, func.params[part.param].type)
-            if not elem:
+            if elem is None:
                 for _ in range(len(part.classes)):
                     out.sets.append(ctx.empty(1))
                     out.predicates.append(True)
@@ -148,20 +138,20 @@ def compile_partitions(mut ctx: SetContext, spec: Spec) raises -> PartitionSets:
             )
             for _ in range(len(part.classes)):
                 out.predicates.append(False)
-            for e in found:
-                errors.append(e)
+            errors.extend(found^)
         out.starts.append(starts^)
         out.counts.append(counts^)
     if len(errors) > 0:
-        var message = String()
-        for i in range(len(errors)):
-            message += ("\n" if i > 0 else "") + errors[i]
-        raise Error(message)
+        raise Error("\n".join(errors))
     return out^
 
 
-def _diag(ast: Ast, node: Int, message: String) -> String:
-    return String(ast.path_of(node), ":", ast.nodes[node].span, ": ", message)
+def _diag(ast: Ast, node: Int, message: Some[Writable]) -> String:
+    return String(ast.location(node), ": ", message)
+
+
+def _warning(ast: Ast, node: Int, message: Some[Writable]) -> Diagnostic:
+    return Diagnostic(ast.path_of(node), ast.nodes[node].span, String(message))
 
 
 def _check_partition(
@@ -186,77 +176,53 @@ def _check_partition(
     var failed = Dict[String, Bool]()
     var compiled = List[Int]()  # positions of the classes that compiled
     var results = List[BitSet]()
-    for k in range(len(part.classes)):
-        ref cls = part.classes[k]
+    for k, cls in enumerate(part.classes):
+        results.append(ctx.empty(elem.width))
         if cls.name in comp.classes or cls.name in failed:
-            errors.append(
-                _diag(ast, cls.node, String(label, ": class ", cls.name, " is defined twice"))
-            )
+            errors.append(_diag(ast, cls.node, t"{label}: class {cls.name} is defined twice"))
             failed[cls.name] = True
-            results.append(ctx.empty(elem.width))
-            continue
-        if _uses(ast, cls.expr, failed):
+        elif _uses(ast, cls.expr, failed):
             failed[cls.name] = True
-            results.append(ctx.empty(elem.width))
-            continue
-        try:
-            var s = comp.compile(ctx, ast, cls.expr)
-            comp.classes[cls.name] = s
-            compiled.append(k)
-            results.append(s)
-        except:
-            errors.append(
-                comp.diagnostic(ast, String(label, ": class ", cls.name, ": "))
-            )
-            failed[cls.name] = True
-            results.append(ctx.empty(elem.width))
-    for s in results:
-        sets.append(s)
+        else:
+            try:
+                results[k] = comp.compile(ctx, ast, cls.expr)
+                comp.classes[cls.name] = results[k]
+                compiled.append(k)
+            except:
+                errors.append(comp.diagnostic(ast, String(label, ": class ", cls.name, ": ")))
+                failed[cls.name] = True
+    sets.extend(results.copy())
     if len(errors) > 0:
         return errors^
 
     var union = ctx.empty(elem.width)
-    for i in range(len(compiled)):
-        ref cls = part.classes[compiled[i]]
-        var s = results[compiled[i]]
-        if ctx.is_empty(s):
-            warnings.append(
-                Diagnostic(
-                    ast.path_of(cls.node),
-                    ast.nodes[cls.node].span,
-                    String(label, ": class ", cls.name, " is empty"),
-                )
-            )
-        for j in range(i):
-            var other = part.classes[compiled[j]].name
-            var common = ctx.intersection(results[compiled[j]], s)
+    for i, k in enumerate(compiled):
+        ref cls = part.classes[k]
+        if ctx.is_empty(results[k]):
+            warnings.append(_warning(ast, cls.node, t"{label}: class {cls.name} is empty"))
+        for earlier in compiled[:i]:
+            var common = ctx.intersection(results[earlier], results[k])
             if not ctx.is_empty(common):
                 errors.append(
                     _diag(
                         ast,
                         cls.node,
-                        String(
-                            label, ": classes ", other, " and ", cls.name,
-                            " overlap on ", _count_text(ctx.count(common)),
-                            ", e.g. ", pname, " = ", _example(ctx, elem, common),
-                        ),
+                        t"{label}: classes {part.classes[earlier].name} and {cls.name} overlap on"
+                        t" {_count_text(ctx.count(common))}, e.g. {pname} = {_example(ctx, elem, common)}",
                     )
                 )
-        union = ctx.union(union, s)
+        union = ctx.union(union, results[k])
 
     var target = admitted(ctx, spec, f, part.param)
-    if not target:
+    if target is None:
         var missing = ctx.difference(ctx.full(elem.width), union)
         if not ctx.is_empty(missing):
             errors.append(
                 _diag(
                     ast,
                     part.node,
-                    String(
-                        label, " does not cover every ", elem.name(), ": ",
-                        _count_text(ctx.count(missing)), " in no class, e.g. ",
-                        pname, " = ", _example(ctx, elem, missing),
-                    ),
+                    t"{label} does not cover every {elem.name()}: {_count_text(ctx.count(missing))}"
+                    t" in no class, e.g. {pname} = {_example(ctx, elem, missing)}",
                 )
             )
         return errors^
@@ -266,28 +232,21 @@ def _check_partition(
             _diag(
                 ast,
                 part.node,
-                String(
-                    label, " does not cover the values requires admits: ",
-                    _count_text(ctx.count(missing)), " in no class, e.g. ", pname,
-                    " = ", _example(ctx, elem, missing),
-                ),
+                t"{label} does not cover the values requires admits:"
+                t" {_count_text(ctx.count(missing))} in no class, e.g. {pname} ="
+                t" {_example(ctx, elem, missing)}",
             )
         )
-    for i in range(len(compiled)):
-        ref cls = part.classes[compiled[i]]
-        var s = results[compiled[i]]
-        var outside = ctx.difference(s, target.value())
-        if not ctx.is_empty(s) and not ctx.is_empty(outside):
+    for k in compiled:
+        ref cls = part.classes[k]
+        var outside = ctx.difference(results[k], target.value())
+        if not ctx.is_empty(results[k]) and not ctx.is_empty(outside):
             warnings.append(
-                Diagnostic(
-                    ast.path_of(cls.node),
-                    ast.nodes[cls.node].span,
-                    String(
-                        label, ": class ", cls.name, " has ",
-                        _count_text(ctx.count(outside)),
-                        " that requires rejects, e.g. ", pname, " = ",
-                        _example(ctx, elem, outside),
-                    ),
+                _warning(
+                    ast,
+                    cls.node,
+                    t"{label}: class {cls.name} has {_count_text(ctx.count(outside))} that"
+                    t" requires rejects, e.g. {pname} = {_example(ctx, elem, outside)}",
                 )
             )
     return errors^
