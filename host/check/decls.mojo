@@ -298,6 +298,7 @@ def build_params(
     self_type: Int,
     allow_self: Bool,
     self_model: Int,
+    self_reported: Bool = False,
 ) -> List[Param]:
     var out = List[Param]()
     var kids = c.kids_of(params)
@@ -308,7 +309,8 @@ def build_params(
         var default = c.kid(p, 1)
         if tnode == 0 and name == "self":
             if i != 0 or not allow_self:
-                c.error(p, "self is the receiver: it is only the first parameter of a method")
+                if i != 0 or not self_reported:
+                    c.error(p, "self is the receiver: it is only the first parameter of a method")
                 out.append(Param(name^, c.poison, 0, p))
             else:
                 out.append(Param(name^, self_type, 0, p))
@@ -405,12 +407,14 @@ def _declare_fn(mut c: Checker, d: Int):
     var pkids = c.kids_of(params_node)
     var self_t = -1
     var allow_self = False
+    var self_reported = False
     if len(pkids) > 0 and c.text_of(pkids[0]) == "self" and c.kid(pkids[0], 0) == 0:
         var dot = -1
         var bytes = name.as_bytes()
         for i in range(len(bytes)):
             if Int(bytes[i]) == ord("."):
                 dot = i
+        self_reported = True
         if dot < 0:
             c.error(
                 pkids[0],
@@ -434,9 +438,10 @@ def _declare_fn(mut c: Checker, d: Int):
             else:
                 self_t = c.spec.models[mp.value()].type
                 allow_self = True
+                self_reported = False
                 c.spec.fns[pos].owner = mp.value()
                 c.spec.fns[pos].receiver = True
-    var _bp = build_params(c, params_node, self_t, allow_self, c.spec.fns[pos].owner)
+    var _bp = build_params(c, params_node, self_t, allow_self, c.spec.fns[pos].owner, self_reported)
     c.spec.fns[pos].params = _bp^
     var ret = c.kid(d, 2)
     c.spec.fns[pos].result = c.unit if ret == 0 else resolve_type(c, ret)

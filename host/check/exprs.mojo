@@ -1122,6 +1122,10 @@ def infer_call(mut c: Checker, e: Int) -> Int:
                 var root = _root_name(c, f)
                 if root != "" and c.scalar(root) < 0:
                     return call_extern(c, e, chain)
+            if c.kind_of(base) == ast.NAME and c.scalar(c.text_of(base)) >= 0:
+                pass
+            elif not (c.kind_of(base) == ast.NAME and c.text_of(base) in c.enum_index):
+                return fail_call(c, e, f, "unknown function " + chain)
         var vt = infer(c, base)
         if c.tkind(vt) == ty.MODEL:
             var mp = c.model_pos_of_type(vt)
