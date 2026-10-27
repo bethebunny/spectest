@@ -21,6 +21,7 @@ _EXPORTS = {
     "InterfaceBinding": "spectest.runtime.binding",
     "Unrepresentable": "spectest.values",
     "marshal": "spectest.driver.convert",
+    "check": "spectest.specs",
     "NotAValue": "spectest.values",
 }
 
@@ -32,6 +33,7 @@ __all__ = [
     "NotAValue",
     "Unrepresentable",
     "__version__",
+    "check",
     "conformance",
     "load",
     "marshal",

@@ -80,8 +80,10 @@ def float_from_python(x: float) -> Float:
 
 
 class Driver:
-    def __init__(self, max_elements: int = 2**17):
+    def __init__(self, max_elements: int = 2**17, module_map: dict[str, str] | None = None):
         self.max_elements = max_elements
+        # qualified-name prefix -> replacement, e.g. {"math": "examples.libm.buggy"}
+        self.module_map = dict(module_map or {})
         self._targets: dict[int, Any] = {}  # id -> the resolved object
         self._fns: dict[int, Any] = {}  # id -> what `call` invokes
         self._by_name: dict[str, int] = {}
@@ -172,7 +174,18 @@ class Driver:
 
     # -- name resolution ----------------------------------------------------
 
+    def _mapped(self, name: str) -> str:
+        """The name with its longest mapped prefix (whole dotted parts) replaced."""
+        parts = name.split(".")
+        for n in range(len(parts), 0, -1):
+            replacement = self.module_map.get(".".join(parts[:n]))
+            if replacement is not None:
+                return ".".join([replacement, *parts[n:]])
+        return name
+
     def _lookup(self, name: str) -> Any:
+        if self.module_map:
+            name = self._mapped(name)
         parts = name.split(".")
         if not name or "" in parts:
             raise _Failure("spectest.ResolveError", f"bad name {name!r}")
