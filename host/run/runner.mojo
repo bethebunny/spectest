@@ -41,6 +41,7 @@ from mcheck.shrink import shrink
 from mcheck.source import Source
 from sets import BitSet
 from syntax import ast
+from syntax.chars import is_digit, is_word_char
 from wire.format import format_value
 from wire.value import ERROR, HANDLE, LIST, MAP, OPTION, RECORD, STRING, TUPLE, Value
 
@@ -1146,14 +1147,6 @@ struct Prop(Property, Movable):
 # The driver of a run
 
 
-def _is_digit(b: Int) -> Bool:
-    return b >= ord("0") and b <= ord("9")
-
-
-def _is_word(b: Int) -> Bool:
-    return _is_digit(b) or (b >= ord("a") and b <= ord("z")) or (b >= ord("A") and b <= ord("Z")) or b == ord("_")
-
-
 def error_shape(message: String) -> String:
     """`message` with each number (and its minus sign) replaced by `#`, so errors that differ only in values share a shape."""
     var out = String()
@@ -1161,13 +1154,13 @@ def error_shape(message: String) -> String:
     var bytes = message.as_bytes()
     for i in range(len(bytes)):
         var b = Int(bytes[i])
-        if _is_digit(b):
+        if is_digit(b):
             if not in_number:
                 out += "#"
             in_number = True
             continue
-        var minus = b == ord("-") and not in_number and i + 1 < len(bytes) and _is_digit(Int(bytes[i + 1]))
-        if minus and (i == 0 or not _is_word(Int(bytes[i - 1]))):
+        var minus = b == ord("-") and not in_number and i + 1 < len(bytes) and is_digit(Int(bytes[i + 1]))
+        if minus and (i == 0 or not is_word_char(Int(bytes[i - 1]))):
             continue
         in_number = False
         out += chr(b)
