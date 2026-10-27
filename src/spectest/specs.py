@@ -2,8 +2,8 @@
 
 A module-level ``test*`` name bound to a ``check(...)`` object becomes a collector
 with one item per clause the host reports (and per instantiation of a generic
-declaration). The object only records the options; the plugin loads the spec,
-runs it through ``spectest._host`` and reports (``spectest.pytest_plugin``).
+declaration). The object only records the options; ``spectest.pytest_plugin`` loads the
+spec and runs it through ``spectest._host``.
 """
 
 from __future__ import annotations
@@ -17,12 +17,14 @@ from typing import Any
 class SpecCheck:
     """A spec and the options of its run.
 
-    ``path`` is relative to the test module that binds the object. ``modules`` maps a
-    qualified-name prefix of the spec to another module (see ``Driver``);
-    ``expect_fail`` lists the clauses that must fail, by clause id or printed name;
-    ``instantiations`` gives each generic declaration's type arguments; ``examples``
-    gives explicit inputs per declaration; ``max_examples`` and ``seed`` override the
-    session's options when set.
+    ``path`` is relative to the test module that binds the object. ``max_examples`` and
+    ``seed`` override the session's options when set.
+
+    Fields:
+      - modules: qualified-name prefix of the spec to another module (see ``Driver``)
+      - expect_fail: clauses that must fail, by clause id or printed name
+      - instantiations: type arguments of each generic declaration
+      - examples: explicit inputs per declaration
     """
 
     path: str

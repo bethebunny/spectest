@@ -20,8 +20,7 @@ FLOAT_FORMATS = ("f16", "bf16", "f32", "f64")
 
 @dataclass(frozen=True, slots=True)
 class Float:
-    """A float of one format, kept as its bit pattern so that -0.0 and NaN payloads
-    survive."""
+    """A float of one format, as its bit pattern (so -0.0 and NaN payloads survive)."""
 
     fmt: str  # one of FLOAT_FORMATS
     bits: int  # the pattern, zero-extended
@@ -36,8 +35,7 @@ class Map:
 
 @dataclass(frozen=True, slots=True)
 class Record:
-    """A record: ``type`` is the qualified name of its Python class (a dataclass or
-    named tuple), and ``fields`` its fields in order."""
+    """A dataclass or named tuple: ``type`` is its class's qualified name."""
 
     type: str
     fields: tuple[tuple[str, Any], ...]
@@ -45,8 +43,8 @@ class Record:
 
 @dataclass(frozen=True, slots=True)
 class Enum:
-    """An enum member: ``type`` is the qualified name of the enum class, or ``""`` for a
-    member of a string-literal union, which crosses to Python as the plain string."""
+    """An enum member: ``type`` is the class's qualified name (``""`` for a member of a
+    string-literal union, which crosses to Python as the plain string)."""
 
     type: str
     member: str
@@ -54,8 +52,7 @@ class Enum:
 
 @dataclass(frozen=True, slots=True)
 class Handle:
-    """An object that stays in the driver: its id in the driver's table and the
-    qualified name of its class."""
+    """An object that stays in the driver: its id in the driver's table and its class."""
 
     id: int
     cls: str
@@ -63,9 +60,8 @@ class Handle:
 
 @dataclass(frozen=True, slots=True)
 class Error:
-    """A raised exception: its qualified class, the qualified classes of its bases
-    (nearest first, ``object`` left out) and ``str(exc)``. The driver's own failures,
-    such as a name that does not resolve, use classes under ``spectest.``."""
+    """A raised exception: qualified names of its class and bases (nearest first, without
+    ``object``), and ``str(exc)``. The driver's own failures use classes under ``spectest.``."""
 
     cls: str
     bases: tuple[str, ...]
@@ -74,8 +70,7 @@ class Error:
 
 @dataclass(frozen=True, slots=True)
 class Converted:
-    """A value of a class with a registered converter: the class's qualified name and
-    the wire value the converter made from it (or will make it from)."""
+    """A value of a class with a registered converter, and the wire value it converts to."""
 
     cls: str
     value: Any
