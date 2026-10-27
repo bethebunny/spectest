@@ -13,7 +13,7 @@ class Deque:
         self._maxlen = maxlen
         self._items = []
         for x in iterable:
-            self.append(x)
+            Deque.append(self, x)
 
     @classmethod
     def bounded(cls, n):
@@ -93,3 +93,19 @@ class PeekMutates(Deque):
         value = self._items[-1]
         self._items.insert(0, self._items.pop())
         return value
+
+
+class BreaksOther(Deque):
+    """Appending also overfills every other deque past its bound."""
+
+    _all: weakref.WeakSet = weakref.WeakSet()
+
+    def __init__(self, iterable=(), maxlen=None):
+        super().__init__(iterable, maxlen)
+        BreaksOther._all.add(self)
+
+    def append(self, x):
+        super().append(x)
+        for other in list(BreaksOther._all):
+            if other is not self and other._maxlen is not None:
+                other._items.extend([x] * (other._maxlen + 1 - len(other._items)))

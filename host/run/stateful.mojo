@@ -806,7 +806,7 @@ def run_interface(
     settings.seed = seed
     settings.max_examples = options.max_examples
     settings.max_choices = 1 << 20
-    settings.max_shrink_steps = 400 if options.strength != "full" else 2000
+    settings.max_shrink_steps = options.shrink_steps()
     var n = m.gid_count()
     var found = List[Optional[Found]]()
     for _ in range(n):

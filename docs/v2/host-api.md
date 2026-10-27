@@ -47,6 +47,8 @@ returns or modifies. A `modifies` clause is an item of kind `"modifies"`.
     "examples": [{"x": 1.0}],  # explicit inputs, judged before the search (wire objects)
     "strength": "dev",         # "dev" or "full": the shrink budget, 5000 or 20000 steps
     "aggregate_samples": 10000,  # members an aggregate clause visits of a set above exhaustive_limit
+    "steps": 30,               # interfaces: calls per step sequence, at most
+    "max_handles": 2,          # interfaces: objects live at once
 }
 ```
 
@@ -94,3 +96,27 @@ reads, so v1's rendering prints it:
     "duration": 0.004,
 }
 ```
+
+## Interfaces
+
+`run(spec, "collections.deque", options)` with an interface's name runs step
+sequences: constructors and methods called on live objects, in one search that judges
+every clause of every constructor and method (their ids are the checker's, such as
+`collections.deque.pop#1`), the built-in `#type`, `#raises` and `#frame` clauses, and
+each invariant (`collections.deque.within_bound`, kind `"invariant"`) after every call
+on every live object. `items(spec)` lists the same clauses with `decl` set to the
+interface's name and `tparams` the interface's type parameters. Results have mode
+`"stateful"`; a counterexample's `observation` starts with the step log:
+
+```
+steps:
+1. p1 = stateimpls.PopWrongEnd.bounded(n=2)
+2. p1.append(x=0)
+3. p1.append(x=1)
+4. p1.pop() -> 0
+result = 0
+```
+
+A failing sequence is stored under the failure store, as the choices that generate it
+and the edits that shortened it, and is replayed first on the next run (`mode`
+`"replay"`, `replayed` true on the clause).

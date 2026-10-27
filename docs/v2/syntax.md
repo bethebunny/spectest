@@ -98,3 +98,15 @@ is a call whose callee is an attribute chain.
   by `<` start type arguments, so a qualified `mp.round<f64>(x)` is a comparison.
 - A `perf` clause keeps its text, continuation lines joined by a space.
 - Names are ASCII, as in v1.
+
+## Targets of an interface's members *(provisional)*
+
+An interface is named by the qualified name of the class it describes, and the driver
+resolves a member's target from it:
+
+- a constructor named `__init__` calls the class itself, `collections.deque(...)`;
+- any other constructor `m` calls `<interface>.m`, a classmethod or staticmethod;
+- a method `m` calls `<interface>.m` with the receiver first, so
+  `collections.deque.pop(d)`.
+
+Arguments are passed by position, in the order the signature lists them.
