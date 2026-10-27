@@ -2,6 +2,7 @@
 
 from std.memory import bitcast
 
+from eval.coerce import int_from_bits
 from mcheck.source import Source, Many, MANY_LABEL, index_to_int
 from numeric.bigint import BigInt
 from numeric.formats import FloatFormat, F16, BF16, F32, F64
@@ -11,18 +12,6 @@ from .sizes import Sizes
 
 
 # Integers
-
-
-def int_value(pattern: UInt64, width: Int, signed: Bool) -> Value:
-    """The integer a `width`-bit two's-complement pattern denotes."""
-    if signed:
-        var bits = pattern
-        if width < 64 and (pattern >> UInt64(width - 1)) & 1 == 1:
-            bits = pattern | (~UInt64(0) << UInt64(width))
-        return Value.int(Int(bitcast[DType.int64](bits)))
-    if pattern <= UInt64(Int.MAX):
-        return Value.int(Int(pattern))
-    return Value.int(BigInt(pattern))
 
 
 def _mask(width: Int) -> UInt64:
@@ -37,10 +26,11 @@ def _seg(u: UInt64, start: Int, log_length: Int, n: UInt128) -> UInt64:
 
 
 def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt64:
-    """A `width`-bit pattern from one choice. The choice, read as a fraction, picks
-    small values, powers of two and their neighbours, the extremes, or a value
-    uniform over all patterns, in that order; within each, a smaller choice is a
-    smaller magnitude, so shrinking one choice shrinks the value across all four."""
+    """A `width`-bit pattern from one choice.
+
+    The choice, read as a fraction, picks small values, powers of two and their
+    neighbours, the extremes, or a value uniform over all patterns, in that order.
+    Within each, a smaller choice is a smaller magnitude."""
     var mask = _mask(width)
     var u = src.draw_bits(64)
     var seg = Int(u >> 56)
@@ -66,21 +56,7 @@ def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt
         return p - 1
     if seg < 128:
         var e = Int(_seg(u, 96, 5, 4))
-        if signed:
-            if e == 0:
-                return top
-            if e == 1:
-                return top - 1
-            if e == 2:
-                return top + 1
-            return top - 2
-        if e == 0:
-            return 0
-        if e == 1:
-            return mask
-        if e == 2:
-            return 1
-        return mask - 1
+        return [top, top - 1, top + 1, top - 2][e] if signed else [0, mask, 1, mask - 1][e]
     var idx = _seg(u, 128, 7, UInt128(1) << UInt128(width))
     if signed:
         var lo = Int(bitcast[DType.int64](top << UInt64(64 - width))) >> (64 - width)
@@ -90,31 +66,7 @@ def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt
 
 
 def draw_int_value(mut src: Source, width: Int, signed: Bool) raises -> Value:
-    return int_value(draw_fixed_pattern(src, width, signed), width, signed)
-
-
-def _pow2(k: Int) -> BigInt:
-    return BigInt(1) << k
-
-
-def _huge_power(i: Int) -> Int:
-    if i == 0:
-        return 8
-    if i == 1:
-        return 16
-    if i == 2:
-        return 31
-    if i == 3:
-        return 32
-    if i == 4:
-        return 53
-    if i == 5:
-        return 63
-    if i == 6:
-        return 64
-    if i == 7:
-        return 100
-    return 128
+    return int_from_bits(draw_fixed_pattern(src, width, signed), width, signed)
 
 
 def draw_unbounded_int(mut src: Source) raises -> Value:
@@ -124,21 +76,15 @@ def draw_unbounded_int(mut src: Source) raises -> Value:
         return Value.int(src.draw_int(-64, 64))
     if r < 70:
         return Value.int(src.draw_int(-1_000_000_000, 1_000_000_000))
-    if r < 85:
-        var negative = src.draw_bool()
-        var k = _huge_power(Int(src.draw_below(9)))
-        var d = Int(src.draw_below(3))
-        var v = _pow2(k)
-        if d == 1:
-            v = v - BigInt(1)
-        elif d == 2:
-            v = v + BigInt(1)
-        return Value.int(-v if negative else v^)
     var negative = src.draw_bool()
-    var words = 1 + Int(src.draw_below(4))
-    var v = BigInt()
-    for _ in range(words):
-        v = (v << 64) + BigInt(src.draw_bits(64))
+    var v: BigInt
+    if r < 85:
+        var k = [8, 16, 31, 32, 53, 63, 64, 100, 128][Int(src.draw_below(9))]
+        v = (BigInt(1) << k) + BigInt([0, -1, 1][Int(src.draw_below(3))])
+    else:
+        v = BigInt()
+        for _ in range(1 + Int(src.draw_below(4))):
+            v = (v << 64) + BigInt(src.draw_bits(64))
     return Value.int(-v if negative else v^)
 
 
@@ -146,17 +92,7 @@ def draw_unbounded_int(mut src: Source) raises -> Value:
 
 
 def _simple_magnitude(i: Int) -> Float64:
-    if i < 10:
-        return Float64(i + 1)
-    if i == 10:
-        return 100.0
-    if i == 11:
-        return 1000.0
-    if i == 12:
-        return 0.5
-    if i == 13:
-        return 1.5
-    return 0.25
+    return [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 100.0, 1000.0, 0.5, 1.5, 0.25][i]
 
 
 def float64_bits_in(format: FloatFormat, x: Float64) -> UInt64:
@@ -171,14 +107,14 @@ def float64_bits_in(format: FloatFormat, x: Float64) -> UInt64:
 
 
 comptime FLOAT_CLASSES = 7
-"""zero, moderate, simple, normal, subnormal, inf, nan: the order is the order of
-preference when shrinking."""
+"""zero, moderate, simple, normal, subnormal, inf, nan (in order of preference when shrinking)."""
 
 
 def draw_float_bits(mut src: Source, format: FloatFormat) raises -> UInt64:
-    """A float pattern: a class uniformly, then a member of it. Every class draws the
-    same four choices (class, sign, a, b) with the same meaning, so shrinking can
-    move a failure from a high class to a low one by lowering the class and raising b."""
+    """A float pattern: a class uniformly, then a member of it.
+
+    Every class draws the same four choices (class, sign, a, b) with the same meaning,
+    so shrinking can move a failure to a lower class by lowering the class and raising b."""
     var cls = Int(src.draw_below(UInt64(FLOAT_CLASSES)))
     var fb = format.fraction_bits
     var bias = format.bias()
@@ -249,21 +185,19 @@ struct Seq:
         return True
 
 
-def draw_is_long(mut src: Source, sizes: Sizes, depth: Int, short: Int, long: Int) raises -> Bool:
-    """Whether a value at `depth` is long. Only top-level values can be, and no choice
-    is drawn when long values are off."""
-    if depth > 0 or not sizes.has_long(short, long):
-        return False
-    return src.draw_bool(sizes.long_share)
+def draw_is_long(mut src: Source, sizes: Sizes, depth: Int, short: Int, *, long: Int) raises -> Bool:
+    """Whether a value at `depth` is long (only top-level values can be). No choice is
+    drawn when long values are off."""
+    return depth == 0 and sizes.has_long(short, long=long) and src.draw_bool(sizes.long_share)
 
 
-def draw_seq(
-    mut src: Source, sizes: Sizes, depth: Int, short: Int, long: Int
-) raises -> Seq:
-    if draw_is_long(src, sizes, depth, short, long):
-        var n = src.draw_int(sizes.long_lo(short), long)
-        return Seq(n, exactly=True)
-    return Seq(0, short)
+def _seq_of(mut src: Source, is_long: Bool, short: Int, long_lo: Int, long: Int) raises -> Seq:
+    return Seq(src.draw_int(long_lo, long), exactly=True) if is_long else Seq(0, short)
+
+
+def draw_seq(mut src: Source, sizes: Sizes, depth: Int, short: Int, *, long: Int) raises -> Seq:
+    var is_long = draw_is_long(src, sizes, depth, short, long=long)
+    return _seq_of(src, is_long, short, sizes.long_lo(short), long)
 
 
 # Strings
@@ -277,22 +211,10 @@ comptime INTERESTING_COUNT = 22
 
 
 def _interesting(i: Int) -> Int:
-    var k = 0
-    for cp in INTERESTING.codepoints():
+    for k, cp in enumerate(INTERESTING.codepoints()):
         if k == i:
             return Int(cp.to_u32())
-        k += 1
     return 0x20
-
-
-def _astral_edge(i: Int) -> Int:
-    if i == 0:
-        return 0x1F600
-    if i == 1:
-        return 0x10000
-    if i == 2:
-        return 0x10FFFF
-    return 0x1D11E
 
 
 def draw_code_point(mut src: Source) raises -> Int:
@@ -307,29 +229,16 @@ def draw_code_point(mut src: Source) raises -> Int:
         var c = Int(src.draw_below(0x10000 - 0x800))
         return c + 0x800 if c >= 0xD800 else c
     if src.draw_bool(0.25):
-        return _astral_edge(Int(src.draw_below(4)))
+        return [0x1F600, 0x10000, 0x10FFFF, 0x1D11E][Int(src.draw_below(4))]
     return 0x10000 + Int(src.draw_below(0x100000))
 
 
 def append_utf8(mut out: List[UInt8], cp: Int):
-    if cp < 0x80:
-        out.append(UInt8(cp))
-    elif cp < 0x800:
-        out.append(UInt8(0xC0 | (cp >> 6)))
-        out.append(UInt8(0x80 | (cp & 0x3F)))
-    elif cp < 0x10000:
-        out.append(UInt8(0xE0 | (cp >> 12)))
-        out.append(UInt8(0x80 | ((cp >> 6) & 0x3F)))
-        out.append(UInt8(0x80 | (cp & 0x3F)))
-    else:
-        out.append(UInt8(0xF0 | (cp >> 18)))
-        out.append(UInt8(0x80 | ((cp >> 12) & 0x3F)))
-        out.append(UInt8(0x80 | ((cp >> 6) & 0x3F)))
-        out.append(UInt8(0x80 | (cp & 0x3F)))
+    out.extend(chr(cp).as_bytes())
 
 
 def draw_string(mut src: Source, sizes: Sizes, depth: Int) raises -> Value:
-    var seq = draw_seq(src, sizes, depth, sizes.max_text, sizes.long_text)
+    var seq = draw_seq(src, sizes, depth, sizes.max_text, long=sizes.long_text)
     var out = List[UInt8]()
     while seq.more(src):
         append_utf8(out, draw_code_point(src))
@@ -340,67 +249,36 @@ def draw_string(mut src: Source, sizes: Sizes, depth: Int) raises -> Value:
 
 
 def _bad_utf8(i: Int) -> List[UInt8]:
-    var out = List[UInt8]()
-    var b: List[Int]
-    if i == 0:
-        b = [0x80]
-    elif i == 1:
-        b = [0xC3]
-    elif i == 2:
-        b = [0xE2, 0x82]
-    elif i == 3:
-        b = [0xF0, 0x9F, 0x98]
-    elif i == 4:
-        b = [0xC0, 0x80]
-    elif i == 5:
-        b = [0xED, 0xA0, 0x80]
-    elif i == 6:
-        b = [0xF4, 0x90, 0x80, 0x80]
-    else:
-        b = [0xFF]
-    for x in b:
-        out.append(UInt8(x))
-    return out^
+    var sequences: List[List[Int]] = [
+        [0x80], [0xC3], [0xE2, 0x82], [0xF0, 0x9F, 0x98], [0xC0, 0x80], [0xED, 0xA0, 0x80], [0xF4, 0x90, 0x80, 0x80], [0xFF]
+    ]
+    return [UInt8(x) for x in sequences[i]]
 
 
 def draw_bytes(mut src: Source, sizes: Sizes, depth: Int) raises -> Value:
     """Arbitrary bytes, UTF-8 encodings of text, or UTF-8 with one bad sequence."""
     var kind = Int(src.draw_below(100))
-    var is_long = draw_is_long(src, sizes, depth, sizes.max_bytes, sizes.long_bytes)
+    var is_long = draw_is_long(src, sizes, depth, sizes.max_bytes, long=sizes.long_bytes)
     var limit = sizes.long_bytes if is_long else sizes.max_bytes
-    var data = List[UInt8]()
+    var long_lo = sizes.long_lo(sizes.max_bytes)
     if kind < 60:
-        var seq: Seq
-        if is_long:
-            seq = Seq(src.draw_int(sizes.long_lo(sizes.max_bytes), limit), exactly=True)
-        else:
-            seq = Seq(0, limit)
+        var seq = _seq_of(src, is_long, limit, long_lo, limit)
+        var data = List[UInt8]()
         while seq.more(src):
             data.append(UInt8(src.draw_bits(8)))
         return Value.bytes(data^)
-    var seq = Seq(0, limit // 2) if not is_long else Seq(
-        src.draw_int(sizes.long_lo(sizes.max_bytes) // 2, limit // 2), exactly=True
-    )
+    var seq = _seq_of(src, is_long, limit // 2, long_lo // 2, limit // 2)
     var text = List[UInt8]()
     while seq.more(src):
         append_utf8(text, draw_code_point(src))
-    for b in text:
-        if len(data) >= limit:
-            break
-        data.append(b)
-    while is_long and len(data) < sizes.long_lo(sizes.max_bytes):
+    var data = List(text[: min(limit, len(text))])
+    while is_long and len(data) < long_lo:
         data.append(0x30)
     if kind >= 85:
         var bad = _bad_utf8(Int(src.draw_below(8)))
         var at = Int(src.draw_below(UInt64(len(data) + 1)))
-        var spliced = List[UInt8]()
-        for i in range(at):
-            spliced.append(data[i])
-        for b in bad:
-            spliced.append(b)
-        for i in range(at, len(data)):
-            spliced.append(data[i])
-        data = spliced^
-    while len(data) > limit:
-        _ = data.pop()
+        var spliced = List(data[:at])
+        spliced.extend(bad^)
+        spliced.extend(data[at:])
+        data = List(spliced[: min(limit, len(spliced))])
     return Value.bytes(data^)

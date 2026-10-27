@@ -2,7 +2,7 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from check.types import Types
 from gen.classes import draw_in_classes
-from gen.domain import domain_size, value_at, draw_small
+from gen.domain import domain_size, value_at
 from mcheck.property import Property, Outcome, PASSED
 from mcheck.search import enumerate_all
 from mcheck.settings import Settings
@@ -130,15 +130,6 @@ def test_option_and_out_of_range() raises:
     except:
         raised = True
     assert_true(raised)
-
-
-def test_draw_small_stays_in_domain() raises:
-    var types = Types()
-    var t = types.tuple_of([types.bool_(), types.fixed(8, False)])
-    var src = Source(1)
-    for _ in range(200):
-        src.reset_generate()
-        assert_equal(draw_small(src, types, t).count(), 2)
 
 
 def test_class_steering_is_even() raises:

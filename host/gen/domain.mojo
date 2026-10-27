@@ -10,11 +10,8 @@ from check.types import (
     LITERAL as T_LITERAL,
     ENUM as T_ENUM,
 )
-from numeric.formats import format_by_id
-from mcheck.source import Source
+from eval.coerce import value_from_bits
 from wire.value import Value
-
-from .scalars import int_value
 
 comptime MAX_DOMAIN: UInt64 = 65536
 
@@ -40,23 +37,21 @@ def domain_size(types: Types, t: Int) -> Optional[UInt64]:
         n = UInt64(len(info.names))
     elif k == T_OPTION:
         var inner = domain_size(types, info.args[0])
-        if not inner:
+        if inner is None:
             return None
         n = inner.value() + 1
     elif k == T_TUPLE:
         n = 1
-        for a in info.args:
-            var inner = domain_size(types, a)
-            if not inner:
+        for arg in info.args:
+            var inner = domain_size(types, arg)
+            if inner is None:
                 return None
             n *= inner.value()
             if n > MAX_DOMAIN:
                 return None
     else:
         return None
-    if n == 0 or n > MAX_DOMAIN:
-        return None
-    return n
+    return n if n > 0 and n <= MAX_DOMAIN else None
 
 
 def value_at(types: Types, t: Int, index: UInt64) raises -> Value:
@@ -64,39 +59,23 @@ def value_at(types: Types, t: Int, index: UInt64) raises -> Value:
     index. Integers and floats are their bit patterns; a tuple's last element varies
     fastest; an option's index 0 is none."""
     var size = domain_size(types, t)
-    if not size:
-        raise Error("gen: " + types.text(t) + " has no small domain")
+    if size is None:
+        raise Error(t"gen: {types.text(t)} has no small domain")
     if index >= size.value():
-        raise Error("gen: index out of the domain of " + types.text(t))
+        raise Error(t"gen: index out of the domain of {types.text(t)}")
     ref info = types.info(t)
     var k = info.kind
-    if k == T_BOOL:
-        return Value.bool(index == 1)
-    if k == T_FIXED_INT:
-        return int_value(index, info.bits, info.signed)
-    if k == T_FLOAT:
-        return Value.float(format_by_id(UInt8(info.bits)), index)
-    if k == T_LITERAL:
-        return Value.enum(String(), info.names[Int(index)])
-    if k == T_ENUM:
-        return Value.enum(info.name, info.names[Int(index)])
+    if k == T_BOOL or k == T_FIXED_INT or k == T_FLOAT:
+        return value_from_bits(types, t, index)
+    if k == T_LITERAL or k == T_ENUM:
+        return Value.enum(info.name if k == T_ENUM else String(), info.names[Int(index)])
     if k == T_OPTION:
-        if index == 0:
-            return Value.none()
-        return Value.some(value_at(types, info.args[0], index - 1))
+        return Value.none() if index == 0 else Value.some(value_at(types, info.args[0], index - 1))
     var items = List[Value]()
     var rest = index
-    for j in range(len(info.args) - 1, -1, -1):
-        var s = domain_size(types, info.args[j]).value()
-        items.append(value_at(types, info.args[j], rest % s))
+    for arg in reversed(info.args):
+        var s = domain_size(types, arg).value()
+        items.append(value_at(types, arg, rest % s))
         rest //= s
     items.reverse()
     return Value.tuple(items^)
-
-
-def draw_small(mut src: Source, types: Types, t: Int) raises -> Value:
-    """A value of a small domain, by a uniform index (shrinks toward index 0)."""
-    var size = domain_size(types, t)
-    if not size:
-        raise Error("gen: " + types.text(t) + " has no small domain")
-    return value_at(types, t, src.draw_below(size.value()))

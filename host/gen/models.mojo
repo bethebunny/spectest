@@ -62,19 +62,16 @@ def draw_model[
     """A value of `model`: one of its builds, its arguments drawn by their declared
     types (a model-typed argument recursively, to a bounded depth), and the builder
     called. A build that raises rejects the example; it is never a failure."""
-    var nb = len(spec.models[model].builds)
-    if nb == 0:
-        raise Error("gen: model " + spec.models[model].name + " has no build")
+    var builds = len(spec.models[model].builds)
+    if builds == 0:
+        raise Error(t"gen: model {spec.models[model].name} has no build")
     src.start_span(MODEL_SPAN)
-    var allowed = List[Int]()
-    for b in range(nb):
-        var ok = True
-        if depth >= sizes.max_model_depth:
-            for p in spec.models[model].builds[b].params:
-                if spec.types.kind(p.type) == T_MODEL:
-                    ok = False
-        if ok:
-            allowed.append(b)
+    var allowed = [
+        b
+        for b in range(builds)
+        if depth < sizes.max_model_depth
+        or not any([spec.types.kind(p.type) == T_MODEL for p in spec.models[model].builds[b].params])
+    ]
     if len(allowed) == 0:
         src.reject()
     var b = allowed[src.draw_choice(len(allowed))]
@@ -83,12 +80,9 @@ def draw_model[
         var t = _model_args(spec, model, spec.models[model].builds[b].params[i].type, targs)
         args.append(_draw_arg(src, spec, t, builder, sizes, depth))
     var out = Value.none()
-    var built = True
     try:
         out = builder.build(model, b, args)
     except:
-        built = False
-    if not built:
         src.reject()
     src.stop_span()
     return out^
@@ -103,10 +97,10 @@ def _draw_arg[
     if spec.types.kind(t) == T_MODEL:
         var name = spec.types.info(t).name
         var targs = spec.types.info(t).args.copy()
-        var m = spec.model_named(name)
-        if not m:
-            raise Error("gen: no model named " + name)
-        return draw_model(src, spec, m.value(), builder, sizes, targs, depth + 1)
+        var model = spec.model_named(name)
+        if model is None:
+            raise Error(t"gen: no model named {name}")
+        return draw_model(src, spec, model.value(), builder, sizes, targs, depth + 1)
     return draw_value(src, spec.types, t, sizes, depth)
 
 
@@ -129,8 +123,7 @@ def draw_args[
     A parameter of model type is built through `builder`.
     """
     var out = List[Value]()
-    var n = len(spec.fns[func].params)
-    for i in range(n):
+    for i in range(len(spec.fns[func].params)):
         if i == 0 and spec.fns[func].receiver:
             out.append(not_drawn_marker())
             continue

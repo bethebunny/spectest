@@ -35,5 +35,5 @@ struct Sizes(Copyable, Movable):
     def long_lo(self, short: Int) -> Int:
         return 2 * short + 1
 
-    def has_long(self, short: Int, long: Int) -> Bool:
-        return self.long_share > 0.0 and long >= 2 * short + 1
+    def has_long(self, short: Int, *, long: Int) -> Bool:
+        return self.long_share > 0.0 and long >= self.long_lo(short)
