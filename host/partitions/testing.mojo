@@ -182,3 +182,19 @@ def build_spec(source: String, path: String = "t.spec") raises -> Spec:
     spec.clauses = clauses^
     spec.aliases = aliases^
     return spec^
+
+
+def parse_set_expr(source: String, line_offset: Int = 0) raises -> Ast:
+    """The tree of an expression, parsed as the first clause of a function, so its node
+    is `set_expr_node(ast)`. Its span starts at line 3, column 11 (plus the offset
+    of `line_offset` blank lines before the function)."""
+    var prefix = String()
+    for _ in range(line_offset):
+        prefix += "\n"
+    return parse_spec(
+        "spec t\n" + prefix + "fn f()\n  ensures " + source + "\n", "t.spec"
+    )
+
+
+def set_expr_node(ast: Ast) -> Int:
+    return ast.kid(ast.kid(ast.kid(ast.root, 0), 3), 0)
