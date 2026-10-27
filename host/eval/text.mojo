@@ -29,7 +29,7 @@ def normalize(text: String) -> String:
         if ch == "#":
             in_comment = True
             continue
-        if ch == " " or ch == "\n" or ch == "\t" or ch == "\r":
+        if ch in " \n\t\r":
             pending_space = True
             continue
         if pending_space and out.byte_length() > 0:
@@ -56,7 +56,7 @@ def short(text: String, limit: Int) -> String:
     var bytes = text.as_bytes()
     while cut > 0 and (Int(bytes[cut]) & 0xC0) == 0x80:
         cut -= 1
-    return String(text[byte = 0 : cut]) + "..."
+    return String(text[byte = 0 : cut], "...")
 
 
 def location(spec: Spec, node: Int) -> String:
