@@ -84,21 +84,29 @@ integration, where every user of it is updated at once.
 | mcheck | `briefs/mcheck.md` | Choice sequences, generators, search over several properties, shrinking, enumeration, failure store |
 | sets | `briefs/sets.md` | Partition sets on the arena: intervals, patterns, named float and int sets, counting, sampling |
 
-### Wave 2: on wave 1
+### Wave 2a: on wave 1, independent of each other
+
+Contracts added for it: `host/check/types.mojo` (the type table),
+`host/check/spec.mojo` (the checked spec) and `host/prelude/names.mojo` (prelude ids).
+
+| Package | Brief | Builds |
+| --- | --- | --- |
+| checker | `briefs/checker.md` | Names, qualified names, types, clause ids, every static rule, prelude typing |
+| partitions | `briefs/partitions.md` | Set expressions to partition sets, `float_range`, `admitted`, the disjoint and cover checks |
+| prelude | `briefs/prelude.md` | Every system prelude function on Values, `cr` and `mp` through MPFR |
+| gen | `briefs/gen.md` | Values of spec types from mcheck, class steering, small domains, models through `build` |
+
+### Wave 2b: on the checker
 
 | Package | Needs | Builds |
 | --- | --- | --- |
-| checker | syntax | Names, qualified-name resolution, types, clause IDs, the static rules of `docs/language.md` |
-| prelude | numeric, wire | The system prelude in `prelude.mojo`: floats, ints, collections, text, `cr` and `mp` math |
-| evaluator | checker, wire, numeric | Expressions on Values, host operators, short-circuiting, errors as values |
-| gen | mcheck, sets, checker | Spec types to generators, partitions as sets and predicates, `build` lists, sizes |
-| plugin | bridge, driver | Collecting spec items in pytest and running them through the host |
-| reports | wire, mcheck | The failure store and Markdown and JSON reports |
+| evaluator | checker, prelude, partitions | Expressions on Values, host operators, short-circuiting, errors, planned calls and observers through a host interface, explanations |
 
 ### Wave 3: end to end
 
 The runner (generate, call, judge, verdicts, `#type` and `#raises`, planned calls),
-stateful interfaces, user preludes, and specs to run v2 against.
+the pytest plugin, the failure store and reports, stateful interfaces, user preludes
+in their own files, and specs to run v2 against.
 
 ## Open questions and where they bite
 
@@ -119,7 +127,7 @@ Each package is built in its own jj workspace started from `main`, and committed
 small steps as its tests pass. When its brief's acceptance list is met, it goes to the
 merge queue, which rebases it onto `main`, runs its tests and the contract tests
 (`uv run pytest tests/host/wire/test_value.mojo tests/host/numeric/test_bigint.mojo
-tests/host/syntax/test_ast.mojo tests/host/vendor`), and moves `main`. Packages own
+tests/host/syntax/test_ast.mojo tests/host/check/test_contracts.mojo tests/host/vendor`), and moves `main`. Packages own
 disjoint directories, so rebases rarely conflict; one that does goes back to its
 author.
 
