@@ -8,13 +8,12 @@ Declarations keep source order. Lists of declarations refer to each other by pos
 (`Fn.owner` is a position in `Spec.models`, `Fn.clauses` positions in `Spec.clauses`).
 """
 
-from syntax.ast import Ast, Diagnostic
+from syntax.ast import Ast
 
 from check.types import ANY_TYPE, Types
 
 
 # What a NAME, ATTR or CALL node refers to. `index` and `owner` by kind:
-comptime R_NONE: UInt8 = 0
 comptime R_PARAM: UInt8 = 1
 """A parameter: index = its position in the enclosing callable's params."""
 comptime R_RESULT: UInt8 = 2
@@ -216,34 +215,26 @@ struct Spec(Movable):
     """The type of each expression node, by node id; ANY_TYPE for other nodes."""
     var resolutions: Dict[Int, Resolution]
     """What each NAME, ATTR and CALL node that names something refers to."""
-    var warnings: List[Diagnostic]
 
     def __init__(out self, var name: String, var ast: Ast, var types: Types):
         self.name = name^
         var n = len(ast.nodes)
         self.ast = ast^
         self.types = types^
-        self.fns = List[Fn]()
-        self.models = List[Model]()
-        self.defs = List[Def]()
-        self.consts = List[Const]()
-        self.clauses = List[Clause]()
-        self.errors = List[String]()
-        self.enums = List[Int]()
-        self.records = List[Int]()
-        self.aliases = Dict[String, Int]()
+        self.fns = []
+        self.models = []
+        self.defs = []
+        self.consts = []
+        self.clauses = []
+        self.errors = []
+        self.enums = []
+        self.records = []
+        self.aliases = {}
         self.node_types = List[Int](length=n, fill=ANY_TYPE)
-        self.resolutions = Dict[Int, Resolution]()
-        self.warnings = List[Diagnostic]()
-
-    def type_of(self, node: Int) -> Int:
-        return self.node_types[node]
+        self.resolutions = {}
 
     def resolution(self, node: Int) -> Optional[Resolution]:
-        var found = self.resolutions.get(node)
-        if found:
-            return found.value().copy()
-        return None
+        return self.resolutions.get(node)
 
     def fn_named(self, name: StringSlice) -> Optional[Int]:
         for i in range(len(self.fns)):

@@ -7,6 +7,8 @@ diagnostics, one `path:line:col: message` per line, in source order. Declaration
 that fail are skipped, so one mistake reports once.
 """
 
+from std.builtin.sort import sort
+
 from syntax import ast as sx
 from syntax.ast import Ast, Diagnostic
 from syntax.parser import parse_spec
@@ -28,19 +30,16 @@ def check_with(var ast: Ast, files: Files) raises -> Spec:
     Each file is read once. A file that cannot be read or a cycle of `use` is an
     error."""
     var name = ast.nodes[ast.root].text.copy()
-    var diags = List[Diagnostic]()
+    var diags: List[Diagnostic] = []
     var order = resolve_files(ast, files, diags)
-    var decls = List[Int]()
+    var decls: List[Int] = []
     for f in order:
-        for d in ast.nodes[ast.files[f].root].kids:
-            var k = ast.nodes[d].kind
-            if k != sx.USE and k != sx.PRELUDE:
-                decls.append(d)
+        decls.extend([d for d in ast.nodes[ast.files[f].root].kids if ast.nodes[d].kind not in (sx.USE, sx.PRELUDE)])
     var c = Checker(Spec(name^, ast^, Types()))
     c.decls = decls^
     c.diags = diags^
     run(c)
-    if len(c.diags) > 0:
+    if c.diags:
         raise Error(diagnostics_text(c.diags))
     var spec = c^.into_spec()
     for i in range(len(spec.node_types)):
@@ -61,19 +60,7 @@ def check_source_with(source: String, path: String, files: Files) raises -> Spec
 
 def diagnostics_text(diags: List[Diagnostic]) -> String:
     """The diagnostics in source order, one per line."""
-    var order = List[Int]()
-    for i in range(len(diags)):
-        order.append(i)
-    # Stable insertion sort by position: diagnostics are few.
-    for i in range(1, len(order)):
-        var v = order[i]
-        var j = i - 1
-        while j >= 0 and diags[order[j]].span.start > diags[v].span.start:
-            order[j + 1] = order[j]
-            j -= 1
-        order[j + 1] = v
-    var out = String()
-    for i in range(len(order)):
-        out += "\n" if i else ""
-        out += String(diags[order[i]])
-    return out^
+    # sort() isn't stable, so break ties on the original position
+    var keys = [d.span.start * len(diags) + i for i, d in enumerate(diags)]
+    sort(keys)
+    return "\n".join([String(diags[key % len(diags)]) for key in keys])
