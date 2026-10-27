@@ -94,8 +94,10 @@ def test_speed_of_list_of_pairs() raises:
         ms = min(ms, Float64(perf_counter_ns() - t0) / 1e6)
     print("10000 draws of list<(i32, string)>:", ms, "ms (", total, "elements )")
     assert_true(total > 0)
-    # The aim is under 50 ms; the bound leaves room for a loaded machine.
-    assert_true(ms < 100.0)
+    # The aim is under 50 ms. The bound is ten times that, as the other speed tests'
+    # are, so a machine busy compiling other tests doesn't fail it; the print is the
+    # measurement.
+    assert_true(ms < 500.0)
 
 
 def main() raises:
