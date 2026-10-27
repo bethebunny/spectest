@@ -32,9 +32,11 @@ from gen.models import (
     is_not_drawn,
 )
 from gen.value import draw_value
+from mcheck.choices import Choices
 from mcheck.property import FAILED, PASSED, SKIPPED, Outcome, Property
 from mcheck.search import SearchResult, enumerate_all, search
 from mcheck.settings import Settings
+from mcheck.shrink import shrink
 from mcheck.source import Source
 from sets import BitSet
 from syntax import ast
@@ -138,6 +140,12 @@ struct Prop(Property, Movable):
     var se_pid: List[Int]
     var se_msg: List[String]
     var se_input: List[String]
+    var se_choices: List[Choices]
+    """The choices of the example that raised each spec error; empty when not from a search."""
+    var target: String
+    """While shrinking a spec error, its shape: an example then fails when it raises that error."""
+    var hit_message: String
+    var hit_input: String
     var inv_source: List[String]
     var inv_value: List[String]
     """The explanation of the invariant that failed in the current example."""
@@ -242,6 +250,10 @@ struct Prop(Property, Movable):
         self.se_pid = List[Int]()
         self.se_msg = List[String]()
         self.se_input = List[String]()
+        self.se_choices = List[Choices]()
+        self.target = String()
+        self.hit_message = String()
+        self.hit_input = String()
         self.inv_source = List[String]()
         self.inv_value = List[String]()
         self.vkind = List[Int]()
@@ -463,7 +475,28 @@ struct Prop(Property, Movable):
             if src.invalid and counting and src.extend:
                 self.unrep_skips += 1
             raise e^
-        return self.examine(args^, counting, counting and not src.extend)
+        var before = len(self.se_pid)
+        if self.target:
+            return self._examine_target(args^)
+        var out = self.examine(args^, counting, counting and not src.extend)
+        if counting:
+            for k in range(before, len(self.se_pid)):
+                self.se_choices[k] = src.rec.copy()
+        return out^
+
+    def _examine_target(mut self, var args: List[Value]) raises -> Outcome:
+        """Judges an example while a spec error is shrunk: it fails when it raises the
+        target error (up to the values in its message)."""
+        var shown = args.copy()
+        var out = self.examine(args^, False, False)
+        if out.is_invalid:
+            return out^
+        for i in range(len(self.infos)):
+            if self.vkind[i] == V_ERROR and error_shape(self.vnote[i]) == self.target:
+                self.hit_message = self.vnote[i].copy()
+                self.hit_input = self._inputs_text(shown)
+                return Outcome.single(0, FAILED)
+        return Outcome.single(0, PASSED)
 
     def run_fixed(mut self, var args: List[Value]) raises -> Outcome:
         """Judges explicit inputs; the counterexamples keep them as given."""
@@ -496,6 +529,7 @@ struct Prop(Property, Movable):
         self.se_pid.append(i)
         self.se_msg.append(message.copy())
         self.se_input.append(self._inputs_text(args))
+        self.se_choices.append(Choices())
 
     def _inputs_text(mut self, args: List[Value]) -> String:
         var out = String()
@@ -1128,6 +1162,112 @@ struct Prop(Property, Movable):
 # The driver of a run
 
 
+def error_shape(message: String) -> String:
+    """A spec error message with each number in it (and its minus sign) replaced by `#`, so errors that differ
+    only in the values they mention have one shape."""
+    var out = String()
+    var in_number = False
+    var bytes = message.as_bytes()
+    var n = len(bytes)
+    for i in range(n):
+        var b = Int(bytes[i])
+        var digit = b >= ord("0") and b <= ord("9")
+        if digit:
+            if not in_number:
+                out += "#"
+            in_number = True
+            continue
+        if b == ord("-") and not in_number and i + 1 < n:
+            var next = Int(bytes[i + 1])
+            var sign = next >= ord("0") and next <= ord("9")
+            if sign and i > 0:
+                var prev = Int(bytes[i - 1])
+                var word = (prev >= ord("0") and prev <= ord("9")) or (prev >= ord("a") and prev <= ord("z")) or (prev >= ord("A") and prev <= ord("Z")) or prev == ord("_")
+                sign = not word
+            if sign:
+                continue
+        in_number = False
+        out += chr(b)
+    return out^
+
+
+def _shrink_spec_errors(
+    mut prop: Prop, settings: Settings, seed: UInt64
+) raises:
+    """Shrinks the first example of each distinct spec error message, as a failure is
+    shrunk, and reports the shrunk example and its message in place of the first."""
+    var done_msg = List[String]()
+    var new_msg = List[String]()
+    var new_input = List[String]()
+    var distinct = 0
+    for k in range(len(prop.se_msg)):
+        if len(prop.se_choices[k].values) == 0:
+            continue
+        var seen = False
+        for m in done_msg:
+            if m == prop.se_msg[k]:
+                seen = True
+        if not seen:
+            done_msg.append(prop.se_msg[k].copy())
+            distinct += 1
+    if distinct == 0:
+        return
+    var budget = settings.max_shrink_steps // distinct
+    if budget < 200:
+        budget = 200
+    var cache_from = List[String]()
+    var cache_msg = List[String]()
+    var cache_input = List[String]()
+    for k in range(len(prop.se_msg)):
+        var found = -1
+        for q in range(len(cache_from)):
+            if cache_from[q] == prop.se_msg[k]:
+                found = q
+        if found < 0:
+            var msg = prop.se_msg[k].copy()
+            var input = prop.se_input[k].copy()
+            if len(prop.se_choices[k].values) > 0:
+                prop.target = error_shape(msg)
+                prop.hit_message = String()
+                var first = prop.se_choices[k].copy()
+                var shrunk = shrink(prop, first, 0, budget)
+                var src = Source(seed, SHRINK_SOURCE)
+                src.reset_replay(shrunk.values)
+                try:
+                    _ = prop.run(src)
+                except e:
+                    if not src.invalid:
+                        prop.target = String()
+                        raise e^
+                if prop.hit_message:
+                    msg = prop.hit_message.copy()
+                    input = prop.hit_input.copy()
+                prop.target = String()
+            cache_from.append(prop.se_msg[k].copy())
+            cache_msg.append(msg^)
+            cache_input.append(input^)
+            found = len(cache_from) - 1
+        new_msg.append(cache_msg[found].copy())
+        new_input.append(cache_input[found].copy())
+    # Spec errors that shrank to one message are reported once.
+    var keep_pid = List[Int]()
+    var keep_msg = List[String]()
+    var keep_input = List[String]()
+    for k in range(len(new_msg)):
+        var dup = False
+        for q in range(len(keep_pid)):
+            if keep_pid[q] == prop.se_pid[k] and keep_msg[q] == new_msg[k]:
+                dup = True
+        if not dup:
+            keep_pid.append(prop.se_pid[k])
+            keep_msg.append(new_msg[k].copy())
+            keep_input.append(new_input[k].copy())
+    prop.se_pid = keep_pid^
+    prop.se_msg = keep_msg^
+    prop.se_input = keep_input^
+    prop.se_choices = List[Choices]()
+
+
 def _declaration(spec: Spec, decl: String) raises -> Int:
     for i in range(len(spec.fns)):
         if spec.fns[i].decl_id == decl:
@@ -1224,6 +1364,7 @@ def run(
                 if not src.invalid:
                     raise e^
             prop.focus = -1
+        _shrink_spec_errors(prop, settings, seed)
     except e:
         failure = String(e)
     for k in range(len(prop.replayed)):
