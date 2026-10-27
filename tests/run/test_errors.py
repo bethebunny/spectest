@@ -138,3 +138,64 @@ def test_an_unconditional_raise_clause_with_a_unused_error_condition(spec):
     r = spec.run("runimpls.negate")
     assert "runimpls.negate#2" in r.failed()
     assert int(r.cx("runimpls.negate#2")["inputs"]["x"]) == 0
+
+
+SPEC2 = """\
+spec errors2
+
+model runimpls.SmallBox
+  observe items: list<i32>
+  build runimpls.make_small_box(items: list<i32>)
+
+fn runimpls.isqrt_never_raises(x: i32) -> i32
+  requires x > -5 and x < 3
+  raises ValueError when x < 0
+  ensures lookup: [10, 20, 30][x] > 0
+
+fn runimpls.size_of_small(b: runimpls.SmallBox) -> int
+  ensures bounded: result <= 3
+
+fn runimpls.div_by(x: i32) -> i32
+  requires x > -3 and x < 3
+  ensures quotient: 100 // x == result
+"""
+
+
+@pytest.fixture(scope="module")
+def spec2(tmp_path_factory):
+    loaded = load(tmp_path_factory.mktemp("errors2"), SPEC2)
+    yield loaded
+    loaded.close()
+
+
+def test_a_clause_that_cannot_be_evaluated_where_a_raise_was_due_is_skipped(spec2):
+    r = spec2.run("runimpls.isqrt_never_raises", max_examples=300)
+    # The call returned where ValueError was due, so the raises clause fails there...
+    assert r.failed() == ["runimpls.isqrt_never_raises#2"]
+    assert int(r.cx("runimpls.isqrt_never_raises#2")["inputs"]["x"]) == -1
+    # ...and the lookup, which errors for those inputs, is skipped instead of a spec error.
+    lookup = r["runimpls.isqrt_never_raises.lookup"]
+    assert lookup["counts"]["spec_error"] == 0 and r.spec_errors() == []
+    assert lookup["skips"]["raise due"] > 0
+    assert lookup["counts"]["pass"] > 0
+
+
+def test_a_build_that_raises_makes_the_example_invalid(spec2):
+    r = spec2.run("runimpls.size_of_small", max_examples=200)
+    assert r.passed_all(), r.data
+    assert r.invalid > 0
+    clause = r["runimpls.size_of_small.bounded"]
+    assert clause["skips"]["unrepresentable"] == r.invalid
+    assert clause["counts"]["pass"] == r.examples
+
+
+def test_an_evaluation_error_is_a_spec_error_never_a_failure(spec2):
+    r = spec2.run("runimpls.div_by", max_examples=200)
+    assert r.failed() == []
+    clause = r["runimpls.div_by.quotient"]
+    assert clause["counts"]["spec_error"] > 0
+    assert clause["counts"]["pass"] > 0
+    assert len(clause["spec_errors"]) == 1
+    message, example = clause["spec_errors"][0].split("\nexample: ")
+    assert "division by zero" in message and "t.spec:" in message
+    assert example == "x = 0"

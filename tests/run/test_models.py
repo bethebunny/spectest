@@ -22,6 +22,14 @@ model runimpls.Counter
   observe value: i32
   build runimpls.make_counter(value: i32)
 
+model runimpls.BadBox
+  observe items: list<i32>
+  observe size: int
+  invariant size_matches: size == len(items)
+
+fn runimpls.new_bad_box(n: u8) -> runimpls.BadBox
+  ensures anything: true
+
 fn runimpls.append(b: runimpls.Box, x: i32)
   modifies b
   ensures grew: b.items == old(b.items) + [x]
@@ -231,3 +239,14 @@ def test_a_method_the_driver_cannot_resolve_is_a_spec_error(spec):
     r = spec.run("runimpls.Box.get_wrong", max_examples=100)
     assert r.failed() == []
     assert any("no attribute get_wrong" in e for e in r.spec_errors())
+
+
+def test_a_model_invariant_is_judged_on_the_returned_handle(spec):
+    r = spec.run("runimpls.new_bad_box", max_examples=300)
+    clause = "runimpls.new_bad_box:runimpls.BadBox.size_matches"
+    assert r.failed() == [clause]
+    cx = r.cx(clause)
+    assert int(cx["inputs"]["n"]) == 3
+    assert cx["observation"] == "result = runimpls.BadBox { items: [0, 0, 0], size: 4 }"
+    assert ["result", "runimpls.BadBox { items: [0, 0, 0], size: 4 }"] in cx["explanation"]
+    assert ["len(items)", "3"] in cx["explanation"] or ["size", "4"] in cx["explanation"]

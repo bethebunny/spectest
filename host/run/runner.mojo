@@ -137,6 +137,9 @@ struct Prop(Property):
     var se_pid: List[Int]
     var se_msg: List[String]
     var se_input: List[String]
+    var inv_source: List[String]
+    var inv_value: List[String]
+    """The explanation of the invariant that failed in the current example."""
     # Per example scratch
     var vkind: List[Int]
     var vnote: List[String]
@@ -212,6 +215,8 @@ struct Prop(Property):
         self.se_pid = List[Int]()
         self.se_msg = List[String]()
         self.se_input = List[String]()
+        self.inv_source = List[String]()
+        self.inv_value = List[String]()
         self.vkind = List[Int]()
         self.vnote = List[String]()
         self.part_class = List[Int]()
@@ -476,6 +481,13 @@ struct Prop(Property):
                 return format_value(v)
             except:
                 return String("?")
+
+    def _model_type(mut self, name: String) -> Int:
+        """The handle type of the model called `name`."""
+        var m = self.loaded[].spec.model_named(name)
+        if m:
+            return self.loaded[].spec.models[m.value()].type
+        return 0
 
     def digest(mut self, v: Value, t: Int) raises -> Value:
         ref spec = self.loaded[].spec
@@ -886,6 +898,15 @@ struct Prop(Property):
             if j.is_false():
                 self.vkind[i] = V_FAIL
                 self.vnote[i] = String(spec.clauses[c].id, " is false on ", where[q], due_notes)
+                if self.explain_all or self.focus == i:
+                    self.inv_source.clear()
+                    self.inv_value.clear()
+                    self.inv_source.append(where[q].copy())
+                    self.inv_value.append(self.show(hs[q], self._model_type(name)))
+                    var pairs = explain(spec, c, env, self.host)
+                    for pair in pairs:
+                        self.inv_source.append(pair[0])
+                        self.inv_value.append(pair[1])
                 return
             if j.is_skip():
                 self._skip(i, "planned call")
@@ -991,12 +1012,15 @@ struct Prop(Property):
                 d.part_names.append(func.params[func.partitions[p].param].name.copy())
                 d.part_classes.append(func.partitions[p].classes[self.part_class[p]].name.copy())
         var kind = self.infos[i].kind
-        if kind == K_COND or kind == K_INVARIANT:
-            if kind == K_COND:
-                var pairs = explain(spec, self.infos[i].clause, env, self.host)
-                for q in pairs:
-                    d.expl_source.append(q[0])
-                    d.expl_value.append(q[1])
+        if kind == K_COND:
+            var pairs = explain(spec, self.infos[i].clause, env, self.host)
+            for q in pairs:
+                d.expl_source.append(q[0])
+                d.expl_value.append(q[1])
+        elif kind == K_INVARIANT:
+            for q in range(len(self.inv_source)):
+                d.expl_source.append(self.inv_source[q].copy())
+                d.expl_value.append(self.inv_value[q].copy())
         elif kind == K_RAISES or kind == K_ANY_RAISES:
             for k in range(len(self.cond_clauses)):
                 ref cl = spec.clauses[self.cond_clauses[k]]

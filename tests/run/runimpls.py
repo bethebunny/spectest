@@ -261,3 +261,35 @@ def new_box(items):
 
 def pick_first(a, b):
     return a
+
+
+# -- Inputs the library cannot build, and clauses that cannot be evaluated ---------
+
+
+def make_small_box(items):
+    if len(items) > 3:
+        raise ValueError("too many items")
+    return Box(items)
+
+
+def size_of_small(b):
+    return b.size
+
+
+def div_by(x):
+    return 100 // x if x else 0
+
+
+class BadBox:
+    """A box whose size lies once it holds more than two items."""
+
+    def __init__(self, n):
+        self.items = [0] * n
+
+    @property
+    def size(self):
+        return len(self.items) + (1 if len(self.items) > 2 else 0)
+
+
+def new_bad_box(n):
+    return BadBox(n)
