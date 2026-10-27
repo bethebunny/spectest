@@ -971,6 +971,7 @@ class SpecClauseItem(pytest.Item):
         data["item_id"] = self.nodeid
         data["instantiation"] = dict(self.instantiation or {})
         data["expected_fail"] = self.expected_fail
+        data["label_decl"] = self.entry["decl"]
         return ClauseResult.from_dict(data)
 
     def runtest(self) -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-import textwrap
 from collections.abc import Iterator
 
 import pytest
@@ -12,8 +11,6 @@ from fake_spec_host import FakeHost
 import spectest
 import spectest.driver
 import spectest.specs
-
-pytest_plugins = ["pytester"]
 
 
 @pytest.fixture
@@ -44,7 +41,3 @@ def project(pytester: pytest.Pytester, fake_host: FakeHost) -> pytest.Pytester:
     pytester.makefile(".spec", demo="spec demo\n", generic="spec generic\n")
     pytester.makefile(".spec", broken="spec broken\nBROKEN\n")
     return pytester
-
-
-def make_test(pytester: pytest.Pytester, body: str, name: str = "test_demo") -> None:
-    pytester.makepyfile(**{name: "import spectest\n" + textwrap.dedent(body)})

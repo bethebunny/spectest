@@ -7,9 +7,10 @@ import json
 from pathlib import Path
 
 import pytest
-from fake_spec_host import FakeHost, item
+from fake_spec_host import FakeHost, item, make_test
 
-from conftest import make_test
+pytest_plugins = ["pytester"]
+
 from spectest.runtime.report import load_reports
 
 ARGS = ("-p", "no:cacheprovider", "-p", "no:randomly")
@@ -102,6 +103,19 @@ def test_a_qualified_generic_declaration_is_named_before_its_clause(
         project, 'test_g = spectest.check("generic.spec", instantiations={"lib.sort": [{"T": "i64"}]})\n'
     )
     assert collect(project) == ["test_demo.py::test_g::lib.sort[T=i64].ordered"]
+
+
+def test_a_qualified_generic_failure_prints_its_label(
+    project: pytest.Pytester, fake_host: FakeHost
+) -> None:
+    fake_host.specs["generic"] = [item("lib.sort", "ordered", tparams=("T",))]
+    fake_host.verdicts["lib.sort.ordered"] = "fail"
+    make_test(
+        project, 'test_g = spectest.check("generic.spec", instantiations={"lib.sort": [{"T": "i64"}]})\n'
+    )
+    result = project.runpytest(*ARGS)
+    result.assert_outcomes(failed=1)
+    assert "lib.sort[T=i64].ordered (ensures) failed" in result.stdout.str()
 
 
 # -- runs ---------------------------------------------------------------------

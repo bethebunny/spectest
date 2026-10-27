@@ -155,6 +155,7 @@ class ClauseResult:
     aggregate: AggregateSummary | None = None
     replayed: bool = False
     skips: dict[str, int] = field(default_factory=dict)
+    label_decl: str = ""
 
     def __post_init__(self) -> None:
         unknown = [k for k in self.counts if k not in VERDICTS]
@@ -212,8 +213,14 @@ class ClauseResult:
     def label(self) -> str:
         """The clause's printed name: "sort[T=i64].ordered", "Deque[T=i64].pop#1".
 
-        For a function item it is the last part of the item's node ID.
+        For a function item it is the last part of the item's node ID. ``label_decl``,
+        when set, is the name the instantiation follows (a qualified declaration such as
+        ``lib.sort``); otherwise it follows the clause ID's first name.
         """
+        decl = self.label_decl
+        if decl and self.instantiation and self.clause_id.startswith(decl):
+            rest = self.clause_id[len(decl) :]
+            return f"{decl}[{inst_text(self.instantiation)}]{rest}"
         return clause_name(self.clause_id, self.instantiation)
 
     @property

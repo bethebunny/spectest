@@ -10,8 +10,11 @@ file's stem; a run judges the clauses of the declaration, each passing unless
 from __future__ import annotations
 
 import os
+import textwrap
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 
 class FakeSpecError(ValueError):
@@ -138,3 +141,8 @@ class FakeHost:
     def runs(self) -> list[tuple[str, dict[str, Any]]]:
         """The (declaration, options) of each run, in order."""
         return [(c[1], c[2]) for c in self.calls if c[0] == "run"]
+
+
+def make_test(pytester: pytest.Pytester, body: str, name: str = "test_demo") -> None:
+    """A test module in the scratch project, importing spectest."""
+    pytester.makepyfile(**{name: "import spectest\n" + textwrap.dedent(body)})
