@@ -10,8 +10,9 @@ import struct
 import sys
 from collections.abc import Callable
 from functools import cache
-from typing import Any
+from typing import Any, TypeVar
 
+from spectest.alarm import CallTimeout, alarm, can_time_out
 from spectest.driver import convert
 from spectest.driver.wire import (
     FLOAT_FORMATS,
@@ -35,6 +36,8 @@ _WIDTH = {"f16": 16, "bf16": 16, "f32": 32, "f64": 64}
 _LAYOUT = {"f16": (5, 10), "bf16": (8, 7), "f32": (8, 23), "f64": (11, 52)}
 
 _MISSING = object()
+
+T = TypeVar("T")
 
 
 class _Failure(Exception):
@@ -100,9 +103,13 @@ def float_from_python(x: float) -> Float:
 
 class Driver:
     def __init__(
-        self, max_elements: int = 2**17, module_map: dict[str, str] | None = None
+        self,
+        max_elements: int = 2**17,
+        module_map: dict[str, str] | None = None,
+        timeout: float | None = None,
     ):
         self.max_elements = max_elements
+        self.timeout = timeout
         # qualified-name prefix -> replacement, eg. {"math": "examples.libm.buggy"}
         self.module_map = dict(module_map or {})
         self._targets: dict[int, Any] = {}  # target id -> the resolved object
@@ -141,7 +148,20 @@ class Driver:
         self._by_name[name] = tid
         return tid
 
+    def _timed(self, run: Callable[[], T]) -> T | Error:
+        """`run()`, or a CallTimeout error when it passes `timeout` seconds."""
+        if not self.timeout or not can_time_out():
+            return run()
+        try:
+            with alarm(self.timeout):
+                return run()
+        except CallTimeout as exc:
+            return Error("spectest.CallTimeout", (), str(exc))
+
     def call(self, target: int, args: Any, kwargs: Any = None) -> Any:
+        return self._timed(lambda: self._call(target, args, kwargs))
+
+    def _call(self, target: int, args: Any, kwargs: Any) -> Any:
         if (fn := self._fns.get(target)) is None:
             return Error("spectest.ResolveError", (), f"unknown target {target}")
         try:
@@ -172,11 +192,17 @@ class Driver:
         return {k: self._to_python(v) for k, v in dict(kwargs).items()}
 
     def get(self, target: int) -> Any:
+        return self._timed(lambda: self._get(target))
+
+    def _get(self, target: int) -> Any:
         if (obj := self._targets.get(target, _MISSING)) is _MISSING:
             return Error("spectest.ResolveError", (), f"unknown target {target}")
         return self._result(obj)
 
     def observe(self, obj: Any, name: str, args: Any = None) -> Any:
+        return self._timed(lambda: self._observe(obj, name, args))
+
+    def _observe(self, obj: Any, name: str, args: Any) -> Any:
         try:
             attr = getattr(self._to_python(obj), name)
             if args is not None:

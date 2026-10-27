@@ -2,13 +2,19 @@
 
 import dataclasses
 import enum
+import threading
 import typing
 
 CONSTANT = 42
+NEVER = threading.Event()
 
 
 def add(a, b):
     return a + b
+
+
+def block():
+    NEVER.wait(30)
 
 
 def boom(msg):
@@ -37,6 +43,11 @@ class Point(typing.NamedTuple):
 class Box:
     label: str
     items: list
+
+
+class Slow:
+    def wait(self):
+        NEVER.wait(30)
 
 
 class Counter:

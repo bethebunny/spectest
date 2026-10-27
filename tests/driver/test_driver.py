@@ -1,4 +1,5 @@
 import math
+import signal
 import struct
 import time
 
@@ -371,3 +372,31 @@ def test_call_speed(d, capsys):
     with capsys.disabled():
         print(f"\ndriver.call of a two-int function: {us:.2f} us per call")
     assert us < 5
+
+
+# -- time limit ---------------------------------------------------------------
+
+
+def test_a_call_past_the_timeout_is_a_call_timeout_error():
+    d = Driver(timeout=0.2)
+    start = time.perf_counter()
+    assert call(d, f"{M}.block") == Error(
+        "spectest.CallTimeout", (), "timed out after 0.2s"
+    )
+    assert time.perf_counter() - start < 5
+
+
+def test_the_alarm_is_off_after_a_call():
+    d = Driver(timeout=0.2)
+    assert call(d, f"{M}.add", 1, 2) == 3
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    assert signal.getsignal(signal.SIGALRM) == signal.SIG_DFL
+
+
+def test_observe_times_out_too():
+    d = Driver(timeout=0.2)
+    slow = call(d, f"{M}.Slow")
+    assert isinstance(slow, Handle)
+    assert d.observe(slow, "wait", []) == Error(
+        "spectest.CallTimeout", (), "timed out after 0.2s"
+    )

@@ -97,3 +97,33 @@ def test_an_f32_example_that_is_not_representable_is_an_error(
             "*SPEC ERROR exlib.narrow.same: example x: 0.1 is not exactly representable as f32",
         ]
     )
+
+
+TIMEOUT_SPEC = (
+    "spec stalls\n\nfn stalling.ident(x: bool) -> bool\n  ensures same: result == x\n"
+)
+STALLING = "import threading\n\n\ndef ident(x):\n    threading.Event().wait(30)\n    return x\n"
+PROMPT = "def ident(x):\n    return x\n"
+
+
+def test_a_call_past_the_timeout_skips_the_item_as_inconclusive(
+    pytester: pytest.Pytester,
+) -> None:
+    real_host()
+    pytester.makefile(".spec", stalls=TIMEOUT_SPEC)
+    pytester.makepyfile(stalling=STALLING)
+    make_test(pytester, 'test_stalls = spectest.check("stalls.spec")\n')
+    result = pytester.runpytest(*ARGS, "--spectest-timeout", "0.2", "-rs")
+    result.assert_outcomes(skipped=3)
+    assert "inconclusive: 2 inconclusive" in result.stdout.str()
+
+
+def test_without_a_timeout_a_prompt_implementation_passes(
+    pytester: pytest.Pytester,
+) -> None:
+    real_host()
+    pytester.makefile(".spec", stalls=TIMEOUT_SPEC)
+    pytester.makepyfile(stalling=PROMPT)
+    make_test(pytester, 'test_stalls = spectest.check("stalls.spec")\n')
+    result = pytester.runpytest(*ARGS)
+    result.assert_outcomes(passed=3)

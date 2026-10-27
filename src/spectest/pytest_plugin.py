@@ -85,7 +85,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         type=float,
         default=None,
         metavar="SECONDS",
-        help="per-call time limit; a call that exceeds it is inconclusive, never a failure",
+        help="per-call time limit; a call that exceeds it is inconclusive, never a failure "
+        "(only Python code is interrupted)",
     )
     group.addoption(
         "--spectest-report",
@@ -814,7 +815,9 @@ class _SpecCollector(pytest.Collector):
             **parse_module_mappings(config.getoption("spectest_module") or []),
         }
         host = _load_host()
-        self.driver = Driver(module_map=mapping)
+        self.driver = Driver(
+            module_map=mapping, timeout=config.getoption("spectest_timeout")
+        )
         try:
             self.handle = host.load(str(self.spec_path), self.driver)
         except Exception as exc:
