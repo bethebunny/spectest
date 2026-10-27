@@ -12,7 +12,7 @@ from check.spec import (
     R_SPEC_FN,
     Spec,
 )
-from check.testkit import (
+from check_testkit import (
     clause_expr,
     fails,
     fails_at,

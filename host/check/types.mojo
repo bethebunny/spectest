@@ -21,13 +21,13 @@ something.
 | RECORD    |                          | qualified name    | field types                | field names           |
 | MODEL     | signed = is an interface | qualified name    | type arguments             |                       |
 | TYPEVAR   |                          | name              |                            | [bound] or []         |
-| ERROR     |                          | qualified name    |                            |                       |
 | FN        |                          |                   | params, then the result    | parameter names       |
 | CHOICE    |                          |                   | [type of the constants]    | the constants' names  |
 
-ENUM, RECORD, MODEL and ERROR are nominal: interned by name, so declare each once.
+ENUM, RECORD and MODEL are nominal: interned by name, so declare each once.
 """
 
+from numeric.formats import FloatFormat
 
 comptime ANY: UInt8 = 0
 comptime BOOL: UInt8 = 1
@@ -49,9 +49,8 @@ comptime ENUM: UInt8 = 16
 comptime RECORD: UInt8 = 17
 comptime MODEL: UInt8 = 18
 comptime TYPEVAR: UInt8 = 19
-comptime ERROR: UInt8 = 20
-comptime FN: UInt8 = 21
-comptime CHOICE: UInt8 = 22
+comptime FN: UInt8 = 20
+comptime CHOICE: UInt8 = 21
 
 comptime ANY_TYPE = 0
 """The id of ANY."""
@@ -67,8 +66,12 @@ struct TypeInfo(Copyable, Movable):
     var names: List[String]
 
 
+def _float_name(format_id: Int) -> StaticString:
+    return FloatFormat(UInt8(format_id), 0, 0).name()
+
+
 def _info(kind: UInt8) -> TypeInfo:
-    return TypeInfo(kind, 0, False, String(), List[Int](), List[String]())
+    return TypeInfo(kind, 0, False, String(), [], [])
 
 
 struct Types(Movable):
@@ -76,8 +79,8 @@ struct Types(Movable):
     var index: Dict[String, Int]
 
     def __init__(out self):
-        self.infos = List[TypeInfo]()
-        self.index = Dict[String, Int]()
+        self.infos = []
+        self.index = {}
         _ = self.intern(_info(ANY))
 
     # Interning
@@ -85,12 +88,11 @@ struct Types(Movable):
     def intern(mut self, var info: TypeInfo) -> Int:
         var key = _key(info)
         var found = self.index.get(key)
-        if found:
+        if found is not None:
             return found.value()
         self.infos.append(info^)
-        var id = len(self.infos) - 1
-        self.index[key] = id
-        return id
+        self.index[key] = len(self.infos) - 1
+        return len(self.infos) - 1
 
     # Constructors
 
@@ -183,11 +185,6 @@ struct Types(Movable):
             info.names.append(bound)
         return self.intern(info^)
 
-    def error(mut self, var name: String) -> Int:
-        var info = _info(ERROR)
-        info.name = name^
-        return self.intern(info^)
-
     def fn_(mut self, params: List[Int], names: List[String], result: Int) -> Int:
         var info = _info(FN)
         info.args = params.copy()
@@ -214,14 +211,9 @@ struct Types(Movable):
             return self.string()
         if name == "bytes":
             return self.bytes()
-        if name == "f16":
-            return self.float_(1)
-        if name == "bf16":
-            return self.float_(2)
-        if name == "f32":
-            return self.float_(3)
-        if name == "f64":
-            return self.float_(4)
+        for format_id in range(1, 5):
+            if name == _float_name(format_id):
+                return self.float_(UInt8(format_id))
         for bits in [8, 16, 32, 64]:
             if name == String("i", bits):
                 return self.fixed(bits, True)
@@ -250,13 +242,7 @@ struct Types(Movable):
         if k == FIXED_INT:
             return String("i" if i.signed else "u", i.bits)
         if k == FLOAT:
-            if i.bits == 1:
-                return "f16"
-            if i.bits == 2:
-                return "bf16"
-            if i.bits == 3:
-                return "f32"
-            return "f64"
+            return String(_float_name(i.bits))
         if k == REAL:
             return "real"
         if k == STRING:
@@ -268,35 +254,28 @@ struct Types(Movable):
         if k == QERR:
             return "qerr"
         if k == LIST:
-            return "list<" + self.text(i.args[0]) + ">"
+            return String(t"list<{self.text(i.args[0])}>")
         if k == MAP:
-            return "map<" + self.text(i.args[0]) + ", " + self.text(i.args[1]) + ">"
+            return String(t"map<{self.text(i.args[0])}, {self.text(i.args[1])}>")
         if k == OPTION:
-            return "option<" + self.text(i.args[0]) + ">"
+            return String(t"option<{self.text(i.args[0])}>")
         if k == SET:
-            return "set<" + self.text(i.args[0]) + ">"
+            return String(t"set<{self.text(i.args[0])}>")
         if k == TUPLE:
-            var out = String("(")
-            for j in range(len(i.args)):
-                out += (", " if j else "") + self.text(i.args[j])
-            return out + ")"
-        if k == LITERAL or k == CHOICE:
-            var out = String()
-            for j in range(len(i.names)):
-                out += " | " if j else ""
-                out += ("\"" + i.names[j] + "\"") if k == LITERAL else i.names[j]
-            return out
-        if k == MODEL and len(i.args):
-            var out = i.name + "<"
-            for j in range(len(i.args)):
-                out += (", " if j else "") + self.text(i.args[j])
-            return out + ">"
+            return String(t"({self._texts(i.args)})")
+        if k == LITERAL:
+            return " | ".join([String(t"\"{n}\"") for n in i.names])
+        if k == CHOICE:
+            return " | ".join(i.names)
+        if k == MODEL and i.args:
+            return String(t"{i.name}<{self._texts(i.args)}>")
         if k == FN:
-            var out = String("(")
-            for j in range(len(i.args) - 1):
-                out += (", " if j else "") + self.text(i.args[j])
-            return out + ") -> " + self.text(i.args[len(i.args) - 1])
+            var result = len(i.args) - 1
+            return String(t"({self._texts(i.args[:result])}) -> {self.text(i.args[result])}")
         return i.name
+
+    def _texts(self, types: Span[Int, _]) -> String:
+        return ", ".join([self.text(t) for t in types])
 
     def is_integer(self, t: Int) -> Bool:
         var k = self.kind(t)
@@ -351,11 +330,11 @@ struct Types(Movable):
         """Replaces the type variables named in `vars` by the types in `values`."""
         var info = self.infos[t].copy()
         if info.kind == TYPEVAR:
-            for j in range(len(vars)):
-                if vars[j] == info.name:
-                    return values[j]
+            for var_name, value in zip(vars, values):
+                if var_name == info.name:
+                    return value
             return t
-        if len(info.args) == 0 or info.kind == RECORD:
+        if not info.args or info.kind == RECORD:
             return t
         var changed = False
         for j in range(len(info.args)):
@@ -371,7 +350,7 @@ struct Types(Movable):
 def _key(info: TypeInfo) -> String:
     var out = String(Int(info.kind), ":", info.bits, ":", Int(info.signed), ":")
     var k = info.kind
-    if k == ENUM or k == RECORD or k == ERROR:
+    if k == ENUM or k == RECORD:
         return out + info.name
     out += info.name + ":"
     for a in info.args:

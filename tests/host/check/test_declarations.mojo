@@ -17,7 +17,8 @@ from check.spec import (
     R_TYPE_CONST,
     Spec,
 )
-from check.testkit import (
+from check_testkit import (
+    error_lines,
     clause_expr,
     count_errors,
     descendants,
@@ -474,8 +475,6 @@ def test_all_errors_are_reported_together() raises:
 
 
 def test_errors_come_in_source_order() raises:
-    from check.testkit import error_lines
-
     var lines = error_lines("fn f(x: f64)\n  ensures nope\n  ensures x == x\n  requires zz\n")
     assert_equal(len(lines), 3)
     assert_true(lines[0].startswith("t.spec:3:"))

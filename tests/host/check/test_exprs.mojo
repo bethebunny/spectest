@@ -2,7 +2,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 
 from check import types as ty
 from check.spec import R_LOCAL, R_PARAM, R_SET_CTOR, R_SPEC_FN, R_TYPE_CONST, Spec
-from check.testkit import (
+from check_testkit import (
     clause_expr,
     count_errors,
     ensures_ty,
