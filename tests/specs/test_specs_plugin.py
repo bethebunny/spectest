@@ -11,7 +11,7 @@ from fake_spec_host import FakeHost, item, make_test
 
 pytest_plugins = ["pytester"]
 
-from spectest.driver.wire import Float
+from spectest.driver.wire import Float, Handle
 from spectest.runtime.report import load_reports
 
 ARGS = ("-p", "no:cacheprovider", "-p", "no:randomly")
@@ -180,6 +180,22 @@ def test_run_options_come_from_the_session_and_the_check(
         "examples": [{"x": Float("f64", 0x3FE0000000000000)}],
     }
     assert "examples" not in sqrt_opts
+
+
+def test_example_handles_are_released_after_the_run(
+    project: pytest.Pytester, fake_host: FakeHost
+) -> None:
+    make_test(
+        project,
+        """
+        test_math = spectest.check("demo.spec", examples={"math.cos": [{"x": object()}]})
+        """,
+    )
+    project.runpytest(*ARGS).assert_outcomes(passed=3)
+    (driver,) = fake_host.drivers
+    (_cos, cos_opts), _sqrt = fake_host.runs()
+    assert isinstance(cos_opts["examples"][0]["x"], Handle)
+    assert driver.handle_ids() == frozenset()
 
 
 def test_the_command_line_overrides_max_examples(
@@ -423,3 +439,10 @@ def test_an_xdist_run_runs_each_declaration_once(
         "sort [('T', 'i64')]",
         "sort [('T', 'string')]",
     ]
+
+
+def test_the_xdist_group_marker_is_known_without_xdist(project: pytest.Pytester) -> None:
+    make_test(project, 'test_math = spectest.check("demo.spec")\n')
+    result = project.runpytest("-p", "no:xdist", *ARGS)
+    result.assert_outcomes(passed=3)
+    assert "PytestUnknownMarkWarning" not in result.stdout.str()

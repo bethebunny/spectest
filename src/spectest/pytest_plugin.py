@@ -151,7 +151,7 @@ class _State:
     def __init__(self, config: pytest.Config) -> None:
         self.config = config
         self._runner: Runner | None = None
-        self.ran: list[SpectestItem] = []
+        self.ran: list[SpectestItem | SpecClauseItem] = []
         self.payloads: list[dict[str, Any]] = []
         self.written: list[str] = []
         self.bound: dict[int, dict[str, str]] = {}
@@ -166,8 +166,7 @@ class _State:
                 host.unload(handle)
 
     def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
-        text = getattr(report, "spectest", None)
-        if report.when == "call" and isinstance(text, str):
+        if report.when == "call" and (text := _property(report, PAYLOAD)) is not None:
             self.payloads.append(json.loads(text))
 
     def bound_packages(self, conf: Any) -> dict[str, str]:
@@ -236,10 +235,18 @@ def profile_name(config: pytest.Config) -> str:
 STATE = pytest.StashKey[_State]()
 # the workerinput key that carries the controller's --dist loadgroup to its workers
 LOADGROUP = "spectest_loadgroup"
+# report.user_properties keys: they cross the xdist wire, unlike stash entries
+OUTCOME = "spectest_outcome"
+PAYLOAD = "spectest"
+
+
+def _property(report: pytest.TestReport, key: str) -> str | None:
+    return next((v for k, v in report.user_properties if k == key and isinstance(v, str)), None)
 
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "spectest: an item collected from a spectest Conformance")
+    config.addinivalue_line("markers", "xdist_group(name): items that pytest-xdist runs together")
     if getattr(config.option, "dist", None) == "load":
         # a v2 declaration's items share one run, so they go to one worker
         config.option.dist = "loadgroup"
@@ -545,15 +552,14 @@ def one_line(result: ClauseResult) -> str:
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Any:
     report = yield
     if isinstance(item, SPECTEST_ITEMS) and call.when == "call":
-        report.spectest_outcome = item.spectest_outcome  # type: ignore[attr-defined]
+        report.user_properties.append((OUTCOME, item.spectest_outcome or ""))
         if item.done:
-            text = json.dumps(item.payload(), ensure_ascii=False)
-            report.spectest = text  # type: ignore[attr-defined]
+            report.user_properties.append((PAYLOAD, json.dumps(item.payload(), ensure_ascii=False)))
     return report
 
 
 def pytest_report_teststatus(report: pytest.TestReport, config: pytest.Config) -> Any:
-    if report.when == "call" and getattr(report, "spectest_outcome", None) == "error":
+    if report.when == "call" and _property(report, OUTCOME) == "error":
         return "error", "E", ("SPEC ERROR", {"red": True, "bold": True})
     return None
 
@@ -1004,7 +1010,13 @@ class SpecClauseItem(pytest.Item):
             spec_clause_name(decl, decl, self.instantiation or {}),
         )
         if key not in runs:
-            runs[key] = _load_host().run(self.owner.handle, decl, self.run_options())
+            driver = self.owner.driver
+            before = driver.handle_ids()
+            options = self.run_options()
+            try:
+                runs[key] = _load_host().run(self.owner.handle, decl, options)
+            finally:
+                driver.release(driver.handle_ids() - before)
         return runs[key]
 
     def result(self) -> ClauseResult:
@@ -1047,7 +1059,7 @@ class SpecClauseItem(pytest.Item):
             )
         self.results = [result := self.result()]
         self.done = True
-        self.config.stash[STATE].ran.append(self)  # type: ignore[arg-type]
+        self.config.stash[STATE].ran.append(self)
         runxfail = bool(getattr(self.config.option, "runxfail", False))
         outcome = result.outcome
         if runxfail:

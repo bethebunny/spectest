@@ -218,6 +218,9 @@ class Driver:
             if (obj := self._objects.pop(i, _MISSING)) is not _MISSING:
                 self._ids.pop(id(obj), None)
 
+    def handle_ids(self) -> frozenset[int]:
+        return frozenset(self._objects)
+
     def converters(self) -> dict[str, str]:
         return convert.registered()
 
