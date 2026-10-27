@@ -12,9 +12,6 @@ struct FloatFormat(Equatable, TrivialRegisterPassable, Writable):
     var fraction_bits: Int
     """Stored significand bits, without the implicit leading 1."""
 
-    def __eq__(self, other: Self) -> Bool:
-        return self.id == other.id
-
     def width(self) -> Int:
         return 1 + self.exponent_bits + self.fraction_bits
 
@@ -31,6 +28,13 @@ struct FloatFormat(Equatable, TrivialRegisterPassable, Writable):
 
     def fraction_mask(self) -> UInt64:
         return (UInt64(1) << UInt64(self.fraction_bits)) - 1
+
+    def quiet_nan(self) -> UInt64:
+        """The positive quiet NaN with no payload, which prints as `nan`."""
+        return self.exponent_mask() | UInt64(1) << UInt64(self.fraction_bits - 1)
+
+    def max_finite(self) -> UInt64:
+        return self.exponent_mask() - 1
 
     def name(self) -> StaticString:
         match Int(self.id):

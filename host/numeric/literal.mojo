@@ -4,8 +4,6 @@ Decimal integers, decimals and exponents (`1.5`, `1e-3`, `2.5E+10`), hex integer
 (`0xff`) and hex floats (`0x1p-26`, `0x1.8p3`); a single `_` may separate two digits.
 """
 
-from bigint import BigUInt
-
 from numeric.decimal import pow10
 from numeric.digits import digit_value, magnitude_of_digits
 from numeric.real import Real
@@ -43,7 +41,7 @@ def _exponent(bytes: Span[Byte, _], start: Int, text: StringSlice) raises -> Tup
     """An optionally signed run of decimal digits at `start`; returns (value, end)."""
     var negative = start < len(bytes) and Int(bytes[start]) == ord("-")
     var signed = negative or (start < len(bytes) and Int(bytes[start]) == ord("+"))
-    var begin = start + (1 if signed else 0)
+    var begin = start + Int(signed)
     var i = begin
     var value = 0
     while i < len(bytes) and ord("0") <= Int(bytes[i]) <= ord("9"):
@@ -84,19 +82,11 @@ def parse_number(text: StringSlice) raises -> Real:
         i = end
     var exponent = 0
     if _is_letter(bytes, i, "p" if hex else "e"):
-        var parsed = _exponent(bytes, i + 1, text)
-        exponent = parsed[0]
-        i = parsed[1]
+        exponent, i = _exponent(bytes, i + 1, text)
     if i != len(bytes):
         raise Error(t"not a number: {text}")
     var value = magnitude_of_digits(digits, base=16 if hex else 10)
-    var one = BigUInt(UInt64(1))
     if hex:
-        var shift = exponent - 4 * fraction_digits
-        if shift >= 0:
-            return Real.ratio(False, value << shift, one^)
-        return Real.ratio(False, value^, one << -shift)
+        return Real.dyadic(False, value, exponent - 4 * fraction_digits)
     var scale = exponent - fraction_digits
-    if scale >= 0:
-        return Real.ratio(False, value * pow10(scale), one^)
-    return Real.ratio(False, value^, pow10(-scale))
+    return Real.ratio(False, value * pow10(max(scale, 0)), pow10(max(-scale, 0)))

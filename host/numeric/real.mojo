@@ -7,7 +7,7 @@ numerator 1 or -1. The numerator and denominator are what `Value.real` stores.
 from bigint import BigUInt
 
 from numeric.bigint import BigInt
-from numeric.decimal import gcd
+from numeric.decimal import gcd, trailing_zeros
 
 
 struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
@@ -15,13 +15,11 @@ struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
     var denominator: BigInt
 
     def __init__(out self):
-        self.numerator = BigInt()
-        self.denominator = BigInt(1)
+        self = Self(0)
 
     @implicit
     def __init__(out self, value: Int):
-        self.numerator = BigInt(value)
-        self.denominator = BigInt(1)
+        self = Self(BigInt(value))
 
     @implicit
     def __init__(out self, var value: BigInt):
@@ -48,14 +46,28 @@ struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
         """The real `±n / d`; `d` must be nonzero."""
         if not n:
             return Self()
-        if d != BigUInt(UInt64(1)):
+        if d != 1:
             var g = gcd(n.copy(), d.copy())
-            if g != BigUInt(UInt64(1)):
+            if g != 1:
                 n = n // g
                 d = d // g
         return Self(
             lowest_numerator=BigInt(negative=negative, magnitude=n^),
             lowest_denominator=BigInt(negative=False, magnitude=d^),
+        )
+
+    @staticmethod
+    def dyadic(negative: Bool, m: BigUInt, q: Int) -> Self:
+        """The real `±m * 2**q`."""
+        if not m:
+            return Self()
+        # An odd m puts the ratio in lowest terms.
+        var zeros = trailing_zeros(m)
+        var odd = m >> zeros
+        var e = q + zeros
+        return Self(
+            lowest_numerator=BigInt(negative=negative, magnitude=odd << e if e > 0 else odd^),
+            lowest_denominator=BigInt(negative=False, magnitude=BigUInt(1) << max(-e, 0)),
         )
 
     @staticmethod
@@ -75,30 +87,21 @@ struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
         return self.numerator.is_zero()
 
     def is_integer(self) -> Bool:
-        return self.is_finite() and self.denominator == BigInt(1)
+        return self.denominator == 1
 
     def sign(self) -> Int:
         """-1, 0 or 1; an infinity has its own sign."""
         return self.numerator.sign()
 
     def __abs__(self) -> Self:
-        return Self(
-            lowest_numerator=self.numerator.__abs__(),
-            lowest_denominator=self.denominator,
-        )
+        return Self(lowest_numerator=abs(self.numerator), lowest_denominator=self.denominator)
 
     def __neg__(self) -> Self:
-        return Self(
-            lowest_numerator=-self.numerator,
-            lowest_denominator=self.denominator,
-        )
+        return Self(lowest_numerator=-self.numerator, lowest_denominator=self.denominator)
 
     def _rank(self) -> Int:
         """-1 for -inf, 1 for +inf, 0 for finite."""
         return self.sign() if self.is_inf() else 0
-
-    def __eq__(self, rhs: Self) -> Bool:
-        return self.numerator == rhs.numerator and self.denominator == rhs.denominator
 
     def __lt__(self, rhs: Self) -> Bool:
         if self._rank() != 0 or rhs._rank() != 0:
@@ -140,9 +143,7 @@ struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
             return Self()
         var n = self.numerator * rhs.denominator
         var d = self.denominator * rhs.numerator
-        return Self.ratio(
-            n.negative != d.negative, n.magnitude.copy(), d.magnitude.copy()
-        )
+        return Self.ratio(n.negative != d.negative, n.magnitude.copy(), d.magnitude.copy())
 
     def floor(self) raises -> BigInt:
         if self.is_inf():
@@ -157,7 +158,7 @@ struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):
     def write_to(self, mut writer: Some[Writer]):
         if self.is_inf():
             writer.write("-inf" if self.numerator.negative else "inf")
-        elif self.denominator == BigInt(1):
+        elif self.is_integer():
             writer.write(self.numerator)
         else:
             writer.write(self.numerator, "/", self.denominator)
