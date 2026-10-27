@@ -1,0 +1,346 @@
+"""Why a boolean clause has its value: source text and value text of the
+subexpressions that matter, following the failing structure."""
+
+from check import types as ty
+from check.spec import Spec, R_OLD
+from syntax import ast
+from wire.value import Value, BOOL
+
+from .core import ev, tkind, set_members
+from .env import Env, Run
+from .host import EvalHost
+from .numbers import elements, show
+from .text import short, source_text
+
+
+comptime VALUE_CHARS = 300
+
+
+struct Outcome(Copyable, Movable):
+    """The result of evaluating a subexpression while explaining: a value, or the
+    reason it has none."""
+
+    var ok: Bool
+    var value: Value
+    var note: String
+
+    def __init__(out self, var value: Value):
+        self.ok = True
+        self.value = value^
+        self.note = String()
+
+    def __init__(out self, var note: String):
+        self.ok = False
+        self.value = Value.none()
+        self.note = note^
+
+    def is_bool(self, want: Bool) -> Bool:
+        return self.ok and self.value.kind == BOOL and self.value.as_bool() == want
+
+    def is_any_bool(self) -> Bool:
+        return self.ok and self.value.kind == BOOL
+
+
+struct Explainer(Movable):
+    var pairs: List[Tuple[String, String]]
+    var seen: List[String]
+    var limit: Int
+
+    def __init__(out self, limit: Int):
+        self.pairs = List[Tuple[String, String]]()
+        self.seen = List[String]()
+        self.limit = limit
+
+    def full(self) -> Bool:
+        return len(self.pairs) >= self.limit
+
+    def has_seen(self, text: String) -> Bool:
+        for s in self.seen:
+            if s == text:
+                return True
+        return False
+
+    def add_text(mut self, text: String, shown: String):
+        if self.has_seen(text) or self.full():
+            return
+        self.seen.append(text.copy())
+        self.pairs.append((text.copy(), short(shown, VALUE_CHARS)))
+
+
+def outcome_of[
+    H: EvalHost
+](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) -> Outcome:
+    var base = len(run.local_nodes)
+    try:
+        return Outcome(ev(spec, e, env, run, host))
+    except err:
+        var skipped = run.skipped
+        run.truncate(base)
+        run.err_node = -1
+        run.skipped = False
+        return Outcome(String("skipped: " if skipped else "error: ") + String(err))
+
+
+def shown(o: Outcome) -> String:
+    if not o.ok:
+        return o.note.copy()
+    return show(o.value)
+
+
+def is_literal(spec: Spec, e: Int) -> Bool:
+    ref n = spec.ast.nodes[e]
+    var k = n.kind
+    if k == ast.NUM or k == ast.STR or k == ast.BOOL or k == ast.NONE:
+        return True
+    if k == ast.UNARY and n.op == ast.NEG:
+        return is_literal(spec, n.kids[0])
+    if k == ast.LIST or k == ast.TUPLE:
+        for kid in n.kids:
+            if not is_literal(spec, kid):
+                return False
+        return True
+    return False
+
+
+def chain(spec: Spec, e: Int, op: UInt8, mut out: List[Int]):
+    ref n = spec.ast.nodes[e]
+    if n.kind == ast.BINARY and n.op == op:
+        chain(spec, n.kids[0], op, out)
+        chain(spec, n.kids[1], op, out)
+    else:
+        out.append(e)
+
+
+def is_old(spec: Spec, e: Int) -> Bool:
+    var r = spec.resolutions.get(e)
+    return Bool(r) and r.value().kind == R_OLD
+
+
+def add[
+    H: EvalHost
+](
+    mut ex: Explainer,
+    spec: Spec,
+    e: Int,
+    env: Env,
+    mut run: Run,
+    mut host: H,
+):
+    var text = source_text(spec, e)
+    if ex.has_seen(text) or ex.full():
+        return
+    var o = outcome_of(spec, e, env, run, host)
+    ex.add_text(text, shown(o))
+
+
+def add_known(mut ex: Explainer, spec: Spec, e: Int, o: Outcome):
+    var text = source_text(spec, e)
+    if ex.has_seen(text) or ex.full():
+        return
+    ex.add_text(text, shown(o))
+
+
+def operand[
+    H: EvalHost
+](
+    mut ex: Explainer,
+    spec: Spec,
+    e: Int,
+    env: Env,
+    mut run: Run,
+    mut host: H,
+):
+    """An operand's value, with the values that feed it when that helps."""
+    if is_literal(spec, e):
+        return
+    ref n = spec.ast.nodes[e]
+    if n.kind == ast.CALL and not is_old(spec, e):
+        for k in range(2, len(n.kids)):
+            var a = spec.ast.nodes[n.kids[k]].kids[0]
+            if not is_literal(spec, a):
+                add(ex, spec, a, env, run, host)
+    elif n.kind == ast.INDEX:
+        add(ex, spec, n.kids[0], env, run, host)
+        if not is_literal(spec, n.kids[1]):
+            add(ex, spec, n.kids[1], env, run, host)
+    elif n.kind == ast.SLICE:
+        add(ex, spec, n.kids[0], env, run, host)
+        for j in range(1, 3):
+            if not is_literal(spec, n.kids[j]):
+                add(ex, spec, n.kids[j], env, run, host)
+    elif n.kind == ast.IF:
+        add(ex, spec, n.kids[0], env, run, host)
+    add(ex, spec, e, env, run, host)
+
+
+def walk[
+    H: EvalHost
+](
+    mut ex: Explainer,
+    spec: Spec,
+    e: Int,
+    value: Outcome,
+    env: Env,
+    mut run: Run,
+    mut host: H,
+):
+    if ex.full():
+        return
+    ref n = spec.ast.nodes[e]
+    if n.kind == ast.BINARY:
+        var op = n.op
+        if op == ast.AND or op == ast.OR:
+            walk_chain(ex, spec, e, value, env, run, host)
+            return
+        if op == ast.IMPLIES:
+            if value.is_bool(False):
+                var r = outcome_of(spec, n.kids[1], env, run, host)
+                walk(ex, spec, n.kids[1], r, env, run, host)
+                return
+            var left = outcome_of(spec, n.kids[0], env, run, host)
+            if left.is_bool(False):
+                walk(ex, spec, n.kids[0], left, env, run, host)
+                return
+            if not left.ok:
+                add_known(ex, spec, n.kids[0], left)
+                return
+            var right = outcome_of(spec, n.kids[1], env, run, host)
+            walk(ex, spec, n.kids[1], right, env, run, host)
+            return
+        if (
+            op == ast.EQ or op == ast.NE or op == ast.LT or op == ast.LE
+            or op == ast.GT or op == ast.GE or op == ast.IN
+        ):
+            operand(ex, spec, n.kids[0], env, run, host)
+            operand(ex, spec, n.kids[1], env, run, host)
+            return
+    if n.kind == ast.UNARY and n.op == ast.NOT:
+        var inner = outcome_of(spec, n.kids[0], env, run, host)
+        if not inner.is_any_bool():
+            add_known(ex, spec, n.kids[0], inner)
+            return
+        walk(ex, spec, n.kids[0], inner, env, run, host)
+        return
+    if n.kind == ast.IF:
+        var cond = outcome_of(spec, n.kids[0], env, run, host)
+        add_known(ex, spec, n.kids[0], cond)
+        if cond.is_any_bool():
+            var branch = n.kids[1] if cond.value.as_bool() else n.kids[2]
+            walk(ex, spec, branch, value, env, run, host)
+        return
+    if n.kind == ast.LET:
+        walk_let(ex, spec, e, value, env, run, host)
+        return
+    if n.kind == ast.COMPREHENSION and (n.op == ast.ALL or n.op == ast.EXISTS):
+        walk_quantifier(ex, spec, e, value, env, run, host)
+        return
+    if n.kind == ast.CALL and not is_old(spec, e):
+        for k in range(2, len(n.kids)):
+            var a = spec.ast.nodes[n.kids[k]].kids[0]
+            if not is_literal(spec, a):
+                add(ex, spec, a, env, run, host)
+        add_known(ex, spec, e, value)
+        return
+    if n.kind == ast.BOOL:
+        return
+    add_known(ex, spec, e, value)
+
+
+def walk_chain[
+    H: EvalHost
+](
+    mut ex: Explainer,
+    spec: Spec,
+    e: Int,
+    value: Outcome,
+    env: Env,
+    mut run: Run,
+    mut host: H,
+):
+    var op = spec.ast.nodes[e].op
+    var parts = List[Int]()
+    chain(spec, e, op, parts)
+    var decisive = value.is_bool(False) if op == ast.AND else value.is_bool(True)
+    for part in parts:
+        var v = outcome_of(spec, part, env, run, host)
+        if not v.is_any_bool():
+            add_known(ex, spec, part, v)
+            return
+        if decisive:
+            if v.value.as_bool() == value.value.as_bool():
+                walk(ex, spec, part, v, env, run, host)
+                return
+        else:
+            walk(ex, spec, part, v, env, run, host)
+
+
+def walk_let[
+    H: EvalHost
+](
+    mut ex: Explainer,
+    spec: Spec,
+    e: Int,
+    value: Outcome,
+    env: Env,
+    mut run: Run,
+    mut host: H,
+):
+    ref n = spec.ast.nodes[e]
+    var bound = outcome_of(spec, n.kids[0], env, run, host)
+    if not bound.ok:
+        add_known(ex, spec, n.kids[0], bound)
+        return
+    ex.add_text(n.text, shown(bound))
+    var base = len(run.local_nodes)
+    run.push(e, bound.value.copy())
+    var body = outcome_of(spec, n.kids[1], env, run, host)
+    walk(ex, spec, n.kids[1], body, env, run, host)
+    run.truncate(base)
+
+
+def walk_quantifier[
+    H: EvalHost
+](
+    mut ex: Explainer,
+    spec: Spec,
+    e: Int,
+    value: Outcome,
+    env: Env,
+    mut run: Run,
+    mut host: H,
+):
+    ref n = spec.ast.nodes[e]
+    var witness = (n.op == ast.ALL and value.is_bool(False)) or (
+        n.op == ast.EXISTS and value.is_bool(True)
+    )
+    var iterable = n.kids[0]
+    var is_set = tkind(spec, iterable) == ty.SET
+    var coll = Outcome(Value.none())
+    if not is_set:
+        coll = outcome_of(spec, iterable, env, run, host)
+    if not witness or not coll.ok:
+        if not is_literal(spec, iterable) and not is_set:
+            add_known(ex, spec, iterable, coll)
+        return
+    var items: List[Value]
+    try:
+        if is_set:
+            items = set_members(spec, iterable)
+        else:
+            items = elements(coll.value, String(ast.op_name(n.op), "(...)"))
+    except err:
+        add_known(ex, spec, iterable, Outcome(String("error: ") + String(err)))
+        return
+    var base = len(run.local_nodes)
+    run.push(e, Value.none())
+    for i in range(len(items)):
+        run.set_top(items[i].copy())
+        var v = outcome_of(spec, n.kids[1], env, run, host)
+        if not v.ok or v.is_bool(value.value.as_bool()):
+            ex.add_text(n.text, show(items[i]))
+            if not v.ok:
+                add_known(ex, spec, n.kids[1], v)
+            else:
+                walk(ex, spec, n.kids[1], v, env, run, host)
+            break
+    run.truncate(base)
