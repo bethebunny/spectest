@@ -164,3 +164,6 @@ author.
 | evaluator | landed. The three `cos` clauses judge in about 11 µs per input |
 | runner | landed. 2.2 µs of host overhead per example on a trivial function |
 | plugin | landed. `spectest.check` and `.spec` arguments run through the host |
+| stateful | landed. A 100-sequence run of a deque-like class takes about 0.5 s |
+| preludes | landed. User preludes and `use`, each file named in diagnostics and items |
+| shrinking | building, `briefs/shrinking.md`: joint moves, shrinkable long lists, shrunk spec errors |
