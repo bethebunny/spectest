@@ -27,8 +27,7 @@ comptime J_SKIP = 3
 
 
 struct Judgment(Copyable, Movable):
-    """The outcome of judging a clause: true, false, an evaluation error (message and
-    node) or a skip (cause and node)."""
+    """The outcome of judging a clause: true, false, an error or a skip."""
 
     var kind: Int
     var message: String
@@ -54,7 +53,7 @@ struct Judgment(Copyable, Movable):
         return self.kind == J_SKIP
 
     def describe(self, spec: Spec) -> String:
-        """The judgment as a line: `true`, `false`, `error: message (at ...)`."""
+        """`true`, `false`, or `error: message (at ...)`."""
         if self.kind == J_TRUE:
             return "true"
         if self.kind == J_FALSE:
@@ -80,8 +79,7 @@ def evaluate[
 def judge[
     H: EvalHost
 ](spec: Spec, clause: Int, env: Env, mut host: H) -> Judgment:
-    """Does the clause `spec.clauses[clause]` hold? For `raises` and `may_raise` this
-    judges the `when` condition (true when there is none)."""
+    """Does the clause hold? A `raises` or `may_raise` clause judges its `when` condition."""
     ref c = spec.clauses[clause]
     if c.expr == 0:
         if c.kind == ast.RAISES or c.kind == ast.MAY_RAISE:
@@ -119,9 +117,7 @@ def collect_olds(spec: Spec, root: Int, mut out: List[Int]):
 def snapshot_olds[
     H: EvalHost
 ](spec: Spec, clauses: List[Int], mut env: Env, mut host: H):
-    """Evaluates every `old(e)` of the given clauses (positions in `Spec.clauses`) on
-    the state before the call, and records the values in `env`. An `old` whose
-    evaluation fails records the failure, which the clause meets when it reads it."""
+    """Records in `env` the value of each `old(e)` of the clauses; a failure is recorded too."""
     var calls: List[Int] = []
     for ci in clauses:
         if spec.clauses[ci].expr != 0:
@@ -155,8 +151,7 @@ def observe_with[
     args: List[Value],
     mut host: H,
 ) raises -> Value:
-    """The value of an observer given by a reading expression, with `self` bound to
-    `obj`. Calls the reading expression makes outside the spec go to `host.call_extern`."""
+    """The value of an observer's reading expression with `self` bound to `obj`."""
     ref o = spec.models[model].observers[observer]
     var name = String(spec.models[model].name, ".", o.name)
     if o.expr == 0:
@@ -177,9 +172,7 @@ def explain[
     mut host: H,
     limit: Int = EXPLAIN_LIMIT,
 ) -> List[Tuple[String, String]]:
-    """Why a clause has its value: (source text, value text) pairs of the
-    subexpressions that matter. For a false clause it follows the failing structure.
-    It never raises."""
+    """(source text, value text) pairs of the subexpressions that explain a clause. Never raises."""
     var ex = Explainer(limit)
     ref c = spec.clauses[clause]
     if c.expr != 0:

@@ -81,9 +81,7 @@ def _to_float(v: Value, f: FloatFormat, what: String) raises -> Value:
 
 
 def coerce_arg(types: ty.Types, v: Value, t: Int, what: String) raises -> Value:
-    """`v` as an argument of a parameter of type `t`: fixed-width integers must be
-    integers in range, floats exactly representable (integers, reals and floats of
-    other formats convert). Collections convert element by element."""
+    """`v` as an argument of type `t`: fixed-width ints in range, floats exact."""
     if not needs_exact(types, t):
         return v.copy()
     ref info = types.info(t)
@@ -125,8 +123,7 @@ def has_real(types: ty.Types, t: Int) -> Bool:
 
 
 def fit(types: ty.Types, v: Value, t: Int) -> Value:
-    """`v` as a value of the static type `t`: integers where a `real` is expected become
-    REAL values, so a `list<real>` holds only REALs."""
+    """`v` with integers where `t` expects a `real` made REAL."""
     var k = types.kind(t)
     if k == ty.REAL:
         return to_real_kind(v)
