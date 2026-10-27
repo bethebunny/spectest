@@ -114,8 +114,13 @@ its results, which v1's report rendering reads.
 
 ### Wave 3b
 
-Interfaces (stateful runs), user preludes in their own files, specs to run v2 against
-(ported or new), and a speed pass against the targets.
+| Package | Brief | Builds |
+| --- | --- | --- |
+| stateful | `briefs/stateful.md` | Interfaces: step sequences, judging every call, invariants after each, shrinking and replay |
+| preludes | `briefs/preludes.md` | Specs in several files: user preludes and `use`, diagnostics naming each file |
+
+Still to plan: specs to run v2 against (porting the examples and the bitpattern trial
+is the open migration question), and a speed pass against the targets.
 
 ## Open questions and where they bite
 
@@ -152,3 +157,10 @@ author.
 | syntax | landed. `bitpattern.spec` parses in about 7 ms |
 | mcheck | landed. About 0.18 µs per trivial example |
 | sets | landed. Every named set of every format builds in about 0.1 ms |
+| checker | landed. `bitpattern.spec` checks in about 6 ms |
+| partitions | landed. All 84 partitions of `bitpattern.spec` compile in about 1.5 ms |
+| prelude | landed. `cr` and `mp` through MPFR, about 5 µs a call |
+| gen | landed. About 3.7 µs per drawn `list<(i32, string)>` |
+| evaluator | landed. The three `cos` clauses judge in about 11 µs per input |
+| runner | landed. 2.2 µs of host overhead per example on a trivial function |
+| plugin | landed. `spectest.check` and `.spec` arguments run through the host |
