@@ -68,6 +68,27 @@ verdict rule: `src/spectest/runtime/runner.py`, `plans.py`, `binding.py`,
 6. **The Python API** of `docs/v2/host-api.md` in `bridge/module.mojo`: `load`,
    `items`, `run`, `unload`.
 
+## What wave 2b settled
+
+- `host/eval/api.mojo` is the evaluator's surface:
+  - `evaluate` and `judge(spec, clause_pos, env, mut host) -> Judgment`, where
+    `clause_pos` is a position in `Spec.clauses` and a Judgment has a kind, a message
+    and a node;
+  - `snapshot_olds(..., mut env)`, which writes into the env;
+  - `observe_with`, `explain` (with a default limit of 16) and `class_holds`.
+  `EvalHost` is in `host/eval/host.mojo`. Its parameters are named `fn_pos` and
+  `const_pos`, because `fn` is reserved in Mojo.
+- `host/eval/coerce.mojo` has `coerce_arg`, which checks that an argument is exactly
+  representable in its parameter's type. Use it for planned calls and for explicit
+  examples.
+- Aggregate bookkeeping is this package's job. The evaluator judges an aggregate
+  clause as one expression, and a comprehension over a partition set stops above
+  65,536 members. Port v1's `evaluate_aggregate`: terms, worst-term ranking, the
+  skipped-term counts, and sampling of large sets.
+- Mojo builds of large test files are slow, about 40 s each cold for the evaluator's.
+  Group the runner's Mojo tests into a few files, and put most end-to-end coverage
+  in the Python tests under `tests/run/`.
+
 ## Acceptance
 
 `uv run pytest tests/host/run tests/run` passes. End-to-end tests in `tests/run/` use
