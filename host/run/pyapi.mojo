@@ -54,61 +54,65 @@ def _int(o: PyObjectPtr, what: String) raises -> Int:
     return v.small_int().value()
 
 
+def _items(d: PyObjectPtr) -> List[Tuple[PyObjectPtr, PyObjectPtr]]:
+    var items = List[Tuple[PyObjectPtr, PyObjectPtr]]()
+    var pos = 0
+    var key = PyObjectPtr()
+    var value = PyObjectPtr()
+    while PyDict_Next(d, pos, key, value):
+        items.append((key, value))
+    return items^
+
+
 def parse_options(o: PyObjectPtr) raises -> RunOptions:
     """The options dict of `run` (docs/v2/host-api.md). Unknown keys are ignored."""
     var opts = RunOptions()
     if not _is_dict(o):
         raise Error("TypeError: options must be a dict")
-    var pos = 0
-    var key = PyObjectPtr()
-    var value = PyObjectPtr()
-    while PyDict_Next(o, pos, key, value):
+    for key, value in _items(o):
         var name = _text(key, "an option name")
-        var none = value == wire()[].none
-        if name == "seed":
-            opts.seed = UInt64(bitcast[DType.uint64](Int64(_int(value, "seed"))))
-        elif name == "max_examples":
-            opts.max_examples = _int(value, "max_examples")
-        elif name == "exhaustive_limit":
-            opts.exhaustive_limit = _int(value, "exhaustive_limit")
-        elif name == "store":
-            if not none:
-                opts.store = _text(value, "store")
-        elif name == "strength":
-            opts.strength = _text(value, "strength")
-        elif name == "aggregate_samples":
-            opts.aggregate_samples = _int(value, "aggregate_samples")
-        elif name == "steps":
-            opts.steps = _int(value, "steps")
-        elif name == "max_handles":
-            opts.max_handles = _int(value, "max_handles")
-        elif name == "instantiation":
-            if not none:
-                if not _is_dict(value):
-                    raise Error("TypeError: instantiation must be a dict")
-                var p2 = 0
-                var k2 = PyObjectPtr()
-                var v2 = PyObjectPtr()
-                while PyDict_Next(value, p2, k2, v2):
-                    opts.inst_names.append(_text(k2, "a type parameter name"))
-                    opts.inst_types.append(_text(v2, "a type argument"))
-        elif name == "examples":
-            if not none:
-                if not (PyType_GetFlags(ob_type(value)) & Py_TPFLAGS_LIST):
-                    raise Error("TypeError: examples must be a list")
-                for i in range(PyList_Size(value)):
-                    var ex = PyList_GetItem(value, i)
-                    if not _is_dict(ex):
-                        raise Error("TypeError: an example must be a dict")
-                    var keys = List[Value]()
-                    var vals = List[Value]()
-                    var p3 = 0
-                    var k3 = PyObjectPtr()
-                    var v3 = PyObjectPtr()
-                    while PyDict_Next(ex, p3, k3, v3):
-                        keys.append(Value.string(_text(k3, "a parameter name")))
-                        vals.append(from_python(v3))
-                    opts.examples.append(Value.map(keys^, vals^))
+        var is_none = value == wire()[].none
+        match name:
+            case "seed":
+                opts.seed = UInt64(bitcast[DType.uint64](Int64(_int(value, "seed"))))
+            case "max_examples":
+                opts.max_examples = _int(value, name)
+            case "exhaustive_limit":
+                opts.exhaustive_limit = _int(value, name)
+            case "strength":
+                opts.strength = _text(value, name)
+            case "aggregate_samples":
+                opts.aggregate_samples = _int(value, name)
+            case "steps":
+                opts.steps = _int(value, name)
+            case "max_handles":
+                opts.max_handles = _int(value, name)
+            case "store":
+                if not is_none:
+                    opts.store = _text(value, name)
+            case "instantiation":
+                if not is_none:
+                    if not _is_dict(value):
+                        raise Error("TypeError: instantiation must be a dict")
+                    for param, arg in _items(value):
+                        opts.inst_names.append(_text(param, "a type parameter name"))
+                        opts.inst_types.append(_text(arg, "a type argument"))
+            case "examples":
+                if not is_none:
+                    if not (PyType_GetFlags(ob_type(value)) & Py_TPFLAGS_LIST):
+                        raise Error("TypeError: examples must be a list")
+                    for i in range(PyList_Size(value)):
+                        var example = PyList_GetItem(value, i)
+                        if not _is_dict(example):
+                            raise Error("TypeError: an example must be a dict")
+                        var keys = List[Value]()
+                        var vals = List[Value]()
+                        for param, arg in _items(example):
+                            keys.append(Value.string(_text(param, "a parameter name")))
+                            vals.append(from_python(arg))
+                        opts.examples.append(Value.map(keys^, vals^))
+            case _:
+                pass
     return opts^
 
 

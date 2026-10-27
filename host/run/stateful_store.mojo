@@ -23,40 +23,31 @@ struct Stored(Movable):
 
     def __init__(out self):
         self.choices = Choices()
-        self.deleted = List[Int]()
-        self.arg_sid = List[Int]()
-        self.arg_index = List[Int]()
-        self.arg_value = List[Int]()
+        self.deleted = []
+        self.arg_sid = []
+        self.arg_index = []
+        self.arg_value = []
 
 
 def _file_name(dir: String, key: String) -> String:
+    comptime DIGITS = "0123456789abcdef"
     var name = String()
     for b in key.as_bytes():
         var c = Int(b)
-        var plain = (
-            (c >= ord("a") and c <= ord("z"))
-            or (c >= ord("A") and c <= ord("Z"))
-            or (c >= ord("0") and c <= ord("9"))
-            or c == ord("-")
-            or c == ord("_")
-        )
-        if plain:
-            name += chr(c)
-        else:
-            var hex = "0123456789abcdef"
-            name += "." + hex[byte = c // 16 : c // 16 + 1] + hex[byte = c % 16 : c % 16 + 1]
-    return dir + "/" + name + ".steps"
+        var plain = (c >= ord("a") and c <= ord("z")) or (c >= ord("A") and c <= ord("Z")) or (c >= ord("0") and c <= ord("9")) or c == ord("-") or c == ord("_")
+        name += chr(c) if plain else String(".", DIGITS[byte = c // 16 : c // 16 + 1], DIGITS[byte = c % 16 : c % 16 + 1])
+    return String(dir, "/", name, ".steps")
 
 
 def save_stored(dir: String, key: String, stored: Stored) raises:
     makedirs(dir, exist_ok=True)
     var text = String(HEADER, "\n")
-    for i in range(len(stored.choices.values)):
-        text += String("c ", Int(stored.choices.values[i]), " ", Int(stored.choices.bounds[i]), "\n")
+    for value, bound in zip(stored.choices.values, stored.choices.bounds):
+        text += String("c ", Int(value), " ", Int(bound), "\n")
     for sid in stored.deleted:
         text += String("d ", sid, "\n")
-    for i in range(len(stored.arg_sid)):
-        text += String("a ", stored.arg_sid[i], " ", stored.arg_index[i], " ", stored.arg_value[i], "\n")
+    for sid, index, value in zip(stored.arg_sid, stored.arg_index, stored.arg_value):
+        text += String("a ", sid, " ", index, " ", value, "\n")
     Path(_file_name(dir, key)).write_text(text)
 
 

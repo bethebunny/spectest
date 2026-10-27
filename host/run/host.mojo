@@ -34,8 +34,7 @@ struct RunHost(Builder, EvalHost):
     var client: Pointer[DriverClient, MutUntrackedOrigin]
     var targets: List[Int]
     """By position in Spec.fns; NO_TARGET until resolved."""
-    var build_names: List[String]
-    var build_targets: List[Int]
+    var build_targets: Dict[String, Int]
     var const_values: List[Value]
     var const_known: List[Bool]
     var tnames: List[String]
@@ -49,8 +48,6 @@ struct RunHost(Builder, EvalHost):
     """Ids of the handles among the current example's arguments."""
     var seen: List[UInt64]
     """Ids of every handle the run met, to release."""
-    var planned: Int
-    var calls: Int
 
     def __init__(out self, mut loaded: Loaded, mut client: DriverClient):
         self.loaded = Pointer[Loaded, MutUntrackedOrigin](
@@ -60,21 +57,15 @@ struct RunHost(Builder, EvalHost):
             unsafe_from_address=Int(Pointer(to=client))
         )
         self.targets = List[Int](length=len(loaded.spec.fns), fill=NO_TARGET)
-        self.build_names = List[String]()
-        self.build_targets = List[Int]()
-        self.const_values = List[Value]()
-        self.const_known = List[Bool]()
-        for _ in range(len(loaded.spec.consts)):
-            self.const_values.append(Value.none())
-            self.const_known.append(False)
-        self.tnames = List[String]()
-        self.tids = List[Int]()
-        self.memo = Dict[Value, Int]()
-        self.memo_result = List[Value]()
-        self.known = List[UInt64]()
-        self.seen = List[UInt64]()
-        self.planned = 0
-        self.calls = 0
+        self.build_targets = {}
+        self.const_values = [Value.none() for _ in loaded.spec.consts]
+        self.const_known = [False for _ in loaded.spec.consts]
+        self.tnames = []
+        self.tids = []
+        self.memo = {}
+        self.memo_result = []
+        self.known = []
+        self.seen = []
 
     # Example bookkeeping
 
@@ -83,9 +74,7 @@ struct RunHost(Builder, EvalHost):
             self.memo.clear()
             self.memo_result.clear()
         self.known.clear()
-        for a in args:
-            if a.kind == HANDLE:
-                self.known.append(a.handle_id())
+        self.known += [a.handle_id() for a in args if a.kind == HANDLE]
 
     def track(mut self, v: Value, deep: Bool = True):
         """Remembers the handles in `v`."""
@@ -112,19 +101,13 @@ struct RunHost(Builder, EvalHost):
         return self.targets[f]
 
     def named_target(mut self, name: String) raises -> Int:
-        for i in range(len(self.build_names)):
-            if self.build_names[i] == name:
-                return self.build_targets[i]
-        var t = self.client[].resolve(name)
-        self.build_names.append(name)
-        self.build_targets.append(t)
-        return t
+        if name not in self.build_targets:
+            self.build_targets[name] = self.client[].resolve(name)
+        return self.build_targets[name]
 
     def call(mut self, f: Int, args: List[Value]) raises -> Value:
         """Calls Spec.fns[f]; a library error comes back as an ERROR value."""
-        var target = self.fn_target(f)
-        self.calls += 1
-        return self.client[].call(target, args)
+        return self.client[].call(self.fn_target(f), args)
 
     # Builder
 
@@ -172,13 +155,11 @@ struct RunHost(Builder, EvalHost):
         return got^
 
     def call_fn(mut self, `fn`: Int, args: List[Value]) raises -> Value:
-        var packed = List[Value](capacity=len(args) + 1)
-        packed.append(Value.int(`fn`))
-        for a in args:
-            packed.append(a.copy())
+        var packed: List[Value] = [Value.int(`fn`)]
+        packed += args.copy()
         var key = Value.list(packed^)
         var found = self.memo.get(key)
-        if found:
+        if found is not None:
             return self.memo_result[found.value()].copy()
         var out = self._planned(`fn`, args)
         self.memo[key^] = len(self.memo_result)
@@ -189,32 +170,27 @@ struct RunHost(Builder, EvalHost):
         ref func = self.loaded[].spec.fns[f]
         var env = Env(args.copy())
         var rtype = func.result
-        for j in range(len(func.tparams)):
-            for k in range(len(self.tnames)):
-                if self.tnames[k] == func.tparams[j]:
-                    env.bind_type(func.tparams[j], self.tids[k])
+        var names = List[String]()
+        var ids = List[Int]()
+        for tparam in func.tparams:
+            for name, id in zip(self.tnames, self.tids):
+                if name == tparam:
+                    env.bind_type(tparam, id)
+                    names.append(tparam)
+                    ids.append(id)
         if len(func.tparams) > 0:
-            var names = List[String]()
-            var ids = List[Int]()
-            for j in range(len(func.tparams)):
-                for k in range(len(self.tnames)):
-                    if self.tnames[k] == func.tparams[j]:
-                        names.append(func.tparams[j])
-                        ids.append(self.tids[k])
             rtype = self.loaded[].spec.types.substitute(rtype, names, ids)
         for c in func.clauses:
             if self.loaded[].spec.clauses[c].kind != ast.REQUIRES:
                 continue
             var j = judge(self.loaded[].spec, c, env, self)
             if j.is_false():
-                self.planned += 1
                 return error_value(
                     "spectest.RequiresFalse",
                     String("planned call of ", func.name, " is outside ", self.loaded[].spec.clauses[c].id),
                 )
             if j.is_error() or j.is_skip():
                 raise Error(String(self.loaded[].spec.clauses[c].id, ": ", j.describe(self.loaded[].spec)))
-        self.planned += 1
         var out = self.call(f, args)
         if out.kind == ERROR:
             return out^
@@ -244,12 +220,7 @@ struct RunHost(Builder, EvalHost):
         return got^
 
     def fresh(mut self, obj: Value) raises -> Bool:
-        if obj.kind != HANDLE:
-            return False
-        for id in self.known:
-            if id == obj.handle_id():
-                return False
-        return True
+        return obj.kind == HANDLE and obj.handle_id() not in self.known
 
     def same_object(mut self, a: Value, b: Value) raises -> Bool:
         if a.kind == HANDLE and b.kind == HANDLE:

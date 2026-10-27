@@ -76,21 +76,19 @@ def _members(
     )
     var count = ctx.count(s)
     var exact = count.uint64_or_none()
-    var out = List[Value]()
-    if exact and exact.value() <= UInt64(limit):
+    if exact is not None and exact.value() <= UInt64(limit):
         total_out = Int(exact.value())
-        for bits in ctx.members(s, limit):
-            out.append(value_from_bits(spec.types, elem, bits))
-        return out^
+        return [value_from_bits(spec.types, elem, bits) for bits in ctx.members(s, limit)]
+    var out = List[Value]()
     sampled = True
-    total_out = Int(exact.value()) if exact and exact.value() < UInt64(1 << 62) else (1 << 62)
+    total_out = Int(exact.value()) if exact is not None and exact.value() < UInt64(1 << 62) else (1 << 62)
     var rng = Rng(seed)
     # The ends of the set, then random members.
     out.append(value_from_bits(spec.types, elem, ctx.nth(s, BigUInt(UInt64(0)))))
-    if exact:
+    if exact is not None:
         out.append(value_from_bits(spec.types, elem, ctx.nth(s, BigUInt(exact.value() - 1))))
     for _ in range(max(0, samples - 2)):
-        var index = rng.below(exact.value()) if exact else rng.next()
+        var index = rng.below(exact.value()) if exact is not None else rng.next()
         out.append(value_from_bits(spec.types, elem, ctx.nth(s, BigUInt(index))))
     return out^
 
@@ -161,9 +159,9 @@ def run_aggregate(
         var skipped = 0
         var worst_members = List[Value]()
         var worst_terms = List[Value]()
-        for i in range(len(members)):
+        for member in members:
             var run = Run()
-            run.push(top, members[i].copy())
+            run.push(top, member.copy())
             var term: Value
             try:
                 term = ev(spec, body, env, run, host)
@@ -176,11 +174,11 @@ def run_aggregate(
             evaluated += 1
             if kind == ast.ALL:
                 if term.kind != BOOL:
-                    raise Error(located(spec, body, "the body of all(...) must be a bool, not " + show(term)))
+                    raise Error(located(spec, body, String("the body of all(...) must be a bool, not ", show(term))))
                 if not term.as_bool():
                     failures += 1
                     if len(worst_members) < WORST_LIMIT:
-                        worst_members.append(members[i].copy())
+                        worst_members.append(member.copy())
                         worst_terms.append(Value.bool(False))
                 continue
             var t = term_of(term)
@@ -190,14 +188,14 @@ def run_aggregate(
                         spec,
                         body,
                         String(
-                            "the term ", show(t), " for ", comp.text, " = ", show(members[i]),
+                            "the term ", show(t), " for ", comp.text, " = ", show(member),
                             " is negative: the terms of an aggregate ", ast.op_name(kind), "(...) are non-negative",
                         ),
                     )
                 )
             if kind == ast.SUM:
                 acc = add_term(acc, t)
-            elif best:
+            elif best is not None:
                 best = larger(best.value(), t)
             else:
                 best = t.copy()
@@ -208,7 +206,7 @@ def run_aggregate(
                     at -= 1
                 if at < WORST_LIMIT:
                     worst_terms.insert(at, t.copy())
-                    worst_members.insert(at, members[i].copy())
+                    worst_members.insert(at, member.copy())
                     if len(worst_terms) > WORST_LIMIT:
                         _ = worst_terms.pop()
                         _ = worst_members.pop()
@@ -217,20 +215,19 @@ def run_aggregate(
         summary.skipped = skipped
         summary.total = total
         summary.sampled = sampled
-        for i in range(len(worst_members)):
-            summary.worst_members.append(format_value(worst_members[i]))
-            summary.worst_terms.append(format_value(worst_terms[i]))
+        summary.worst_members = [format_value(m) for m in worst_members]
+        summary.worst_terms = [format_value(t) for t in worst_terms]
         var holds: Bool
         var value_text: String
         if kind == ast.ALL:
             holds = failures == 0
             value_text = String(failures)
-            summary.bound = String("0")
+            summary.bound = "0"
         else:
             var value: Value
             if kind == ast.SUM:
                 value = acc.copy()
-            elif best:
+            elif best is not None:
                 value = best.value().copy()
             else:
                 if evaluated + skipped == 0:
@@ -239,7 +236,7 @@ def run_aggregate(
             summary.bound = format_value(bound)
             if value.kind == BOOL or (best is None and kind == ast.MAX):
                 holds = True
-                value_text = String("none")
+                value_text = "none"
             else:
                 value_text = format_value(value)
                 if value.kind == QERR or bound.kind == QERR:
