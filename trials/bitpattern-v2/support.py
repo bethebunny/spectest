@@ -491,3 +491,112 @@ def date_max():
 
 def date_all():
     return bitpattern.codecs.dates.all
+
+
+# -- bitpattern.codecs: the IP codecs ------------------------------------------------
+
+
+def _ip(kind):
+    return getattr(bitpattern.codecs, kind)
+
+
+def ip_codec(kind):
+    return _ip(kind)
+
+
+def ipv6_from_int(n):
+    """An IPv6 address for any integer: n modulo 2 ** 128."""
+    import ipaddress
+
+    return ipaddress.IPv6Address(n % 2**128)
+
+
+def ipv4_encode(v):
+    return bitpattern.codecs.ipv4.encode(v)
+
+
+def ipv6_encode(v):
+    return bitpattern.codecs.ipv6.encode(v)
+
+
+def ipv4_encode_text(a):
+    return bitpattern.codecs.ipv4.encode(str(a))
+
+
+def ipv6_encode_text(a):
+    return bitpattern.codecs.ipv6.encode(str(a))
+
+
+def ipv4_encode_with_prefix(a, prefix):
+    import ipaddress
+
+    return bitpattern.codecs.ipv4.encode(ipaddress.IPv4Interface(f"{a}/{prefix % 33}"))
+
+
+def ipv6_encode_with_prefix(a, prefix):
+    import ipaddress
+
+    return bitpattern.codecs.ipv6.encode(ipaddress.IPv6Interface(f"{a}/{prefix % 129}"))
+
+
+def ip_encode_float(kind, value):
+    return _ip(kind).encode(value)
+
+
+def ip_encode_bytes(kind, value):
+    return _ip(kind).encode(value)
+
+
+def ip_encode_garbage(kind, text):
+    return _ip(kind).encode(text)
+
+
+def ip_range(kind, start, stop):
+    return _ip(kind).range(start, stop)
+
+
+def ip_cidr(kind, value, prefix):
+    import ipaddress
+
+    address = (ipaddress.IPv4Address if kind == "ipv4" else ipaddress.IPv6Address)(value)
+    return _ip(kind).cidr(f"{address}/{prefix}")
+
+
+def ip_cidr_bare(kind, value):
+    import ipaddress
+
+    address = (ipaddress.IPv4Address if kind == "ipv4" else ipaddress.IPv6Address)(value)
+    return _ip(kind).cidr(str(address))
+
+
+def _networks(codec, source):
+    s = bitpattern.codecs.BDDSet(codec, source.widened(codec.width))
+    networks = itertools.islice(codec.networks(s), LIMIT)
+    return [(int(n.network_address), n.prefixlen) for n in networks]
+
+
+def ip_networks(kind, source):
+    return _networks(_ip(kind), source)
+
+
+def ip_networks_other_codec(kind, source):
+    """A source of the other family: ipv4 asked for the networks of an ipv6 set, and the reverse."""
+    codec, other = (_ip(kind), bitpattern.codecs.ipv6 if kind == "ipv4" else bitpattern.codecs.ipv4)
+    s = bitpattern.codecs.BDDSet(other, source.widened(other.width))
+    return [(int(n.network_address), n.prefixlen) for n in itertools.islice(codec.networks(s), LIMIT)]
+
+
+def ipv4_min():
+    return bitpattern.codecs.ipv4.min
+
+
+def ipv4_max():
+    return bitpattern.codecs.ipv4.max
+
+
+def ipv6_min():
+    return bitpattern.codecs.ipv6.min
+
+
+def ipv6_max():
+    return bitpattern.codecs.ipv6.max

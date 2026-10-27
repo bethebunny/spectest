@@ -283,3 +283,35 @@ DATE_MODULES = {
 test_macs = spectest.check("macs.spec", modules=MAC_MODULES)
 test_uuids = spectest.check("uuids.spec", modules=UUID_MODULES)
 test_dates = spectest.check("dates.spec", modules=DATE_MODULES)
+
+IP_MODULES = {
+    "IP": "bitpattern.codecs.IP",
+    "BDDSet": "bitpattern.codecs.BDDSet",
+    "variant.IP_codec": "support.ip_codec",
+    "variant.ipv4_encode_address": "support.ipv4_encode",
+    "variant.ipv6_encode_address": "support.ipv6_encode",
+    "variant.ipv4_encode_text": "support.ipv4_encode_text",
+    "variant.ipv6_encode_text": "support.ipv6_encode_text",
+    "variant.ipv4_encode_int": "support.ipv4_encode",
+    "variant.ipv6_encode_int": "support.ipv6_encode",
+    "variant.ipv4_encode_ipv6_address": "support.ipv4_encode",
+    "variant.ipv6_encode_ipv4_address": "support.ipv6_encode",
+    "variant.ip_encode_float": "support.ip_encode_float",
+    "variant.ip_encode_bytes": "support.ip_encode_bytes",
+    "variant.ip_encode_garbage": "support.ip_encode_garbage",
+    "variant.ipv4_encode_with_prefix": "support.ipv4_encode_with_prefix",
+    "variant.ipv6_encode_with_prefix": "support.ipv6_encode_with_prefix",
+    "variant.ipv4_decode": "bitpattern.codecs.ipv4.decode",
+    "variant.ipv6_decode": "bitpattern.codecs.ipv6.decode",
+    "variant.ipv4_min": "support.ipv4_min",
+    "variant.ipv4_max": "support.ipv4_max",
+    "variant.ipv6_min": "support.ipv6_min",
+    "variant.ipv6_max": "support.ipv6_max",
+    "variant.ip_range": "support.ip_range",
+    "variant.ip_cidr": "support.ip_cidr",
+    "variant.ip_cidr_bare": "support.ip_cidr_bare",
+    "variant.ip_networks": "support.ip_networks",
+    "variant.ip_networks_other_codec": "support.ip_networks_other_codec",
+}
+
+test_ips = spectest.check("ips.spec", modules=IP_MODULES)

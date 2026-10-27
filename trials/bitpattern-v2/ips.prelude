@@ -1,0 +1,5 @@
+# Helpers for ips.spec: address families by kind.
+
+fn ip_width(kind: string) -> int = if kind == "ipv4" then 32 else 128
+fn block(value: int, prefix: int, w: int) -> int = (value >> (w - prefix)) << (w - prefix)
+fn imax(a: int, b: int) -> int = if a > b then a else b
