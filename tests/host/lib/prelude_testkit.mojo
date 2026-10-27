@@ -1,12 +1,15 @@
 """Helpers for the prelude's tests: calling by name, building values, sampling."""
 
+from std.memory import bitcast
 from std.os import getenv
 
 from check.types import Types
 from numeric.bigint import BigInt
 from numeric.formats import FloatFormat, F16, BF16, F32, F64
+from numeric.real import Real
 from prelude.api import call, CallArgs
 from prelude.names import prelude_id
+from prelude.util import real_value
 from wire.value import Value
 
 
@@ -45,8 +48,8 @@ def formats() -> List[FloatFormat]:
 
 def id_of(name: String) raises -> Int:
     var id = prelude_id(name)
-    if not id:
-        raise Error("no prelude function " + name)
+    if id is None:
+        raise Error(t"no prelude function {name}")
     return id.value()
 
 
@@ -82,8 +85,6 @@ def f64v(x: Float64) -> Value:
 
 
 def bitcast_f64(x: Float64) -> UInt64:
-    from std.memory import bitcast
-
     return bitcast[DType.uint64](x)
 
 
@@ -93,25 +94,8 @@ def bi(text: String) raises -> Value:
 
 def rat(n: Int, d: Int) raises -> Value:
     """The real n/d, in lowest terms."""
-    from numeric.real import Real
-    from prelude.util import real_value
-
     return real_value(Real(BigInt(n), BigInt(d)))
 
 
-def ints(*values: Int) -> List[Value]:
-    var out = List[Value]()
-    for v in values:
-        out.append(Value.int(v))
-    return out^
-
-
 def int_list(*values: Int) -> Value:
-    var out = List[Value]()
-    for v in values:
-        out.append(Value.int(v))
-    return Value.list(out^)
-
-
-def truthy(v: Value) -> Bool:
-    return v.as_bool()
+    return Value.list([Value.int(v) for v in values])

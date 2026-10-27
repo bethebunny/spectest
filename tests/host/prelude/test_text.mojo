@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from prelude.testkit import Lcg, error_of, int_list, run, samples
+from prelude_testkit import Lcg, error_of, int_list, run, samples
 from wire.value import Value
 
 

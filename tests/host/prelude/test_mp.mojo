@@ -5,7 +5,7 @@ from numeric.formats import F16, F32, F64
 from numeric.literal import parse_number
 from numeric.real import Real
 from prelude.mpfr import bundled_library
-from prelude.testkit import Lcg, error_of, fl, rat, run, samples
+from prelude_testkit import Lcg, error_of, fl, rat, run, samples
 from prelude.util import real_of, real_value
 from wire.value import Value
 
