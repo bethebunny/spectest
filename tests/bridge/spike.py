@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import statistics
 import sys
+import timeit
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -73,8 +74,6 @@ def main() -> None:
         ("echo, list of 100 ints", ints),
         ("echo, nested record", record),
     ]
-    import timeit
-
     for label, value in echo:
         runs = timeit.repeat(lambda v=value: _host.echo(v), number=CALLS, repeat=RUNS)
         print(f"{label:42} {statistics.median(runs) / CALLS * 1e6:9.2f}")

@@ -1,18 +1,16 @@
 """`spectest._host`, the CPython extension module the pytest plugin loads.
 
-Functions for Python (the host's own entry points arrive with later packages):
+Functions:
 
-- `version() -> str`
-- `echo(obj)`: a wire object to a Value and back; `TypeError` for anything else.
-- `call(driver, name, args)`: resolve `name` through the driver, call it with `args`
-  (a list of wire objects) and return the result. The path of a host call.
-- `bench(driver, name, args, n) -> float`: seconds per call over `n` calls.
-- `load(path, driver) -> int`, `items(spec)`, `run(spec, decl, options)`, `unload(spec)`:
-  the runner's API (docs/v2/host-api.md). A spec error raises `spectest.SpecError`
-  when that exists, else `ValueError`.
+  - `version() -> str`
+  - `echo(obj)` (a wire object to a Value and back; eg. `TypeError` for anything else)
+  - `call(driver, name, args)` (resolves `name` through the driver and calls it with a
+    list of wire objects)
+  - `bench(driver, name, args, n) -> float` (seconds per call)
+  - `load(path, driver) -> int`, `items(spec)`, `run(spec, decl, options)`,
+    `unload(spec)` (the runner's API, docs/v2/host-api.md)
 
-The Mojo API for the other packages is in `bridge.convert` (`to_python`,
-`from_python`) and `bridge.client` (`DriverClient`).
+A spec error raises `spectest.SpecError` when that exists, else `ValueError`.
 """
 
 from std.ffi import _Global
@@ -28,17 +26,17 @@ from bridge.capi import (
     METH_O,
     MethodDef,
     ModuleDef,
+    Py_DecRef,
     Py_NewRef,
-    PyErr_SetObject,
-    PyFloat_FromDouble,
-    PyLong_FromSsize_t,
-    PyLong_AsLong,
-    PyModuleDef_Init,
     PyErr_Clear,
     PyErr_Occurred,
+    PyErr_SetObject,
+    PyFloat_FromDouble,
     PyImport_ImportModule,
+    PyLong_AsLong,
+    PyLong_FromSsize_t,
+    PyModuleDef_Init,
     PyObject_GetAttrString,
-    Py_DecRef,
     PyUnicode_FromStringAndSize,
     address,
     leaked,
@@ -47,7 +45,7 @@ from bridge.capi import (
 )
 from bridge.client import DriverClient
 from bridge.convert import from_python, to_python
-from bridge.pyutil import Owned, checked, python_error, string_of, wire
+from bridge.pyutil import python_error, string_of, wire
 
 from run.items import items_of
 from run.load import Loaded, load as load_spec
@@ -80,15 +78,16 @@ def registry() raises -> Pointer[Registry, MutUntrackedOrigin]:
 
 
 def _raise(e: Error) -> PyObjectPtr:
-    """Sets Python's error from a Mojo error and returns NULL. Errors that start with
-    `TypeError: ` are TypeErrors; the rest are RuntimeErrors."""
+    """Sets Python's error from a Mojo error and returns NULL. The prefixes `TypeError: `
+    and `SpecError: ` pick the class (RuntimeError otherwise)."""
     var message = String(e)
     var kind = pointer_symbol("PyExc_RuntimeError")
-    comptime PREFIX = "TypeError: "
+    comptime TYPE = "TypeError: "
     comptime SPEC = "SpecError: "
-    if message.startswith(PREFIX):
+    # the temporary avoids aliasing `message` in its own assignment
+    if message.startswith(TYPE):
         kind = pointer_symbol("PyExc_TypeError")
-        var rest = String(message[byte = PREFIX.byte_length() :])
+        var rest = String(message[byte = TYPE.byte_length() :])
         message = rest^
     elif message.startswith(SPEC):
         kind = _spec_error_class()
@@ -104,16 +103,12 @@ def _raise(e: Error) -> PyObjectPtr:
 def _spec_error_class() -> PyObjectPtr:
     """`spectest.SpecError` when the package defines it, else `ValueError`."""
     var module = PyImport_ImportModule("spectest".as_c_string_span())
-    if module:
-        var found = PyObject_GetAttrString(module, "SpecError".as_c_string_span())
-        Py_DecRef(module)
-        if found:
-            # The module keeps the class alive.
-            Py_DecRef(found)
-            return found
-        PyErr_Clear()
-    else:
-        PyErr_Clear()
+    var found = PyObject_GetAttrString(module, "SpecError".as_c_string_span()) if module else module
+    Py_DecRef(module)
+    if found:
+        Py_DecRef(found)  # the module keeps the class alive
+        return found
+    PyErr_Clear()
     return pointer_symbol("PyExc_ValueError")
 
 
@@ -127,10 +122,7 @@ def _values(list: PyObjectPtr) raises -> List[Value]:
     var v = from_python(list)
     if not v.is_(LIST):
         raise Error("TypeError: args must be a list of wire objects")
-    var out = List[Value](capacity=v.count())
-    for i in range(v.count()):
-        out.append(v.item(i))
-    return out^
+    return [v.item(i) for i in range(v.count())]
 
 
 def version(module: PyObjectPtr, unused: PyObjectPtr) abi("C") -> PyObjectPtr:
@@ -178,7 +170,7 @@ def bench(module: PyObjectPtr, args: Int, nargs: Int) abi("C") -> PyObjectPtr:
 def _handle(o: PyObjectPtr) raises -> Int:
     var n = PyLong_AsLong(o)
     var reg = registry()
-    if n < 0 or n >= len(reg[].specs) or not reg[].specs[n]:
+    if n < 0 or n >= len(reg[].specs) or reg[].specs[n] is None:
         raise Error("TypeError: not a loaded spec")
     return n
 
@@ -192,7 +184,7 @@ def load(module: PyObjectPtr, args: Int, nargs: Int) abi("C") -> PyObjectPtr:
         try:
             loaded = load_spec(path)
         except e:
-            raise Error("SpecError: " + String(e))
+            raise Error("SpecError: ", e)
         var reg = registry()
         reg[].specs.append(Optional(loaded^))
         reg[].drivers.append(Optional(DriverClient(_argument(args, 1))))
@@ -205,8 +197,7 @@ def items(module: PyObjectPtr, spec: PyObjectPtr) abi("C") -> PyObjectPtr:
     try:
         var h = _handle(spec)
         var reg = registry()
-        var list = items_of(reg[].specs[h].value())
-        return result_to_python(Value.list(list^))
+        return result_to_python(Value.list(items_of(reg[].specs[h].value())))
     except e:
         return _raise(e)
 
@@ -239,10 +230,10 @@ def unload(module: PyObjectPtr, spec: PyObjectPtr) abi("C") -> PyObjectPtr:
 
 
 def _name(o: PyObjectPtr) raises -> String:
-    var s = string_of(o)
-    if s == "?" and PyErr_Occurred():
+    var name = string_of(o)
+    if name == "?" and PyErr_Occurred():
         raise python_error()
-    return s^
+    return name^
 
 
 def methods() -> Int:

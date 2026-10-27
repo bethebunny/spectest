@@ -1,10 +1,8 @@
 """Builds the extension module ``spectest._host`` from ``host/bridge/module.mojo``.
 
-Run it with ``uv run python scripts/build_host.py``. It does nothing when no ``.mojo``
-file under ``host/`` is newer than the module. The module is set up the way
-bitpattern's editable build is: the Mojo runtime libraries it needs are copied next to
-it and found through an ``$ORIGIN`` rpath, so it loads without the compiler's
-environment.
+Does nothing when no ``.mojo`` file under ``host/`` is newer than the module. The Mojo
+runtime libraries are copied next to the module and found through an ``$ORIGIN`` rpath
+(as in bitpattern's editable build), so it loads without the compiler's environment.
 """
 
 from __future__ import annotations
@@ -31,15 +29,15 @@ def newest_source() -> float:
 
 
 def up_to_date() -> bool:
-    if not MODULE.exists():
-        return False
-    if any(not (MODULE.parent / f"{n}{SUFFIX}").exists() for n in RUNTIME):
-        return False
-    return MODULE.stat().st_mtime >= newest_source()
+    return (
+        MODULE.exists()
+        and all((MODULE.parent / f"{n}{SUFFIX}").exists() for n in RUNTIME)
+        and MODULE.stat().st_mtime >= newest_source()
+    )
 
 
 def build() -> bool:
-    """Builds the module unless it is current. Returns whether it ran a build."""
+    """Builds the module unless it is current; whether it ran a build."""
     if up_to_date():
         return False
     mojo = Path(sys.executable).parent / "mojo"
@@ -53,26 +51,10 @@ def build() -> bool:
     if sys.platform == "darwin":
         flags += ["-Xlinker", "-undefined", "-Xlinker", "dynamic_lookup"]
         flags += ["-Xlinker", "-install_name", "-Xlinker", "@rpath/_host.abi3.so"]
-    env = dict(
-        os.environ,
-        MODULAR_MOJO_MAX_SHARED_LIBS=f"-Xlinker,-rpath,-Xlinker,{ORIGIN}",
-    )
+    env = dict(os.environ, MODULAR_MOJO_MAX_SHARED_LIBS=f"-Xlinker,-rpath,-Xlinker,{ORIGIN}")
     started = time.perf_counter()
-    subprocess.run(
-        [
-            str(mojo),
-            "build",
-            str(SOURCE),
-            "--emit",
-            "shared-lib",
-            "-o",
-            str(MODULE),
-            *flags,
-        ],
-        check=True,
-        env=env,
-        cwd=ROOT,
-    )
+    command = [str(mojo), "build", str(SOURCE), "--emit", "shared-lib", "-o", str(MODULE)]
+    subprocess.run([*command, *flags], check=True, env=env, cwd=ROOT)
     print(f"built {MODULE.relative_to(ROOT)} in {time.perf_counter() - started:.1f} s")
     return True
 
