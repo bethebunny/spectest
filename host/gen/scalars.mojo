@@ -2,7 +2,7 @@
 
 from std.memory import bitcast
 
-from mcheck.source import Source, Many, MANY_LABEL
+from mcheck.source import Source, Many, MANY_LABEL, index_to_int
 from numeric.bigint import BigInt
 from numeric.formats import FloatFormat, F16, BF16, F32, F64
 from wire.value import Value
@@ -29,12 +29,23 @@ def _mask(width: Int) -> UInt64:
     return UInt64.MAX if width >= 64 else (UInt64(1) << UInt64(width)) - 1
 
 
+def _seg(u: UInt64, start: Int, log_length: Int, n: UInt128) -> UInt64:
+    """Where `u` falls in the segment of 256ths [start, start + 2**log_length), scaled
+    to [0, n). Monotone, so a smaller `u` never gives a larger index."""
+    var off = UInt128(u) - (UInt128(start) << 56)
+    return UInt64((off * n) >> UInt128(56 + log_length))
+
+
 def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt64:
-    """A `width`-bit pattern: small values, extremes, powers of two and their
-    neighbours, then uniform over all patterns."""
+    """A `width`-bit pattern from one choice. The choice, read as a fraction, picks
+    small values, powers of two and their neighbours, the extremes, or a value
+    uniform over all patterns, in that order; within each, a smaller choice is a
+    smaller magnitude, so shrinking one choice shrinks the value across all four."""
     var mask = _mask(width)
-    var r = Int(src.draw_below(100))
-    if r < 15:
+    var u = src.draw_bits(64)
+    var seg = Int(u >> 56)
+    var top = UInt64(1) << UInt64(width - 1)
+    if seg < 32:
         var lo = -16
         var hi = 16
         if not signed:
@@ -42,11 +53,19 @@ def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt
         elif width < 6:
             lo = -(1 << (width - 1))
             hi = (1 << (width - 1)) - 1
-        var x = src.draw_int(lo, hi)
-        return bitcast[DType.uint64](Int64(x)) & mask
-    var top = UInt64(1) << UInt64(width - 1)
-    if r < 30:
-        var e = Int(src.draw_below(4))
+        var idx = _seg(u, 0, 5, UInt128(hi - lo + 1))
+        return bitcast[DType.uint64](Int64(index_to_int(idx, lo, hi))) & mask
+    if seg < 96:
+        var k = 1 + Int(_seg(u, 32, 6, UInt128(width - 1)))
+        var j = Int(u & 3)
+        var p = UInt64(1) << UInt64(k)
+        if j == 2 and signed:
+            return (~p + 1) & mask
+        if j == 0 and (not signed or k < width - 1):
+            return p
+        return p - 1
+    if seg < 128:
+        var e = Int(_seg(u, 96, 5, 4))
         if signed:
             if e == 0:
                 return top
@@ -62,16 +81,12 @@ def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt
         if e == 2:
             return 1
         return mask - 1
-    if r < 55 and width >= 3:
-        var k = 1 + Int(src.draw_below(UInt64(width - 1)))
-        var j = Int(src.draw_below(3))
-        var p = UInt64(1) << UInt64(k)
-        if j == 2 and signed:
-            return (~p + 1) & mask
-        if j == 0 and (not signed or k < width - 1):
-            return p
-        return p - 1
-    return src.draw_bits(width)
+    var idx = _seg(u, 128, 7, UInt128(1) << UInt128(width))
+    if signed:
+        var lo = Int(bitcast[DType.int64](top << UInt64(64 - width))) >> (64 - width)
+        var hi = -(lo + 1)
+        return bitcast[DType.uint64](Int64(index_to_int(idx, lo, hi))) & mask
+    return idx
 
 
 def draw_int_value(mut src: Source, width: Int, signed: Bool) raises -> Value:
@@ -162,38 +177,30 @@ preference when shrinking."""
 
 def draw_float_bits(mut src: Source, format: FloatFormat) raises -> UInt64:
     """A float pattern: a class uniformly, then a member of it. Every class draws the
-    same four choices (class, sign, a, b), so shrinking can move between classes."""
+    same four choices (class, sign, a, b) with the same meaning, so shrinking can
+    move a failure from a high class to a low one by lowering the class and raising b."""
     var cls = Int(src.draw_below(UInt64(FLOAT_CLASSES)))
     var fb = format.fraction_bits
     var bias = format.bias()
     var negative = src.draw_bool()
     var sign = format.sign_mask() if negative else UInt64(0)
+    var a = src.draw_int(1 - bias, bias)
+    var b = src.draw_bits(fb)
     if cls == 0:
-        _ = src.draw_below(1)
-        _ = src.draw_below(1)
         return sign
     if cls == 1:
         var e = min(20, bias // 2)
-        var off = src.draw_int(-e, e - 1)
-        var frac = src.draw_bits(fb)
-        return sign | (UInt64(bias + off) << UInt64(fb)) | frac
+        return sign | (UInt64(bias + max(-e, min(e - 1, a))) << UInt64(fb)) | b
     if cls == 2:
-        var x = _simple_magnitude(Int(src.draw_below(15)))
-        _ = src.draw_below(1)
+        var x = _simple_magnitude(Int(b % 15))
         return float64_bits_in(format, -x if negative else x)
     if cls == 3:
-        var off = src.draw_int(1 - bias, bias)
-        var frac = src.draw_bits(fb)
-        return sign | (UInt64(bias + off) << UInt64(fb)) | frac
+        return sign | (UInt64(bias + a) << UInt64(fb)) | b
     if cls == 4:
-        _ = src.draw_below(1)
-        return sign | (src.draw_below(format.fraction_mask()) + 1)
+        return sign | (b % format.fraction_mask() + 1)
     if cls == 5:
-        _ = src.draw_below(1)
-        _ = src.draw_below(1)
         return sign | format.exponent_mask()
-    _ = src.draw_below(1)
-    return sign | format.exponent_mask() | (src.draw_below(format.fraction_mask()) + 1)
+    return sign | format.exponent_mask() | (b % format.fraction_mask() + 1)
 
 
 # Sequences
@@ -214,7 +221,7 @@ struct Seq:
 
     def __init__(out self, lo: Int, hi: Int):
         """A short sequence of `lo` to `hi` elements."""
-        self.many = Many(lo, hi, Float64(hi) / 2.0 if hi > 0 else 0.0)
+        self.many = Many(lo, hi, Float64(hi) / 4.0 if hi > 0 else 0.0)
         self.long = False
         self.n = 0
         self.i = 0
@@ -289,15 +296,14 @@ def _astral_edge(i: Int) -> Int:
 
 
 def draw_code_point(mut src: Source) raises -> Int:
-    """A Unicode scalar value: mostly ASCII, some interesting characters, the rest of
-    the BMP and the astral planes. Never a surrogate."""
-    var r = Int(src.draw_below(100))
-    if r < 50:
-        var i = Int(src.draw_below(95))
-        return (i + 16) % 95 + 32
-    if r < 70:
+    """A Unicode scalar value: half ASCII (one choice), the rest interesting
+    characters, the BMP and the astral planes. Never a surrogate."""
+    var r = Int(src.draw_below(190))
+    if r < 95:
+        return (r + 16) % 95 + 32
+    if r < 133:
         return _interesting(Int(src.draw_below(UInt64(INTERESTING_COUNT))))
-    if r < 90:
+    if r < 171:
         var c = Int(src.draw_below(0x10000 - 0x800))
         return c + 0x800 if c >= 0xD800 else c
     if src.draw_bool(0.25):
@@ -305,12 +311,29 @@ def draw_code_point(mut src: Source) raises -> Int:
     return 0x10000 + Int(src.draw_below(0x100000))
 
 
+def append_utf8(mut out: List[UInt8], cp: Int):
+    if cp < 0x80:
+        out.append(UInt8(cp))
+    elif cp < 0x800:
+        out.append(UInt8(0xC0 | (cp >> 6)))
+        out.append(UInt8(0x80 | (cp & 0x3F)))
+    elif cp < 0x10000:
+        out.append(UInt8(0xE0 | (cp >> 12)))
+        out.append(UInt8(0x80 | ((cp >> 6) & 0x3F)))
+        out.append(UInt8(0x80 | (cp & 0x3F)))
+    else:
+        out.append(UInt8(0xF0 | (cp >> 18)))
+        out.append(UInt8(0x80 | ((cp >> 12) & 0x3F)))
+        out.append(UInt8(0x80 | ((cp >> 6) & 0x3F)))
+        out.append(UInt8(0x80 | (cp & 0x3F)))
+
+
 def draw_string(mut src: Source, sizes: Sizes, depth: Int) raises -> Value:
     var seq = draw_seq(src, sizes, depth, sizes.max_text, sizes.long_text)
-    var out = String()
+    var out = List[UInt8]()
     while seq.more(src):
-        out += chr(draw_code_point(src))
-    return Value.string(out^)
+        append_utf8(out, draw_code_point(src))
+    return Value.string(String(unsafe_from_utf8=Span(out)))
 
 
 # Bytes
@@ -358,10 +381,10 @@ def draw_bytes(mut src: Source, sizes: Sizes, depth: Int) raises -> Value:
     var seq = Seq(0, limit // 2) if not is_long else Seq(
         src.draw_int(sizes.long_lo(sizes.max_bytes) // 2, limit // 2), exactly=True
     )
-    var text = String()
+    var text = List[UInt8]()
     while seq.more(src):
-        text += chr(draw_code_point(src))
-    for b in text.as_bytes():
+        append_utf8(text, draw_code_point(src))
+    for b in text:
         if len(data) >= limit:
             break
         data.append(b)

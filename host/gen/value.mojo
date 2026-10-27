@@ -144,7 +144,11 @@ def _draw_inner(
 def _draw(
     mut src: Source, types: Types, t: Int, sizes: Sizes, depth: Int
 ) raises -> Value:
-    src.start_span(Int(types.kind(t)))
+    var k = types.kind(t)
+    if k == T_BOOL or k == T_INT or k == T_FIXED_INT or k == T_FLOAT or k == T_LITERAL or k == T_ENUM:
+        # One or two choices: the span would repeat the element's own.
+        return _draw_inner(src, types, t, sizes, depth)
+    src.start_span(Int(k))
     var v = _draw_inner(src, types, t, sizes, depth)
     src.stop_span()
     return v^
