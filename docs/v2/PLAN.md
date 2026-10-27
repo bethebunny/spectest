@@ -102,11 +102,20 @@ Contracts added for it: `host/check/types.mojo` (the type table),
 | --- | --- | --- |
 | evaluator | checker, prelude, partitions | Expressions on Values, host operators, short-circuiting, errors, planned calls and observers through a host interface, explanations |
 
-### Wave 3: end to end
+### Wave 3a: end to end
 
-The runner (generate, call, judge, verdicts, `#type` and `#raises`, planned calls),
-the pytest plugin, the failure store and reports, stateful interfaces, user preludes
-in their own files, and specs to run v2 against.
+Contract added for it: `docs/v2/host-api.md`, the host's Python API and the shape of
+its results, which v1's report rendering reads.
+
+| Package | Brief | Builds |
+| --- | --- | --- |
+| runner | `briefs/runner.md` | Loading, typed reading of results, the evaluator's host over the driver, one search per declaration judging every clause, exhaustive runs, the store, results, the Python API |
+| plugin | `briefs/plugin.md` | `spectest.check`, collecting specs, items per clause, one run per declaration, module mapping, v1's options and rendering |
+
+### Wave 3b
+
+Interfaces (stateful runs), user preludes in their own files, specs to run v2 against
+(ported or new), and a speed pass against the targets.
 
 ## Open questions and where they bite
 
