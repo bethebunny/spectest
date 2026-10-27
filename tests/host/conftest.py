@@ -1,8 +1,8 @@
 """Runs the Mojo test files under tests/host as pytest items, one item per file.
 
 A test file is a Mojo program named ``test_*.mojo`` whose ``main`` runs a
-``TestSuite``. It is built with the venv's ``mojo``, with ``host/`` and the vendored
-bitpattern core on the include path, so ``from wire.value import Value`` and ``from
+``TestSuite``. It is built with the venv's ``mojo``, with ``host/``, the vendored
+bitpattern core and ``tests/host/lib`` (test-only helpers) on the include path, so ``from wire.value import Value`` and ``from
 arena import Arena`` both work, and then run. A compile error or a failing test fails
 the item, with mojo's output as the report.
 
@@ -36,7 +36,8 @@ from hypothesis import settings
 
 ROOT = Path(__file__).resolve().parents[2]
 HOST = ROOT / "host"
-INCLUDES = [HOST, HOST / "vendor" / "bitpattern"]
+# Test-only modules (helpers shared by test files) live in tests/host/lib, outside host/.
+INCLUDES = [HOST, HOST / "vendor" / "bitpattern", ROOT / "tests" / "host" / "lib"]
 BUILDS = ROOT / ".mojo-tests"
 # A cold build of a large test file plus its run, with room to spare.
 TIMEOUT = 600

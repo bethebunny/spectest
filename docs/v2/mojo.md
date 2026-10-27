@@ -21,7 +21,7 @@ takes about a second.
 
   A failing test makes `mojo run` exit with 1. `tests/host/conftest.py` runs each
   `tests/host/**/test_*.mojo` this way as one pytest item.
-- Include roots: `-I host -I host/vendor/bitpattern`. Packages under `host/` need an
+- Include roots: `-I host -I host/vendor/bitpattern`, and `-I tests/host/lib` for test-only helpers. Packages under `host/` need an
   `__init__.mojo`. Import by module path: `from wire.value import Value`,
   `from arena import Arena`, `from bigint import BigUInt`.
 - A cold compile of a small test takes 4 to 10 s, and `mojo run` spends 1 to 3 s even
