@@ -114,7 +114,7 @@ comptime _KIND_NAMES: Array[StaticString, 49] = [
 
 
 __enum NodeKind(Equatable, ImplicitlyCopyable, Intable, Writable):
-    """Writes as its lowercase name, eg. `tuple_index`."""
+    """A node's kind. Writes as its lowercase name, eg. `tuple_index`."""
 
     case EMPTY
     case FILE

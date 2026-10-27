@@ -49,7 +49,9 @@ struct Parser:
     var tokens: List[Token]
     var pos: Int
     var no_in: Bool
+    """`in` ends the expression here: inside a `let` value, outside brackets."""
     var last_end: Int
+    """Where the last token consumed ends; layout tokens leave it."""
     var ast: Ast
 
     def __init__(out self, var tokens: List[Token], var source: String, var path: String):
@@ -492,7 +494,7 @@ struct Parser:
     def parse_clause(mut self) raises -> Int:
         var m = self.mark()
         var op = _clause_op(self.advance().text)
-        var label = String()
+        var label: String = ""
         var children: List[Int] = []
         match op:
             case .REQUIRES | .ENSURES | .RELATES | .INVARIANT | .AGGREGATE:
