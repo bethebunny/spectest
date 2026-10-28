@@ -1,6 +1,7 @@
-"""Builds the extension module ``spectest._host`` from ``host/bridge/module.mojo``.
+"""Builds the extension module ``spectest._host`` from ``spectest/_host/module.mojo``.
 
-Does nothing when no ``.mojo`` file under ``host/`` is newer than the module. The Mojo
+Does nothing when no ``.mojo`` file under ``src/`` or ``spectest/_host/`` is newer than
+the module. The Mojo
 runtime libraries are copied next to the module and found through an ``$ORIGIN`` rpath
 (as in bitpattern's editable build), so it loads without the compiler's environment.
 """
@@ -16,16 +17,17 @@ from importlib.metadata import distribution
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "host" / "bridge" / "module.mojo"
-MODULE = ROOT / "spectest" / "_host" / "__init__.abi3.so"
-INCLUDES = [ROOT / "host", ROOT / "host" / "vendor" / "bitpattern"]
+SOURCE = ROOT / "spectest" / "_host" / "module.mojo"
+MODULE = SOURCE.with_name("__init__.abi3.so")
+SOURCES = [ROOT / "src", ROOT / "host", SOURCE.parent]
+INCLUDES = [ROOT / "src", ROOT / "host", ROOT / "host" / "vendor" / "bitpattern", ROOT / "spectest"]
 RUNTIME = ["libKGENCompilerRTShared", "libAsyncRTRuntimeGlobals", "libMSupportGlobals"]
 SUFFIX = ".dylib" if sys.platform == "darwin" else ".so"
 ORIGIN = "@loader_path" if sys.platform == "darwin" else "$ORIGIN"
 
 
 def newest_source() -> float:
-    return max(p.stat().st_mtime for p in (ROOT / "host").rglob("*.mojo"))
+    return max(p.stat().st_mtime for d in SOURCES for p in d.rglob("*.mojo"))
 
 
 def up_to_date() -> bool:
@@ -42,7 +44,6 @@ def build() -> bool:
         return False
     mojo = Path(sys.executable).parent / "mojo"
     lib = distribution("mojo-compiler").locate_file("modular/lib")
-    MODULE.parent.mkdir(exist_ok=True)
     for name in RUNTIME:
         copy = MODULE.parent / f"{name}{SUFFIX}"
         copy.unlink(missing_ok=True)

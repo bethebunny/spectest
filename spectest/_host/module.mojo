@@ -26,7 +26,7 @@ from std.time import perf_counter_ns
 
 from wire.value import Value
 
-from bridge.capi import (
+from _host.capi import (
     METH_NOARGS,
     METH_O,
     Py_DecRef,
@@ -42,13 +42,13 @@ from bridge.capi import (
     PyUnicode_FromStringAndSize,
     pointer_symbol,
 )
-from bridge.client import DriverClient
-from bridge.convert import from_python, to_python
-from bridge.pyutil import string_of, wire
+from _host.client import DriverClient
+from _host.convert import from_python, to_python
+from _host.pyutil import string_of, wire
 
 from run.items import items_of
 from run.load import Loaded, load as load_spec
-from run.pyapi import parse_options, result_to_python
+from _host.pyapi import parse_options, result_to_python
 from run.stateful import run_declaration
 
 comptime VERSION = "0.1.0.dev0"

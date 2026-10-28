@@ -8,7 +8,7 @@ from std.python._cpython import (
     PyObjectPtr,
 )
 
-from bridge.capi import (
+from _host.capi import (
     Py_DecRef,
     PyDict_New,
     PyDict_Next,
@@ -21,11 +21,11 @@ from bridge.capi import (
     PyType_GetFlags,
     ob_type,
 )
-from bridge.convert import from_python, to_python
-from bridge.pyutil import checked, python_error, string_of, wire
+from _host.convert import from_python, to_python
+from _host.pyutil import checked, python_error, string_of, wire
 from wire.value import Value
 
-from .options import RunOptions
+from run.options import RunOptions
 
 
 def _is_dict(o: PyObjectPtr) -> Bool:
