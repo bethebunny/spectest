@@ -3,6 +3,7 @@ converts arguments and results (docs/v2/protocol.md)."""
 
 from std.python._cpython import PyObjectPtr
 
+from run.driver import Driver
 from wire.value import Value
 
 from .capi import Py_NewRef, PyDict_New
@@ -20,7 +21,7 @@ from .pyutil import (
 )
 
 
-struct DriverClient(Movable):
+struct DriverClient(Driver, Movable):
     """Wraps the driver object. A wire `Error` that comes back is an ERROR Value; a
     Python exception that escapes a driver method raises a Mojo error naming its type
     and message."""
@@ -49,7 +50,6 @@ struct DriverClient(Movable):
         raise Error(t"driver.resolve returned {result}")
 
     def call(self, target: Int, args: List[Value]) raises -> Value:
-        """Calls a target. An exception the call raised comes back as an ERROR Value."""
         var send: List[Owned] = [new_int(target), _list_of(args), Owned(checked(PyDict_New()))]
         return from_python(self._invoke(wire()[].names.call, send).ptr)
 
@@ -59,7 +59,6 @@ struct DriverClient(Movable):
     def observe(
         self, obj: Value, name: String, args: Optional[List[Value]]
     ) raises -> Value:
-        """Reads attribute `name` of `obj`, calling it with `args` when given."""
         var arguments = _list_of(args.value()) if args is not None else Owned(Py_NewRef(wire()[].none))
         var send: List[Owned] = [Owned(to_python(obj)), new_string(name), arguments^]
         return from_python(self._invoke(wire()[].names.observe, send).ptr)

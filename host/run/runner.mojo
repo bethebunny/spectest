@@ -9,7 +9,6 @@ the stored failures, generates, and shrinks each failing clause on its own."""
 from std.collections import Set
 from std.time import perf_counter_ns
 
-from bridge.client import DriverClient
 from check import types as ty
 from check.spec import Spec
 from eval.api import (
@@ -46,6 +45,7 @@ from wire.value import Value
 
 from .aggregate import run_aggregate
 from .decode import decode, describe
+from .driver import Driver
 from .host import TIMEOUT, RunHost
 from .load import Loaded
 from .options import RunOptions
@@ -264,12 +264,12 @@ struct Changes(Copyable, Defaultable):
     """Why a digest failed, if one did."""
 
 
-struct Prop(Movable, Property):
+struct Prop[D: Driver](Movable, Property):
     """The property of one callable: draws an example's arguments, calls it through the
     driver and judges each clause of its plan."""
 
     var loaded: Pointer[Loaded, MutUntrackedOrigin]
-    var host: RunHost
+    var host: RunHost[Self.D]
     var f: Int
     var decl: String
     var seed: Int
@@ -316,7 +316,7 @@ struct Prop(Movable, Property):
     def __init__(
         out self,
         mut loaded: Loaded,
-        mut client: DriverClient,
+        mut client: Self.D,
         f: Int,
         options: RunOptions,
         stateful: Bool = False,
@@ -980,14 +980,14 @@ def error_shape(message: String) -> String:
     return out^
 
 
-def _replay(mut prop: Prop, choices: Choices, seed: UInt64) raises:
+def _replay(mut prop: Prop[_], choices: Choices, seed: UInt64) raises:
     """Runs the example `choices` make again; one that is no longer valid is passed over."""
     var src = Source(seed, SHRINK_SOURCE)
     src.reset_replay(choices.values)
     _ = run_example(prop, src)
 
 
-def _shrink_spec_errors(mut prop: Prop, settings: Settings) raises:
+def _shrink_spec_errors(mut prop: Prop[_], settings: Settings) raises:
     """Shrinks the first example of each distinct spec error message, as a failure is
     shrunk, and reports the shrunk example and its message in place of the first."""
     var distinct = len(Set([e.message.copy() for e in prop.spec_errors if e.choices.values]))
@@ -1036,7 +1036,7 @@ def _given(example: Value, name: String) -> Optional[Value]:
     return None
 
 
-def _example_args(prop: Prop, example: Value) raises -> List[Value]:
+def _example_args(prop: Prop[_], example: Value) raises -> List[Value]:
     """The inputs of an explicit example, read against the parameter types."""
     ref spec = prop.loaded[].spec
     ref func = spec.fns[prop.f]
@@ -1064,11 +1064,11 @@ def _example_args(prop: Prop, example: Value) raises -> List[Value]:
     return args^
 
 
-def run(
+def run[D: Driver](
     mut loaded: Loaded,
     decl: String,
     options: RunOptions,
-    mut driver: DriverClient,
+    mut driver: D,
 ) raises -> RunResult:
     """Runs the declaration `decl`: all of its clauses in one search."""
     var started = perf_counter_ns()

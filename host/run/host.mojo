@@ -8,9 +8,8 @@ from gen.models import Builder
 from wire.format import format_value
 from wire.value import Value
 
-from bridge.client import DriverClient
-
 from .decode import decode
+from .driver import Driver
 from .load import Loaded
 
 
@@ -22,13 +21,13 @@ def error_value(cls: String, message: String) -> Value:
     return Value.error(cls, [], message)
 
 
-struct RunHost(Builder, EvalHost):
+struct RunHost[D: Driver](Builder, EvalHost):
     """Calls the code under test for the evaluator and the generator. It keeps the
     targets it resolved, the planned calls of the current example (identical calls
     are made once), and the handles it saw, which the run releases at its end."""
 
     var loaded: Pointer[Loaded, MutUntrackedOrigin]
-    var client: Pointer[DriverClient, MutUntrackedOrigin]
+    var client: Pointer[Self.D, MutUntrackedOrigin]
     var targets: List[Optional[Int]]
     """Of each of Spec.fns, once resolved."""
     var named_targets: Dict[String, Int]
@@ -46,7 +45,7 @@ struct RunHost(Builder, EvalHost):
     var timed_out: Bool
     """A reply of class TIMEOUT came back since the catch paths last took it."""
 
-    def __init__(out self, mut loaded: Loaded, mut client: DriverClient):
+    def __init__(out self, mut loaded: Loaded, mut client: Self.D):
         self.loaded = Pointer(to=loaded).unsafe_origin_cast[MutUntrackedOrigin]()
         self.client = Pointer(to=client).unsafe_origin_cast[MutUntrackedOrigin]()
         self.targets = [None for _ in loaded.spec.fns]

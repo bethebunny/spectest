@@ -141,7 +141,7 @@ def _keep_worst(mut worst: List[Tuple[Value, Value]], member: Value, term: Value
 def _judge(
     spec: Spec,
     mut ctx: SetContext,
-    mut host: RunHost,
+    mut host: RunHost[_],
     f: Int,
     clause: Int,
     options: RunOptions,
@@ -250,7 +250,7 @@ def _judge(
 def run_aggregate(
     spec: Spec,
     mut ctx: SetContext,
-    mut host: RunHost,
+    mut host: RunHost[_],
     f: Int,
     clause: Int,
     options: RunOptions,

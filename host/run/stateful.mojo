@@ -12,7 +12,6 @@ stored for the next run."""
 
 from std.time import perf_counter_ns
 
-from bridge.client import DriverClient
 from check import types as ty
 from eval.api import explain, judge
 from eval.env import Env
@@ -25,6 +24,7 @@ from mcheck.search import search
 from mcheck.source import Many, Source
 from wire.value import Value
 
+from .driver import Driver
 from .host import RunHost
 from .load import Loaded
 from .options import RunOptions
@@ -112,7 +112,7 @@ struct Found(Movable):
     var replayed: Bool
 
 
-struct Machine(Property):
+struct Machine[D: Driver](Property):
     """The property of an interface. Each clause of the run has a slot, the mcheck
     property id: the clauses of each constructor and method in turn, then the
     invariants."""
@@ -121,7 +121,7 @@ struct Machine(Property):
     var name: String
     var prefix: String
     """The first letter of the interface's name, which names its objects in the steps."""
-    var props: List[Prop]
+    var props: List[Prop[Self.D]]
     """One per constructor, then one per method."""
     var constructors: Int
     var first_slot: List[Int]
@@ -129,7 +129,7 @@ struct Machine(Property):
     var invariant_slot: Int
     """The slot of the first invariant."""
     var invariants: List[Invariant]
-    var invariant_host: RunHost
+    var invariant_host: RunHost[Self.D]
     var steps: Int
     var max_handles: Int
     var seed: Int
@@ -146,7 +146,7 @@ struct Machine(Property):
     def __init__(
         out self,
         mut loaded: Loaded,
-        mut client: DriverClient,
+        mut client: Self.D,
         iface: Int,
         options: RunOptions,
     ) raises:
@@ -595,11 +595,11 @@ def interface_named(loaded: Loaded, decl: String) -> Optional[Int]:
     return m if m is not None and loaded.spec.models[m.value()].is_interface else None
 
 
-def run_interface(
+def run_interface[D: Driver](
     mut loaded: Loaded,
     iface: Int,
     options: RunOptions,
-    mut driver: DriverClient,
+    mut driver: D,
 ) raises -> RunResult:
     """Runs the interface at position `iface` of the spec: all of its clauses in one
     search over step sequences."""
@@ -657,11 +657,11 @@ def run_interface(
     return result^
 
 
-def run_declaration(
+def run_declaration[D: Driver](
     mut loaded: Loaded,
     decl: String,
     options: RunOptions,
-    mut driver: DriverClient,
+    mut driver: D,
 ) raises -> RunResult:
     """Runs a function, or an interface by its name: the entry point of the host API's
     `run`."""
