@@ -101,7 +101,7 @@ def is_old_call(spec: Spec, e: Int) -> Bool:
 def value_of[
     H: EvalHost
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
-    """The value of the expression at node `e`."""
+    """The value of node `e`, with a failure recorded in `run` at the innermost node that raised."""
     try:
         return _value(spec, e, env, run, host)
     except err:
@@ -231,7 +231,7 @@ def _name_value[
         case sp.R_FIELD:
             return host.observe(self_of(env), r.owner, r.index, [])
         case sp.R_ENUM_MEMBER:
-            return enum_member(spec, r.owner, r.index)
+            return enum_member(spec, enum_type=r.owner, index=r.index)
         case sp.R_CLASS:
             var expr = spec.ast.child(r.index, 0)
             if type_kind(spec, expr) == ty.BOOL:
@@ -243,7 +243,7 @@ def _name_value[
             raise Error(t"{name} cannot be evaluated as a value")
 
 
-def enum_member(spec: Spec, enum_type: Int, index: Int) -> Value:
+def enum_member(spec: Spec, *, enum_type: Int, index: Int) -> Value:
     ref info = spec.types.infos[enum_type]
     return Value.enum(info.name.copy(), info.names[index].copy())
 
@@ -258,7 +258,7 @@ def _attr_value[
     ref r = found.value()
     match r.kind:
         case sp.R_ENUM_MEMBER:
-            return enum_member(spec, r.owner, r.index)
+            return enum_member(spec, enum_type=r.owner, index=r.index)
         case sp.R_CONST:
             return host.constant(r.index)
         case sp.R_TYPE_CONST:
