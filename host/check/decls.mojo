@@ -42,8 +42,8 @@ def declare(mut c: Checker, name: String, node: Int) -> Bool:
         c.error(node, t"{name} is a built-in type and cannot be redeclared")
     elif is_reserved(name):
         c.error(node, t"{name} is reserved and cannot name a declaration")
-    elif name in c.names:
-        c.error(node, t"{name} is already declared at {_where(c, node, c.names.get(name).value())}")
+    elif case .Some(earlier) = c.names.get(name):
+        c.error(node, t"{name} is already declared at {_where(c, node, earlier)}")
     else:
         c.names[name] = node
         return True

@@ -333,7 +333,6 @@ struct Checker:
         return self.spec.ast.source_text(n)
 
     def has_modifies(self, decl: Int) -> Bool:
-        """Whether a declaration has a modifies clause."""
         return any([self.kind_of(k) == .CLAUSE and self.op_of(k) == .MODIFIES for k in self.spec.ast.nodes[decl].children])
 
     # -- reporting -------------------------------------------------------------
@@ -546,7 +545,6 @@ struct Checker:
     # -- literals --------------------------------------------------------------
 
     def literal_value(self, n: Int) -> Optional[Real]:
-        """The value of a numeric literal, possibly negated."""
         return literal_value(self.spec.ast, n)
 
     # -- resolutions -----------------------------------------------------------
