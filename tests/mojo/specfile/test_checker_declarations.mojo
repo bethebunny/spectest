@@ -518,7 +518,7 @@ def test_predicate_classes() raises:
     var more = part.classes[2].expr
     var empty_ref = named(spec, more, ast.NodeKind.NAME, "empty")[0]
     var one_ref = named(spec, more, ast.NodeKind.NAME, "one")[0]
-    assert_equal(spec.resolution(empty_ref).value().kind, ResolutionKind.CLASS)
+    assert_equal(spec.resolution(empty_ref).value().kind, ResolutionKind.Class)
     assert_equal(spec.resolution(empty_ref).value().index, part.classes[0].node)
     assert_equal(spec.resolution(one_ref).value().index, part.classes[1].node)
     for p in fun.partitions:
@@ -665,22 +665,22 @@ def test_params_fields_types_and_enums() raises:
     var spec = ok(SRC)
     var a = clause_expr(spec, "f.a")
     var p = only_name(spec, a, "p")
-    assert_equal(res_kind(spec, p), Int(ResolutionKind.PARAM))
+    assert_equal(res_kind(spec, p), Int(ResolutionKind.Param))
     assert_equal(spec.resolution(p).value().index, 2)
     assert_equal(spec.resolution(only_name(spec, a, "c")).value().index, 3)
     var xs = named(spec, a, ast.NodeKind.ATTR, "x")
     assert_equal(len(xs), 1)
     var field = spec.resolution(xs[0]).value().copy()
-    assert_equal(field.kind, ResolutionKind.RECORD_FIELD)
+    assert_equal(field.kind, ResolutionKind.RecordField)
     assert_equal(field.index, 0)
     assert_equal(spec.types.text(field.owner), "Pt")
     var green = named(spec, a, ast.NodeKind.ATTR, "Green")[0]
-    assert_equal(spec.resolution(green).value().kind, ResolutionKind.ENUM_MEMBER)
+    assert_equal(spec.resolution(green).value().kind, ResolutionKind.EnumMember)
     assert_equal(spec.resolution(green).value().index, 1)
     assert_equal(type_text(spec, green), "Color")
     var maxes = named(spec, a, ast.NodeKind.ATTR, "max")
     assert_equal(len(maxes), 2)
-    assert_equal(res_kind(spec, maxes[0]), Int(ResolutionKind.TYPE_CONST))
+    assert_equal(res_kind(spec, maxes[0]), Int(ResolutionKind.TypeConst))
     assert_equal(spec.types.text(spec.resolution(maxes[0]).value().index), "i32")
     assert_equal(spec.types.text(spec.resolution(maxes[1]).value().index), "f64")
     assert_equal(type_text(spec, maxes[0]), "int")
@@ -693,7 +693,7 @@ def test_bare_enum_member_and_error() raises:
     var raises_clause = spec.clauses[spec.fns[fi].clauses[0]].copy()
     assert_equal(raises_clause.error, "builtins.Boom")
     var red = only_name(spec, raises_clause.expr, "Red")
-    assert_equal(spec.resolution(red).value().kind, ResolutionKind.ENUM_MEMBER)
+    assert_equal(spec.resolution(red).value().kind, ResolutionKind.EnumMember)
     assert_equal(spec.resolution(red).value().index, 0)
     assert_equal(spec.types.text(spec.resolution(red).value().owner), "Color")
 
@@ -709,16 +709,16 @@ def test_observers_and_prelude() raises:
             cell = c
     assert_true(cell > 0)
     var r = spec.resolution(cell).value().copy()
-    assert_equal(r.kind, ResolutionKind.OBSERVER)
+    assert_equal(r.kind, ResolutionKind.Observer)
     assert_equal(r.index, 1)
     assert_equal(r.owner, spec.model_named("Frame").value())
     assert_equal(type_text(spec, cell), "option<f64>")
     assert_equal(type_text(spec, spec.ast.child(cell, 0)), "(u64, string) -> option<f64>")
     var columns = named(spec, b, ast.NodeKind.ATTR, "columns")[0]
-    assert_equal(spec.resolution(columns).value().kind, ResolutionKind.OBSERVER)
+    assert_equal(spec.resolution(columns).value().kind, ResolutionKind.Observer)
     assert_equal(spec.resolution(columns).value().index, 0)
     var is_none = calls[0]
-    assert_equal(spec.resolution(is_none).value().kind, ResolutionKind.PRELUDE)
+    assert_equal(spec.resolution(is_none).value().kind, ResolutionKind.Prelude)
     assert_equal(spec.resolution(is_none).value().index, prelude_id("is_none").value())
     assert_equal(spec.resolution(is_none).value().name, "is_none")
 
@@ -727,14 +727,14 @@ def test_mp_result_qe_and_cr() raises:
     var spec = ok(SRC)
     var m = clause_expr(spec, "f.m")
     var result = only_name(spec, m, "result")
-    assert_equal(res_kind(spec, result), Int(ResolutionKind.RESULT))
+    assert_equal(res_kind(spec, result), Int(ResolutionKind.Result))
     var mp = -1
     for c in nodes_of(spec, m, ast.NodeKind.CALL):
         if spec.resolution(c).value().name == "mp.cos":
             mp = c
     assert_true(mp > 0)
     assert_equal(type_text(spec, mp), "real")
-    assert_equal(spec.resolution(spec.ast.child(mp, 0)).value().kind, ResolutionKind.PRELUDE)
+    assert_equal(spec.resolution(spec.ast.child(mp, 0)).value().kind, ResolutionKind.Prelude)
     var q = clause_expr(spec, "f.q")
     assert_equal(type_text(spec, q), "bool")
     var qe = spec.ast.child(q, 0)
@@ -749,7 +749,7 @@ def test_old() raises:
     var spec = ok(SRC)
     var o = clause_expr(spec, "f.o")
     var old = spec.ast.child(o, 0)
-    assert_equal(res_kind(spec, old), Int(ResolutionKind.OLD))
+    assert_equal(res_kind(spec, old), Int(ResolutionKind.Old))
     assert_equal(type_text(spec, old), "list<string>")
 
 
@@ -758,7 +758,7 @@ def test_spec_fn_calls_in_relates() raises:
     var r = clause_expr(spec, "f.r")
     var g = spec.ast.child(spec.ast.child(r, 2), 0)
     var res = spec.resolution(g).value().copy()
-    assert_equal(res.kind, ResolutionKind.SPEC_FN)
+    assert_equal(res.kind, ResolutionKind.SpecFn)
     assert_equal(res.index, spec.fn_named("g").value())
     assert_equal(type_text(spec, g), "f64")
     assert_equal(type_text(spec, spec.ast.child(spec.ast.child(g, 2), 0)), "f64")
@@ -774,16 +774,16 @@ def test_partition_classes() raises:
         assert_equal(type_text(spec, cls.expr), "set<f64>")
     assert_equal(part.classes[0].name, "nan")
     var nan = spec.resolution(part.classes[0].expr).value().copy()
-    assert_equal(nan.kind, ResolutionKind.TYPE_CONST)
+    assert_equal(nan.kind, ResolutionKind.TypeConst)
     assert_equal(nan.name, "nan")
     var nan_ref = only_name(spec, part.classes[2].expr, "nan")
     var small_ref = only_name(spec, part.classes[2].expr, "small")
-    assert_equal(spec.resolution(nan_ref).value().kind, ResolutionKind.CLASS)
+    assert_equal(spec.resolution(nan_ref).value().kind, ResolutionKind.Class)
     assert_equal(spec.resolution(nan_ref).value().index, part.classes[0].node)
     assert_equal(spec.resolution(small_ref).value().index, part.classes[1].node)
     var rng = nodes_of(spec, part.classes[1].expr, ast.NodeKind.CALL)
     assert_equal(len(rng), 1)
-    assert_equal(spec.resolution(rng[0]).value().kind, ResolutionKind.SET_CTOR)
+    assert_equal(spec.resolution(rng[0]).value().kind, ResolutionKind.SetCtor)
     assert_equal(spec.resolution(rng[0]).value().name, "range")
 
 
@@ -793,7 +793,7 @@ def test_invariant_fields_and_self() raises:
     var columns = named(spec, uniq, ast.NodeKind.NAME, "columns")
     assert_equal(len(columns), 2)
     var r = spec.resolution(columns[0]).value().copy()
-    assert_equal(r.kind, ResolutionKind.FIELD)
+    assert_equal(r.kind, ResolutionKind.Field)
     assert_equal(r.index, 0)
     assert_equal(r.owner, spec.model_named("Frame").value())
     var cells = clause_expr(spec, "Frame.cells")
@@ -801,19 +801,19 @@ def test_invariant_fields_and_self() raises:
     for c in nodes_of(spec, cells, ast.NodeKind.CALL):
         if spec.resolution(c).value().name == "cell":
             cell_call = c
-    assert_equal(spec.resolution(cell_call).value().kind, ResolutionKind.FIELD)
+    assert_equal(spec.resolution(cell_call).value().kind, ResolutionKind.Field)
     var ok_inv = clause_expr(spec, "Q.ok")
     var items = named(spec, ok_inv, ast.NodeKind.NAME, "items")
-    assert_equal(res_kind(spec, items[0]), Int(ResolutionKind.FIELD))
+    assert_equal(res_kind(spec, items[0]), Int(ResolutionKind.Field))
     var self_ = only_name(spec, ok_inv, "self")
-    assert_equal(res_kind(spec, self_), Int(ResolutionKind.SELF))
+    assert_equal(res_kind(spec, self_), Int(ResolutionKind.Receiver))
     assert_equal(spec.resolution(self_).value().owner, spec.model_named("Q").value())
     var push = clause_expr(spec, "Q.push.p")
-    assert_equal(res_kind(spec, named(spec, push, ast.NodeKind.NAME, "self")[0]), Int(ResolutionKind.SELF))
+    assert_equal(res_kind(spec, named(spec, push, ast.NodeKind.NAME, "self")[0]), Int(ResolutionKind.Receiver))
     var attr = named(spec, push, ast.NodeKind.ATTR, "items")
-    assert_equal(spec.resolution(attr[0]).value().kind, ResolutionKind.OBSERVER)
+    assert_equal(spec.resolution(attr[0]).value().kind, ResolutionKind.Observer)
     var e = clause_expr(spec, "Q.empty.e")
-    assert_equal(res_kind(spec, only_name(spec, e, "result")), Int(ResolutionKind.RESULT))
+    assert_equal(res_kind(spec, only_name(spec, e, "result")), Int(ResolutionKind.Result))
 
 
 def test_every_name_call_and_attribute_is_resolved() raises:

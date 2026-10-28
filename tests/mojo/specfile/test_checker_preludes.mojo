@@ -50,7 +50,7 @@ def test_a_spec_uses_the_definitions_of_its_prelude() raises:
     # The requires and the ensures clause resolve the call to the definition.
     var found = 0
     for kv in spec.resolutions.items():
-        if kv.value.kind == .DEF:
+        if kv.value.kind == .Def:
             found += 1
     assert_true(found >= 4, String(found))
     assert_equal(spec.clauses[spec.clause_named("f.big").value()].kind, Op.ENSURES)

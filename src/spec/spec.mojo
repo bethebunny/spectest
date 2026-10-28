@@ -26,51 +26,52 @@ __enum ResolutionKind(Equatable, ImplicitlyCopyable, Intable, Writable):
     """What a NAME, ATTR or CALL node refers to. Writes as its lowercase name.
 
     By kind, what it is, and its Resolution's `index`, `owner` and `name`:
-      - PARAM: a parameter; index its position in the enclosing callable's params
-      - RESULT: the return value, or in a constructor the new handle
-      - SELF: the receiver of a method, or the model's handle inside its own invariants
-      - LOCAL: a `let` or comprehension variable; index the LET or COMPREHENSION node
-      - FIELD: a bare zero-argument observer inside a model's own clauses; index the
+      - Param: a parameter; index its position in the enclosing callable's params
+      - Result: the return value, or in a constructor the new handle
+      - Receiver: `self`, the receiver of a method, or the model's handle inside its own
+        invariants
+      - Local: a `let` or comprehension variable; index the LET or COMPREHENSION node
+      - Field: a bare zero-argument observer inside a model's own clauses; index the
         observer's position, owner the model's
-      - PRELUDE: a system prelude function; index its id in prelude.names
-      - DEF: a single-expression definition; index its position in Spec.defs
-      - TYPE_CONST: `i32.max`, `f64.nan`; index the scalar type, name the attribute
-      - SET_CTOR: `f64.range(a, b)`, `u8.pattern("...")`; index the scalar type, name
+      - Prelude: a system prelude function; index its id in prelude.names
+      - Def: a single-expression definition; index its position in Spec.defs
+      - TypeConst: `i32.max`, `f64.nan`; index the scalar type, name the attribute
+      - SetCtor: `f64.range(a, b)`, `u8.pattern("...")`; index the scalar type, name
         "range" or "pattern"
-      - SPEC_FN: a call of a declared library function, made as a planned call; index
+      - SpecFn: a call of a declared library function, made as a planned call; index
         its position in Spec.fns
-      - OBSERVER: `h.width`, `df.cell(i, n)`; index the observer's position, owner the
+      - Observer: `h.width`, `df.cell(i, n)`; index the observer's position, owner the
         model's
-      - RECORD_FIELD: `r.f` on a record; index the field's position, owner the record type
-      - OLD: `old(e)`
-      - CLASS: an earlier partition class; index the CLASS node
-      - ENUM_MEMBER: `Color.Red` or a bare member; index the member's position, owner the
+      - RecordField: `r.f` on a record; index the field's position, owner the record type
+      - Old: `old(e)`
+      - Class: an earlier partition class; index the CLASS node
+      - EnumMember: `Color.Red` or a bare member; index the member's position, owner the
         enum type
-      - CONST: a declared library constant; index its position in Spec.consts
-      - QERR_PART: `e.steps` or `e.nans` on a qerr; name the part
-      - EXTERN: a call of a qualified callable the spec doesn't declare, in an observer's
+      - Const: a declared library constant; index its position in Spec.consts
+      - QerrPart: `e.steps` or `e.nans` on a qerr; name the part
+      - Extern: a call of a qualified callable the spec doesn't declare, in an observer's
         reading expression (`= builtins.list(self)`), which has the observer's declared
         type; name the callable
     """
 
-    case PARAM
-    case RESULT
-    case SELF
-    case LOCAL
-    case FIELD
-    case PRELUDE
-    case DEF
-    case TYPE_CONST
-    case SET_CTOR
-    case SPEC_FN
-    case OBSERVER
-    case RECORD_FIELD
-    case OLD
-    case CLASS
-    case ENUM_MEMBER
-    case CONST
-    case QERR_PART
-    case EXTERN
+    case Param
+    case Result
+    case Receiver
+    case Local
+    case Field
+    case Prelude
+    case Def
+    case TypeConst
+    case SetCtor
+    case SpecFn
+    case Observer
+    case RecordField
+    case Old
+    case Class
+    case EnumMember
+    case Const
+    case QerrPart
+    case Extern
 
     def __eq__(self, other: Self) -> Bool:
         return self._get_enum_discriminant() == other._get_enum_discriminant()

@@ -212,14 +212,14 @@ def lookup(mut c: Checker, e: Int) -> Int:
         if c.ctx.in_old and c.ctx.allow_old and li < c.ctx.old_scope:
             c.error(e, _old_local_message(c, name, binder))
             return c.poison
-        c.resolve(e, .LOCAL, name, index=binder)
+        c.resolve(e, .Local, name, index=binder)
         return c.ctx.locals[li].type
     if case .Some(why) = c.ctx.hidden.get(name):
         c.error(e, why)
         return c.poison
     var ci = c.ctx.class_index(name)
     if ci >= 0:
-        c.resolve(e, .CLASS, name, index=c.ctx.classes[ci].node)
+        c.resolve(e, .Class, name, index=c.ctx.classes[ci].node)
         return c.ctx.classes[ci].type
     var pi = c.ctx.param_index(name)
     if pi >= 0:
@@ -237,7 +237,7 @@ def lookup(mut c: Checker, e: Int) -> Int:
         if only != "" and name != only:
             c.error(e, t"a class of partition {only} may only refer to {only}, not to {name}")
             return c.poison
-        c.resolve(e, .PARAM, name, index=pi)
+        c.resolve(e, .Param, name, index=pi)
         return ptype
     if name == "result":
         if c.ctx.in_old:
@@ -246,13 +246,13 @@ def lookup(mut c: Checker, e: Int) -> Int:
         if c.ctx.result < 0:
             c.error(e, c.ctx.no_result.copy())
             return c.poison
-        c.resolve(e, .RESULT, "result")
+        c.resolve(e, .Result, "result")
         return c.ctx.result
     if name == "self":
         if c.ctx.self_t < 0:
             c.error(e, c.ctx.no_self.copy())
             return c.poison
-        c.resolve(e, .SELF, "self", owner=c.ctx.self_model)
+        c.resolve(e, .Receiver, "self", owner=c.ctx.self_model)
         return c.ctx.self_t
     var m = c.ctx.fields_of
     var oi = c.observer_pos(m, name) if m >= 0 else -1
@@ -260,12 +260,12 @@ def lookup(mut c: Checker, e: Int) -> Int:
         if c.spec.models[m].observers[oi].params:
             c.error(e, _takes_arguments(c, name, m, oi))
             return c.poison
-        c.resolve(e, .FIELD, name, index=oi, owner=m)
+        c.resolve(e, .Field, name, index=oi, owner=m)
         return c.spec.models[m].observers[oi].type
     var owners = [en for en in c.spec.enums if name in c.spec.types.infos[en].names]
     if len(owners) == 1:
         var member = c.spec.types.infos[owners[0]].names.try_index(name).value()
-        c.resolve(e, .ENUM_MEMBER, name, index=member, owner=owners[0])
+        c.resolve(e, .EnumMember, name, index=member, owner=owners[0])
         return owners[0]
     if owners:
         var listed = ", ".join([c.text(en) for en in owners])
@@ -453,7 +453,7 @@ def _choice_has(c: Checker, choice: Int, node: Int) -> Bool:
     var r = c.spec.resolutions.get(node)
     return (
         r is not None
-        and r.value().kind == .CONST
+        and r.value().kind == .Const
         and c.spec.consts[r.value().index].name in c.spec.types.infos[choice].names
     )
 
@@ -868,7 +868,7 @@ def call_extern(mut c: Checker, e: Int, chain: String) -> Int:
     """A call of a qualified callable the spec doesn't declare, in an observer's
     reading expression: it takes the observer's declared type."""
     var info = call_info(c, e, chain)
-    set_call_res(c, e, .EXTERN, chain)
+    set_call_res(c, e, .Extern, chain)
     c.set_type(c.child(e, 0), c.spec.types.fn_(info.arg_types(), [], c.ctx.extern_result))
     return c.ctx.extern_result
 
@@ -889,7 +889,7 @@ def call_old(mut c: Checker, e: Int) -> Int:
     var info = call_info(c, e, "")
     c.ctx.in_old = saved_in
     c.ctx.old_scope = saved_scope
-    set_call_res(c, e, .OLD, "old")
+    set_call_res(c, e, .Old, "old")
     var t = info.args[0].type if len(info.args) == 1 else c.poison
     c.set_type(c.child(e, 0), c.spec.types.fn_([t], [], t))
     return t
@@ -1017,7 +1017,7 @@ def check_declared_call(
 
 def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
     var info = call_info(c, e, name)
-    set_call_res(c, e, .SPEC_FN, name, index=pos, owner=c.spec.fns[pos].owner)
+    set_call_res(c, e, .SpecFn, name, index=pos, owner=c.spec.fns[pos].owner)
     c.set_type(c.child(e, 0), _fn_type(c.spec.types, c.spec.fns[pos].params, c.spec.fns[pos].result))
     if not c.ctx.allow_spec_fn:
         var shadow = " (it shadows the prelude function of the same name)" if name in c.prelude_ids else ""
@@ -1041,7 +1041,7 @@ def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
 
 def call_def(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
     var info = call_info(c, e, name)
-    set_call_res(c, e, .DEF, name, index=pos)
+    set_call_res(c, e, .Def, name, index=pos)
     if c.current_def >= 0:
         c.def_calls[c.current_def].append(pos)
     c.set_type(c.child(e, 0), _fn_type(c.spec.types, c.spec.defs[pos].params, c.spec.defs[pos].result))
@@ -1057,7 +1057,7 @@ def call_prelude(mut c: Checker, e: Int, name: String, pid: Int) -> Int:
     var f = c.child(e, 0)
     var sig = c.prelude_sigs[pid].copy()
     var info = call_info(c, e, name)
-    set_call_res(c, e, .PRELUDE, name, index=pid)
+    set_call_res(c, e, .Prelude, name, index=pid)
     for tn in c.children(c.child(e, 1)):
         info.targs.append(resolve_type(c, tn))
     var ok = True
@@ -1109,7 +1109,7 @@ def call_set_ctor(mut c: Checker, e: Int, scalar: Int, attr: String) -> Int:
         return fail_call(c, e, f, t"{scalar_name} has no function {attr}")
     if not c.has_set_constructor(scalar, attr):
         return fail_call(c, e, f, t"{scalar_name} has no {attr}(...) set")
-    set_call_res(c, e, .SET_CTOR, attr, index=scalar)
+    set_call_res(c, e, .SetCtor, attr, index=scalar)
     var ok = c.ctx.in_partition_set
     if not ok:
         c.error(
@@ -1159,7 +1159,7 @@ def call_observer(mut c: Checker, e: Int, mt: Int, model: Int, name: String, is_
     if oi < 0:
         return fail_call(c, e, f, _no_observer(c, model, name))
     var info = call_info(c, e, name)
-    var kind = ResolutionKind.FIELD if is_field else ResolutionKind.OBSERVER
+    var kind = ResolutionKind.Field if is_field else ResolutionKind.Observer
     set_call_res(c, e, kind, name, index=oi, owner=model)
     var params = c.spec.models[model].observers[oi].params.copy()
     var declared = c.spec.models[model].observers[oi].type
@@ -1196,7 +1196,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
     if chain:
         if case .Some(ci) = c.const_index.get(chain):
             ensure_const(c, ci)
-            c.resolve(e, .CONST, chain, index=ci)
+            c.resolve(e, .Const, chain, index=ci)
             return c.spec.consts[ci].type
         if c.kind_of(base) == .NAME:
             var base_name = c.text_of(base)
@@ -1217,7 +1217,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
                 if member is None:
                     c.error(e, t"enum {base_name} has no member {attr}")
                     return c.poison
-                c.resolve(e, .ENUM_MEMBER, attr, index=member.value(), owner=en)
+                c.resolve(e, .EnumMember, attr, index=member.value(), owner=en)
                 return en
     var vt = infer(c, base)
     match c.tkind(vt):
@@ -1230,18 +1230,18 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
             if c.spec.models[model].observers[observer].params:
                 c.error(e, _takes_arguments(c, attr, model, observer))
                 return c.poison
-            c.resolve(e, .OBSERVER, attr, index=observer, owner=model)
+            c.resolve(e, .Observer, attr, index=observer, owner=model)
             return c.observer_type(vt, model, observer)
         case .RECORD:
             var field = c.spec.types.infos[vt].names.try_index(attr)
             if field is None:
                 c.error(e, t"record {c.text(vt)} has no field {attr}")
                 return c.poison
-            c.resolve(e, .RECORD_FIELD, attr, index=field.value(), owner=vt)
+            c.resolve(e, .RecordField, attr, index=field.value(), owner=vt)
             return c.arg(vt, field.value())
         case .QERR:
             if attr == "steps" or attr == "nans":
-                c.resolve(e, .QERR_PART, attr)
+                c.resolve(e, .QerrPart, attr)
                 return c.int_
             c.error(e, t"qerr has no part {attr}: its parts are steps and nans")
             return c.poison
@@ -1267,7 +1267,7 @@ def type_const(mut c: Checker, e: Int, scalar: Int, attr: String) -> Int:
         var available = String(t" (available: {listed})") if consts else String()
         c.error(e, t"{scalar_name} has no constant {attr}{available}")
         return c.poison
-    c.resolve(e, .TYPE_CONST, attr, index=scalar)
+    c.resolve(e, .TypeConst, attr, index=scalar)
     if c.tkind(t) == .SET and not c.ctx.in_partition_set:
         var hint = classifier_hint(attr) if c.tkind(scalar) == .FLOAT else String()
         var test = String(t"; in a clause, test the value with {hint}") if hint else String()

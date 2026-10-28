@@ -524,7 +524,7 @@ def _observed(c: Checker, n: Int) -> String:
     """The prelude function, observer or field that node `n` names, or ""."""
     if case .Some(r) = c.spec.resolutions.get(n):
         match r.kind:
-            case .PRELUDE | .OBSERVER | .FIELD:
+            case .Prelude | .Observer | .Field:
                 return r.name.copy()
             case _:
                 pass
@@ -790,7 +790,7 @@ def is_constant(c: Checker, e: Int) -> Bool:
                     return False
         case .ATTR:
             var r = c.spec.resolutions.get(e)
-            return r is not None and r.value().kind == .TYPE_CONST
+            return r is not None and r.value().kind == .TypeConst
         case _:
             return False
 

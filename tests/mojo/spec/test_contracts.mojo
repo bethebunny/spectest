@@ -39,14 +39,14 @@ def test_types_intern_by_value() raises:
 def test_spec_tables() raises:
     var spec = Spec("s", Ast("x", "s.spec"), Types())
     assert_equal(len(spec.node_types), 1)
-    spec.resolutions[0] = Resolution(ResolutionKind.PARAM, 2, -1, "x")
+    spec.resolutions[0] = Resolution(ResolutionKind.Param, 2, -1, "x")
     assert_equal(spec.resolution(0).value().index, 2)
     assert_false(spec.resolution(5))
 
 
 def test_resolution_kinds_are_distinct() raises:
-    assert_equal(Int(ResolutionKind.QERR_PART), 16)
-    assert_equal(Int(ResolutionKind.EXTERN), 17)
+    assert_equal(Int(ResolutionKind.QerrPart), 16)
+    assert_equal(Int(ResolutionKind.Extern), 17)
 
 
 def test_prelude_names() raises:
