@@ -92,7 +92,8 @@ def module_files(dotted: str, base: Path | None) -> list[Path]:
     return []
 
 
-def imported_files(path: Path) -> set[Path]:
+@cache
+def imported_files(path: Path) -> frozenset[Path]:
     """The Mojo files that `path` imports directly, std left out."""
     text = path.read_text()
     files: set[Path] = set()
@@ -108,7 +109,7 @@ def imported_files(path: Path) -> set[Path]:
     for match in PLAIN_IMPORT.finditer(text):
         if match.group(1).split(".")[0] != "std":
             files.update(module_files(match.group(1), path))
-    return files
+    return frozenset(files)
 
 
 @cache
