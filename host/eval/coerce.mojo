@@ -80,9 +80,11 @@ def coerce_arg(types: ty.Types, v: Value, t: Int, what: String) raises -> Value:
             var names: List[String] = []
             var values: List[Value] = []
             for name, value in v.pairs():
-                var field = info.names.try_index(name.text())
-                values.append(coerce_arg(types, value, info.args[field.value()], what) if field is not None else value.copy())
                 names.append(name.text().copy())
+                if case .Some(field) = info.names.try_index(name.text()):
+                    values.append(coerce_arg(types, value, info.args[field], what))
+                else:
+                    values.append(value.copy())
             return Value.record(v.name().copy(), names, values^)
         case _:
             return v.copy()

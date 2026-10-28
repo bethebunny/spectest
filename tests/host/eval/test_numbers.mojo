@@ -1,5 +1,6 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
+from eval.numbers import contains
 from eval_testkit import *
 from wire.value import Value
 
@@ -145,6 +146,20 @@ def test_bit_operations() raises:
     is_(v("a: int, b: int", "a | b", two(x.copy(), Value.int(-256))), Value.int(-1))
     is_(v("a: int, b: int", "a | b", two(Value.int(1), big("340282366920938463463374607431768211456"))), big("340282366920938463463374607431768211457"))
     is_(v("a: int, b: int", "a & b", two(big("-340282366920938463463374607431768211456"), big("-1"))), big("-340282366920938463463374607431768211456"))
+
+
+def test_bytes_membership() raises:
+    # The checker refuses `in` on bytes, so this calls the evaluator's operator directly.
+    var data: List[UInt8] = [0, 7, 200]
+    var x = Value.bytes(data^)
+    assert_true(contains(x, Value.int(200)))
+    assert_true(not contains(x, Value.int(8)))
+    # 256, -56 and 2**64 are no bytes, though their low eight bits are in x.
+    assert_true(not contains(x, Value.int(256)))
+    assert_true(not contains(x, Value.int(-56)))
+    assert_true(not contains(x, big("18446744073709551616")))
+    var part: List[UInt8] = [7, 200]
+    assert_true(contains(x, Value.bytes(part^)))
 
 
 def test_unary_minus() raises:

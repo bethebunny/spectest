@@ -70,7 +70,9 @@ struct Explanation(Movable):
             self.pairs.append((text.copy(), short(shown, VALUE_CHARS)))
 
 
-def outcome_of[H: EvalHost](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) -> Outcome:
+def outcome_of[
+    H: EvalHost
+](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) -> Outcome:
     """The value of `e`, or why it has none. A failure leaves `run` as it was."""
     var base = len(run.locals)
     try:
@@ -107,7 +109,9 @@ def _operands(spec: Spec, e: Int, op: Op) -> List[Int]:
     return [e]
 
 
-def add[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, env: Env, mut run: Run, mut host: H):
+def add[
+    H: EvalHost
+](mut explanation: Explanation, spec: Spec, e: Int, env: Env, mut run: Run, mut host: H):
     var text = source_text(spec, e)
     if explanation.accepts(text):
         explanation.add_text(text, outcome_of(spec, e, env, run, host).text())
@@ -117,17 +121,23 @@ def add_known(mut explanation: Explanation, spec: Spec, e: Int, outcome: Outcome
     explanation.add_text(source_text(spec, e), outcome.text())
 
 
-def _add_unless_literal[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, env: Env, mut run: Run, mut host: H):
+def _add_unless_literal[
+    H: EvalHost
+](mut explanation: Explanation, spec: Spec, e: Int, env: Env, mut run: Run, mut host: H):
     if not is_literal(spec, e):
         add(explanation, spec, e, env, run, host)
 
 
-def _add_args[H: EvalHost](mut explanation: Explanation, spec: Spec, call: Int, env: Env, mut run: Run, mut host: H):
+def _add_args[
+    H: EvalHost
+](mut explanation: Explanation, spec: Spec, call: Int, env: Env, mut run: Run, mut host: H):
     for arg in spec.ast.nodes[call].children[2:]:
         _add_unless_literal(explanation, spec, spec.ast.child(arg, 0), env, run, host)
 
 
-def operand[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, env: Env, mut run: Run, mut host: H):
+def operand[
+    H: EvalHost
+](mut explanation: Explanation, spec: Spec, e: Int, env: Env, mut run: Run, mut host: H):
     """An operand's value, with the values that feed it when that helps."""
     if is_literal(spec, e):
         return
@@ -150,7 +160,9 @@ def operand[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, env: 
     add(explanation, spec, e, env, run, host)
 
 
-def walk[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
+def walk[
+    H: EvalHost
+](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     if explanation.full():
         return
     ref n = spec.ast.nodes[e]
@@ -195,7 +207,9 @@ def walk[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, value: O
             add_known(explanation, spec, e, value)
 
 
-def walk_implies[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
+def walk_implies[
+    H: EvalHost
+](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     ref n = spec.ast.nodes[e]
     if value.is_bool(False):
         # A false implication has a true left side, so its right side explains it.
@@ -212,7 +226,9 @@ def walk_implies[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, 
         walk(explanation, spec, n.children[1], right, env, run, host)
 
 
-def walk_chain[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
+def walk_chain[
+    H: EvalHost
+](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     """`a and b and c`, or the same with `or`: the operand that decides it, else each one."""
     var op = spec.ast.nodes[e].op
     # A false `and` is decided by a false operand, a true `or` by a true one.
@@ -229,7 +245,9 @@ def walk_chain[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, va
             return
 
 
-def walk_let[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
+def walk_let[
+    H: EvalHost
+](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     ref n = spec.ast.nodes[e]
     var bound = outcome_of(spec, n.children[0], env, run, host)
     if not bound.ok:
@@ -243,7 +261,9 @@ def walk_let[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, valu
     run.locals.shrink(base)
 
 
-def walk_quantifier[H: EvalHost](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
+def walk_quantifier[
+    H: EvalHost
+](mut explanation: Explanation, spec: Spec, e: Int, value: Outcome, env: Env, mut run: Run, mut host: H):
     """A false `all` or a true `exists`: the first element that decides it."""
     ref n = spec.ast.nodes[e]
     var decided = value.is_bool(n.op == .EXISTS)

@@ -136,11 +136,7 @@ def _shift_amount(shift: BigInt, op: Op) raises -> Int:
 
 def _bitwise(a: BigInt, b: BigInt, op: Op) -> BigInt:
     """`a | b` or `a & b` on two's complement, as Python's."""
-    var small_a = a.int64_or_none()
-    var small_b = b.int64_or_none()
-    if small_a is not None and small_b is not None:
-        var x = small_a.value()
-        var y = small_b.value()
+    if case (.Some(x), .Some(y)) = (a.int64_or_none(), b.int64_or_none()):
         return BigInt(Int(x | y if op == .BITOR else x & y))
     var width = max(a.bit_length(), b.bit_length()) + 2
     var ua = wrapped(a, width, signed=False).magnitude.copy()
@@ -328,8 +324,9 @@ def contains(container: Value, x: Value) raises -> Bool:
             return _has_equal(container.keys(), x)
         case .BYTES:
             if x.kind == .INT:
-                var byte = x.small_int()
-                return byte is not None and byte.value() in [Int(b) for b in container.data()]
+                if case .Some(byte) = x.small_int():
+                    return 0 <= byte <= 255 and UInt8(byte) in container.data()
+                return False
             if x.kind == .BYTES:
                 return StringSlice(unsafe_from_utf8=Span(x.data())) in StringSlice(
                     unsafe_from_utf8=Span(container.data())

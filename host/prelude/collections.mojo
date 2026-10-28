@@ -134,10 +134,8 @@ def range_(a: Value, b: Value) raises -> Value:
     var hi = int_of(b, "range")
     if hi - lo > BigInt(RANGE_LIMIT):
         raise fail("range", t"range({lo}, {hi}) has more than {RANGE_LIMIT} elements")
-    var small_lo = a.small_int()
-    var small_hi = b.small_int()
-    if small_lo is not None and small_hi is not None:
-        return Value.list([Value.int(k) for k in range(small_lo.value(), small_hi.value())])
+    if case (.Some(start), .Some(end)) = (a.small_int(), b.small_int()):
+        return Value.list([Value.int(k) for k in range(start, end)])
     var out: List[Value] = []
     var k = lo^
     while k < hi:
