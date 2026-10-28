@@ -230,6 +230,7 @@ def test_report_files(project: pytest.Pytester) -> None:
     )
     md = (project.path / "out" / "report.md").read_text()
     assert md.startswith("# spectest report: demo")
+    assert "- **Spec:** `demo` (`demo.spec`)" in md.splitlines()
     assert "`test_demo.py::test_demo::ident.same`" in md
     assert "## Counterexamples" in md
     assert "**SPEC ERROR**" in md

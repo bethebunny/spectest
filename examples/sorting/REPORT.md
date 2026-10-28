@@ -1,6 +1,6 @@
 # spectest report: sorting
 
-- **Spec:** `sorting` (`/home/stef/spectest/examples/sorting/sorting.spec`)
+- **Spec:** `sorting` (`examples/sorting/sorting.spec`)
 - **Spec hash:** `b67cc966000c3aee48a078fccaabc27b2ca52a631f71f75057bc6e6caa7ce6e2`
 - **Harness:** spectest 0.1.0.dev0, Hypothesis 6.170.9
 - **Platform:** CPython 3.13.9, Linux 6.18.54.1-microsoft-standard-WSL2, x86_64

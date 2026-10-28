@@ -426,7 +426,11 @@ class SpectestItem(pytest.Item):
             "index": self.spectest_index,
             "conformance": self.parent.nodeid if self.parent is not None else "",
             "outcome": self.spectest_outcome or "skipped",
-            "spec": {"name": spec.name, "hash": spec.hash, "path": spec.path},
+            "spec": {
+                "name": spec.name,
+                "hash": spec.hash,
+                "path": _rootdir_relative(self.config, spec.path),
+            },
             "imported": package_versions([], recorded=True),
             "bound": state.bound_packages(conf),
             "results": [dataclasses.asdict(r) for r in self.results],
@@ -709,6 +713,12 @@ def _target(config: pytest.Config, option: str) -> Path | None:
     return path if path.is_absolute() else Path(config.invocation_params.dir) / path
 
 
+def _rootdir_relative(config: pytest.Config, path: str) -> str:
+    """``path`` from the rootdir when it is under it, as node ids print it."""
+    root = config.rootpath
+    return str(p.relative_to(root)) if (p := Path(path)).is_relative_to(root) else path
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     state = session.config.stash.get(STATE, None)
     if state is not None:
@@ -965,7 +975,7 @@ class SpecClauseItem(pytest.Item):
             "spec": {
                 "name": spec.stem,
                 "hash": self.owner.spec_hash,
-                "path": str(spec),
+                "path": _rootdir_relative(self.config, str(spec)),
             },
             "imported": package_versions([], recorded=True),
             "bound": {},

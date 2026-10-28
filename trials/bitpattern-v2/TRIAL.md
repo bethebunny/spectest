@@ -197,9 +197,9 @@ main lines. `-rs` printed 41 `SKIPPED` lines (166 items), all "no example applie
 trials/bitpattern-v2/test_bitpattern.py::test_bitpattern (spec bitpattern): 1096 passed, 8 failed, 126 skipped
 trials/bitpattern-v2/test_bitpattern.py::test_floats (spec floats): 90 passed, 1 failed, 2 skipped
 trials/bitpattern-v2/test_bitpattern.py::test_chars (spec chars): 44 passed, 2 failed, 1 spec error, 8 skipped
-  SPEC ERROR variant.Char_char.table: expected Char, got handle <builtins.module #19> (at /home/stef/spectest-ws/bp2-run/trials/bitpattern-v2/chars.spec:24:18: bitpattern.codecs.char)
+  SPEC ERROR variant.Char_char.table: expected Char, got handle <builtins.module #19> (at trials/bitpattern-v2/chars.spec:24:18: bitpattern.codecs.char)
 trials/bitpattern-v2/test_bitpattern.py::test_macs (spec macs): 34 passed, 4 spec errors, 1 skipped
-  SPEC ERROR variant.MAC_codec.same_constant: expected MAC, got handle <builtins.module #1> (at /home/stef/spectest-ws/bp2-run/trials/bitpattern-v2/macs.spec:20:42: bitpattern.codecs.mac)
+  SPEC ERROR variant.MAC_codec.same_constant: expected MAC, got handle <builtins.module #1> (at trials/bitpattern-v2/macs.spec:20:42: bitpattern.codecs.mac)
   SPEC ERROR variant.MAC_encode_int#1: bitpattern.codecs.mac has no attribute encode
   SPEC ERROR variant.MAC_encode_int#type: bitpattern.codecs.mac has no attribute encode
   SPEC ERROR variant.MAC_encode_int#raises: bitpattern.codecs.mac has no attribute encode
@@ -267,6 +267,5 @@ Command exited with non-zero status 1
 	Exit status: 1
 ```
 
-The run was made in a workspace at `/home/stef/spectest-ws/bp2-run`, which the paths in the
-spec error lines show. The previous run's output and the diagnosis files were kept outside the
-repository.
+The spec error lines printed absolute paths, shown here from the repository root. The previous
+run's output and the diagnosis files were kept outside the repository.

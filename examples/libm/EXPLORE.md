@@ -1,6 +1,6 @@
 # spectest report: libm_explore
 
-- **Spec:** `libm_explore` (`/home/stef/spectest/examples/libm/explore.spec`)
+- **Spec:** `libm_explore` (`examples/libm/explore.spec`)
 - **Spec hash:** `273a8a9858f6d88d293444b56ac5cb99055c0b3a6c9e47fea46cdddda25d38d2`
 - **Harness:** spectest 0.1.0.dev0, Hypothesis 6.170.9
 - **Platform:** CPython 3.13.9, Linux 6.18.54.1-microsoft-standard-WSL2, x86_64

@@ -1,6 +1,6 @@
 # spectest report: frames
 
-- **Spec:** `frames` (`/home/stef/spectest/examples/frames/frames.spec`)
+- **Spec:** `frames` (`examples/frames/frames.spec`)
 - **Spec hash:** `17db88635b51b10e9480caaaf4c2b5157d9e5a2325db9630fdf243d6a22e5410`
 - **Harness:** spectest 0.1.0.dev0, Hypothesis 6.170.9
 - **Platform:** CPython 3.13.9, Linux 6.18.54.1-microsoft-standard-WSL2, x86_64

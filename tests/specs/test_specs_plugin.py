@@ -361,8 +361,10 @@ def test_the_markdown_and_json_reports(project: pytest.Pytester, fake_host: Fake
     md = (project.path / "r.md").read_text()
     assert "math.cos.accurate" in md
     assert "x = 0.5" in md
+    assert "- **Spec:** `demo` (`demo.spec`)" in md.splitlines()
     (report,) = load_reports((project.path / "r.json").read_text())
     assert report.spec_name == "demo"
+    assert report.spec_path == "demo.spec"
     assert [r.clause_id for r in report.results] == [
         "math.cos.accurate",
         "math.cos#type",

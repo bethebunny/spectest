@@ -1,6 +1,6 @@
 # spectest report: libm
 
-- **Spec:** `libm` (`/home/stef/spectest/examples/libm/libm.spec`)
+- **Spec:** `libm` (`examples/libm/libm.spec`)
 - **Spec hash:** `b323a107056a204b87b50df16ec266e7b8feabe805da834f0023c5820d2a9b1a`
 - **Harness:** spectest 0.1.0.dev0, Hypothesis 6.170.9
 - **Platform:** CPython 3.13.9, Linux 6.18.54.1-microsoft-standard-WSL2, x86_64

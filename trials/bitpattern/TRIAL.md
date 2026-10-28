@@ -95,7 +95,7 @@ bringing up nodes...
 .......................................................................s [100%]
 =================================== FAILURES ===================================
 _______________ spectest test_intset::intset_range_float_stop#1 ________________
-[gw2] linux -- Python 3.13.9 /home/stef/spectest/.venv/bin/python
+[gw2] linux -- Python 3.13.9 .venv/bin/python
 intset_range_float_stop#1 (raises) failed
   raises TypeError when true
   in intset_range_float_stop
@@ -115,7 +115,7 @@ verdicts: 5 pass, 1 fail (hypothesis)
 seed: 0
 reproduce: uv run pytest 'trials/bitpattern/test_bitpattern.py::test_intset::intset_range_float_stop#1' --spectest-seed=0
 _____________ spectest test_intset::intset_range_float_stop#raises _____________
-[gw2] linux -- Python 3.13.9 /home/stef/spectest/.venv/bin/python
+[gw2] linux -- Python 3.13.9 .venv/bin/python
 intset_range_float_stop#raises (raises) failed
   built-in: intset_range_float_stop raises only what a raises or may_raise admits
   in intset_range_float_stop
@@ -134,7 +134,7 @@ verdicts: 4 pass, 1 fail (hypothesis)
 seed: 0
 reproduce: uv run pytest 'trials/bitpattern/test_bitpattern.py::test_intset::intset_range_float_stop#raises' --spectest-seed=0
 ____________________ spectest test_pattern::pattern.syntax _____________________
-[gw0] linux -- Python 3.13.9 /home/stef/spectest/.venv/bin/python
+[gw0] linux -- Python 3.13.9 .venv/bin/python
 pattern.syntax (raises) failed
   raises syntax: ValueError when not (len(quartets) >= 1 and all(j in range(0, len(quartets)): count(c in quartets[j]: c == "*") <= 1 and len(quartets[j]) >= 1 and len(quartets[j]) <= 4 and (j == 0 or "*" in quartets[j] or len(quartets[j]) == 4)))
   in pattern
@@ -156,7 +156,7 @@ verdicts: 11 pass, 1 fail (hypothesis)
 seed: 0
 reproduce: uv run pytest 'trials/bitpattern/test_bitpattern.py::test_pattern::pattern.syntax' --spectest-seed=0
 ___________________ spectest test_codecs::int_range_float#1 ____________________
-[gw8] linux -- Python 3.13.9 /home/stef/spectest/.venv/bin/python
+[gw8] linux -- Python 3.13.9 .venv/bin/python
 int_range_float#1 (raises) failed
   raises TypeError when true
   in int_range_float
@@ -176,7 +176,7 @@ verdicts: 13 pass, 1 fail (hypothesis)
 seed: 0
 reproduce: uv run pytest 'trials/bitpattern/test_bitpattern.py::test_codecs::int_range_float#1' --spectest-seed=0
 _____________ spectest test_codecs::codec_pattern_message.message ______________
-[gw4] linux -- Python 3.13.9 /home/stef/spectest/.venv/bin/python
+[gw4] linux -- Python 3.13.9 .venv/bin/python
 codec_pattern_message.message (ensures) failed
   ensures message: let digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] in let n = sum(q in quartets: if "*" in q then 4 else len(q)) in let w = (if c in ["uint8", "int8", "float8_e5m2", "float8_e4m3fn"] then 8 else if c in ["uint16", "int16", "float16", "bfloat16"] then 16 else if c == "char" then 21 else 32) in result == "pattern is " + (if n < 10 then digits[n] else digits[n // 10] + digits[n % 10]) + " bits, not " + digits[w // 10] + digits[w % 10]
   in codec_pattern_message
@@ -198,7 +198,7 @@ verdicts: 1 fail, 8 skip (hypothesis)
 seed: 0
 reproduce: uv run pytest 'trials/bitpattern/test_bitpattern.py::test_codecs::codec_pattern_message.message' --spectest-seed=0
 __________________ spectest test_codecs::datetime_codec.size ___________________
-[gw8] linux -- Python 3.13.9 /home/stef/spectest/.venv/bin/python
+[gw8] linux -- Python 3.13.9 .venv/bin/python
 datetime_codec.size (ensures) failed
   ensures size: result.2 == 315537897600000000 - (if is_none(zone) or unwrap(zone) <= 0 then 0 else unwrap(zone) * 60000000)
   in datetime_codec
@@ -214,7 +214,7 @@ verdicts: 8 pass, 1 fail, 2 skip (hypothesis)
 seed: 0
 reproduce: uv run pytest 'trials/bitpattern/test_bitpattern.py::test_codecs::datetime_codec.size' --spectest-seed=0
 ___________________ spectest test_codecs::datetime_decode#2 ____________________
-[gw8] linux -- Python 3.13.9 /home/stef/spectest/.venv/bin/python
+[gw8] linux -- Python 3.13.9 .venv/bin/python
 datetime_decode#2 (raises) failed
   raises IndexError when b + (if is_some(zone) then unwrap(zone) * 60000000 else 0) > 315537897599999999
   in datetime_decode
@@ -236,7 +236,7 @@ verdicts: 22 pass, 1 fail, 17 skip (hypothesis)
 seed: 0
 reproduce: uv run pytest 'trials/bitpattern/test_bitpattern.py::test_codecs::datetime_decode#2' --spectest-seed=0
 ________________________ spectest test_bdd::bdd_node#2 _________________________
-[gw5] linux -- Python 3.13.9 /home/stef/spectest/.venv/bin/python
+[gw5] linux -- Python 3.13.9 .venv/bin/python
 bdd_node#2 (raises) failed
   raises ValueError when bit < 0 or max(v in [-1] + map(i in filter(i in range(0, len(left)): left[i] != "?"): len(left) - 1 - i): v) >= bit or max(v in [-1] + map(i in filter(i in range(0, len(right)): right[i] != "?"): len(right) - 1 - i): v) >= bit
   in bdd_node
@@ -260,7 +260,7 @@ verdicts: 28 pass, 1 fail (hypothesis)
 seed: 0
 reproduce: uv run pytest 'trials/bitpattern/test_bitpattern.py::test_bdd::bdd_node#2' --spectest-seed=0
 _________________________ spectest test_bdd::bdd_nth#4 _________________________
-[gw9] linux -- Python 3.13.9 /home/stef/spectest/.venv/bin/python
+[gw9] linux -- Python 3.13.9 .venv/bin/python
 bdd_nth#4 (raises) failed
   raises IndexError when q >= 0 and ( let w = max(v in [width, count(p in [1, 2, 4, 8, 16, 32, 64, 128]: exists(x in iterable: x >= p))]: v) in let pow = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536] in let c = (if q >= w then count(x in range(0, 256): x in iterable) * pow[q - w] else count(x in range(0, pow[q]): x in iterable)) in n >= c or n < -c)
   in bdd_nth

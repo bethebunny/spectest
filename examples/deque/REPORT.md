@@ -1,6 +1,6 @@
 # spectest report: deque
 
-- **Spec:** `deque` (`/home/stef/spectest/examples/deque/deque.spec`)
+- **Spec:** `deque` (`examples/deque/deque.spec`)
 - **Spec hash:** `dd6fc8d08e1c057fb0703c46fbd95e0352151f48db5d65577a838bd0048ad440`
 - **Harness:** spectest 0.1.0.dev0, Hypothesis 6.170.9
 - **Platform:** CPython 3.13.9, Linux 6.18.54.1-microsoft-standard-WSL2, x86_64

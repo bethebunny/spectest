@@ -1,6 +1,6 @@
 # spectest report: binary
 
-- **Spec:** `binary` (`/home/stef/spectest/examples/binary/binary.spec`)
+- **Spec:** `binary` (`examples/binary/binary.spec`)
 - **Spec hash:** `f9e87ca0f2e17f9d62860314bbfb0b235d035b2e9f7eefee84a3a0717476341c`
 - **Harness:** spectest 0.1.0.dev0, Hypothesis 6.170.9
 - **Platform:** CPython 3.13.9, Linux 6.18.54.1-microsoft-standard-WSL2, x86_64
