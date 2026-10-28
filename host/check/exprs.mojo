@@ -9,11 +9,11 @@ the poison type, which silences follow-on errors.
 from value.literal import is_integer_literal
 from value.real import Real
 
-from check.psig import Arg, CallInfo, TypingError
+from spec.prelude_signatures import Arg, CallInfo, TypingError
 from check.sigs import prelude_type
-from check.spec import Param, ResolutionKind
+from spec.spec import Param, ResolutionKind
 from check.state import Checker, Ctx, NO_TYPE, Var, classifier_hint, is_reserved, last_index_of
-from check.types import ANY_TYPE, Types
+from spec.types import ANY_TYPE, Types
 from check.typesyn import ensure_const, resolve_type
 
 comptime _NAMESPACE_FUNCTIONS: Array[StaticString, 7] = ["sqrt", "exp", "log", "sin", "cos", "tan", "atan"]

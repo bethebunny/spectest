@@ -3,13 +3,13 @@ and the type relations (join, equality and order rules) the expression rules use
 """
 
 from value.real import Real
-from prelude.names import prelude_count, prelude_name
-from syntax import ast
-from syntax.ast import Diagnostic
+from spec.prelude_names import prelude_count, prelude_name
+from spec import ast
+from spec.ast import Diagnostic
 
-from check import types as ty
-from check.psig import PreludeSig, prelude_sig
-from check.spec import Resolution, ResolutionKind, Spec, literal_value
+from spec import types as ty
+from spec.prelude_signatures import PreludeSig, prelude_sig
+from spec.spec import Resolution, ResolutionKind, Spec, literal_value
 
 
 comptime NO_TYPE = -1

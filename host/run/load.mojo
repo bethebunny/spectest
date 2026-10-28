@@ -4,7 +4,7 @@ from std.pathlib import Path
 
 from check.checker import check_source_with
 from check.files import Files
-from check.spec import Spec
+from spec.spec import Spec
 from gen.sizes import Sizes
 from value.digits import hex_digits
 from partitions.check import PartitionSets, compile_partitions

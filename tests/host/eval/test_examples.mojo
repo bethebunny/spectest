@@ -4,11 +4,11 @@ from std.pathlib import Path
 from std.testing import assert_equal, assert_true, TestSuite
 
 from check.checker import check_source
-from check.spec import Spec
+from spec.spec import Spec
 from eval.api import explain, snapshot_olds
 from eval_testkit import *
 from value.float_formats import F32
-from syntax.ast import Op
+from spec.ast import Op
 from value.value import Value
 
 

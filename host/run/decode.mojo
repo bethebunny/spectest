@@ -4,8 +4,8 @@ The driver's wire objects are untyped. `decode` reads one against the type the s
 declares, as v1's binding did; a value that doesn't fit raises, and the runner charges
 that to the `#type` clause."""
 
-from check import types as ty
-from check.types import Types
+from spec import types as ty
+from spec.types import Types
 from value.fixed import int_max, int_min, low_mask
 from value.floats import converted, is_nan, signbit
 from value.float_formats import FloatFormat, format_by_id

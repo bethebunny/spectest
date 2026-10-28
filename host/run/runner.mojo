@@ -9,8 +9,8 @@ the stored failures, generates, and shrinks each failing clause on its own."""
 from std.collections import Set
 from std.time import perf_counter_ns
 
-from check import types as ty
-from check.spec import Spec
+from spec import types as ty
+from spec.spec import Spec
 from eval.api import (
     Judgment,
     class_holds,

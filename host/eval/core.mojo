@@ -5,8 +5,8 @@ in the `Run`: the node it is attributed to, and whether it is a skip of the clau
 planned call that raised in the library) rather than an error.
 """
 
-from check import types as ty
-from check.spec import Spec, Param
+from spec import types as ty
+from spec.spec import Spec, Param
 from value.fixed import int_max, int_min
 from value.float_formats import format_by_id
 from value.literal import is_integer_literal, parse_number
@@ -15,11 +15,12 @@ from prelude import api
 from prelude.collections import EqMode, equal
 from prelude.util import real_value
 from sets import SetContext
-from syntax.ast import Op
+from spec.ast import Op
+from spec.bits import value_from_bits
 from value.equality import same
 from value.value import Kind, Value
 
-from .coerce import bits_of_value, coerce_arg, fit, value_from_bits
+from .coerce import bits_of_value, coerce_arg, fit
 from .env import Env, Failure, Run
 from .host import EvalHost
 from .numbers import (

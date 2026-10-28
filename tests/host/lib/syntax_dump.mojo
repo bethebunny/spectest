@@ -4,7 +4,7 @@ The op is left out when it is `NO_OP` and the text when it is empty. An absent p
 (`EMPTY`) is `_`. Example: `(binary + (name "x") (num "1"))`.
 """
 
-from syntax.ast import Ast, NIL
+from spec.ast import Ast, NIL
 
 
 def _quoted(text: String) -> String:

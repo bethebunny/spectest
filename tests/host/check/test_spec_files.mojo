@@ -4,7 +4,7 @@ from std.ffi import external_call
 from std.time import perf_counter_ns
 
 from check.checker import check, check_source
-from check.spec import ResolutionKind, Spec
+from spec.spec import ResolutionKind, Spec
 from check_testkit import (
     clause_expr,
     fails,
@@ -14,7 +14,7 @@ from check_testkit import (
     ok,
     type_text,
 )
-from syntax import ast
+from spec import ast
 from syntax.parser import parse_spec
 
 

@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from check.types import Types
+from spec.types import Types
 from gen.classes import draw_in_classes
 from gen.domain import domain_size, value_at
 from mcheck.property import Property, Outcome, PASSED

@@ -1,6 +1,6 @@
 """Models through their `build` calls, and the arguments of a call."""
 
-from check.spec import Spec
+from spec.spec import Spec
 from mcheck.source import Source
 from value.value import Value
 

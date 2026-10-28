@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from check.spec import Spec
+from spec.spec import Spec
 from partitions.check import PartitionSets, compile_partitions
 from partitions.requires import admitted
 from partitions_testing import build_spec

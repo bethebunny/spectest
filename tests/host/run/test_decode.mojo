@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from check.types import Types
+from spec.types import Types
 from value.bigint import BigInt
 from value.float_formats import BF16, F16, F32, F64
 from run.decode import decode, encode

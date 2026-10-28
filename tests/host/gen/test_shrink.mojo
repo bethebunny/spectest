@@ -2,7 +2,7 @@ from std.memory import bitcast
 from std.testing import assert_equal, assert_true, TestSuite
 from std.time import perf_counter_ns
 
-from check.types import Types
+from spec.types import Types
 from gen.sizes import Sizes
 from gen.value import draw_value
 from mcheck.property import Property, Outcome, PASSED, FAILED

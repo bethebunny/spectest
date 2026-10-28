@@ -9,7 +9,7 @@ it. Newlines inside `()`, `[]` and `{}` are ignored, as are blank and comment-on
 lines. `perf` takes the rest of its line raw.
 """
 
-from syntax.ast import Diagnostic, Span
+from spec.ast import Diagnostic, Span
 from syntax.chars import is_digit, is_word_char, is_word_start
 
 

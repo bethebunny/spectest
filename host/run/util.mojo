@@ -3,8 +3,8 @@ types."""
 
 from std.collections import Set
 
-from check import types as ty
-from check.spec import Fn, Spec
+from spec import types as ty
+from spec.spec import Fn, Spec
 from value.value import Value
 
 

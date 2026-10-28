@@ -1,6 +1,6 @@
 from std.testing import assert_equal, TestSuite
 
-from syntax.ast import Ast, NodeKind, Op, Span
+from spec.ast import Ast, NodeKind, Op, Span
 
 
 def test_build_and_names() raises:

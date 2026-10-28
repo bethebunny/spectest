@@ -5,9 +5,9 @@ The compiler reads the tree directly: `T.nan`, `T.range(a, b)`, `T.pattern("..."
 type name is one of the scalar names or an alias of the spec).
 """
 
-import check.types as ty
-import syntax.ast as sx
-from check.spec import Spec
+import spec.types as ty
+import spec.ast as sx
+from spec.spec import Spec
 from value.bigint import BigInt
 from value.fixed import int_max, int_min, pattern_of
 from value.floats import exactly, to_real
@@ -15,7 +15,7 @@ from value.float_formats import FORMATS, FloatFormat, format_by_id
 from value.literal import parse_number
 from value.real import Real
 from sets import BitSet, SetContext
-from syntax.ast import Ast, Node
+from spec.ast import Ast, Node
 
 from .ranges import float_range
 

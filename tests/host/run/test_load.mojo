@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from check.spec import Spec
+from spec.spec import Spec
 from value.digits import hex_digits
 from run.items import items_of
 from run.load import fnv, load, load_source

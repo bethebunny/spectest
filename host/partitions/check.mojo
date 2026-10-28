@@ -5,12 +5,12 @@ from std.bit import count_trailing_zeros, pop_count
 from std.collections import Set
 from std.math import log2
 
-from check.spec import Spec
+from spec.spec import Spec
 from value.digits import hex_digits
 from value.fixed import low_mask, signed_of
 from value.number_text import float_text
 from sets import BitSet, SetContext
-from syntax.ast import Ast, Diagnostic
+from spec.ast import Ast, Diagnostic
 
 from .compile import Elem, SetCompiler, alias_elems, elem_of
 from .requires import admitted

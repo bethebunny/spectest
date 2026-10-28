@@ -9,7 +9,7 @@ from value.fixed import wrapped
 from value.floats import is_nan, to_real
 from value.real import Real
 from prelude.util import real_value
-from syntax.ast import Op
+from spec.ast import Op
 from value.equality import canonical_eq
 from value.text import format_value
 from value.order import compare

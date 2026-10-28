@@ -4,7 +4,7 @@ from std.memory import bitcast
 from std.testing import assert_true
 
 from check.checker import check_source
-from check.spec import Spec
+from spec.spec import Spec
 from value.bigint import BigInt
 from value.float_formats import F32, F64, FloatFormat
 from value.text import format_value

@@ -5,7 +5,7 @@ first use, so a declaration may use one declared later; a cycle is reported.
 """
 
 from check.state import Checker, Ctx, NO_TYPE, type_hint
-from check.types import ANY_TYPE
+from spec.types import ANY_TYPE
 
 
 def _no_args(mut c: Checker, node: Int, t: Int) -> Int:

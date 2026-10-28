@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from check.spec import Spec, Model, Build, Param, Fn, Observer, Partition
-from check.types import Types
+from spec.spec import Spec, Model, Build, Param, Fn, Observer, Partition
+from spec.types import Types
 from gen.models import (
     Builder,
     PARAM_SPAN,
@@ -13,7 +13,7 @@ from gen.models import (
 )
 from gen.sizes import Sizes
 from mcheck.source import Source
-from syntax.ast import Ast, NodeKind
+from spec.ast import Ast, NodeKind
 from value.value import Value
 
 

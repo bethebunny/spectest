@@ -2,10 +2,10 @@
 
 from std.testing import assert_true
 
-from syntax import ast
+from spec import ast
 
 from check.checker import check_source
-from check.spec import Spec
+from spec.spec import Spec
 
 
 def ok(body: String) raises -> Spec:

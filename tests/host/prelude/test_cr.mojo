@@ -1,7 +1,7 @@
 from std.math import atan, cos, log, sin, sqrt, tan
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from check.types import Types
+from spec.types import Types
 from value.bigint import BigInt
 from value.float_formats import FloatFormat, F16, BF16, F32, F64, format_by_id
 from prelude_testkit import Lcg, bitcast_f64, error_of, f64v, fl, formats, rat, run, run_typed, samples

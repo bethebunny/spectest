@@ -1,11 +1,11 @@
 """The evaluator's entry points: evaluate, judge, snapshot_olds, observe_with,
 explain and class_holds."""
 
-from check import types as ty
-from check.spec import Fn, Partition, Spec
+from spec import types as ty
+from spec.spec import Fn, Partition, Spec
 from partitions.compile import compile_set_aliased
 from sets import BitSet, SetContext
-from syntax.ast import Op
+from spec.ast import Op
 from value.value import Value
 
 from .coerce import bits_of_value, fit

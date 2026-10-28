@@ -1,7 +1,7 @@
 """Helpers for the syntax tests: parse a fragment and dump the part under test."""
 
 from syntax.lexer import tokens
-from syntax.ast import Ast
+from spec.ast import Ast
 from syntax.parser import Parser, parse_spec
 from syntax_dump import dump
 

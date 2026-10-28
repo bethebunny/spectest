@@ -1,9 +1,9 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from check.types import ANY_TYPE, TypeKind, Types
-from check.spec import Resolution, ResolutionKind, Spec
-from prelude.names import prelude_id, prelude_name, prelude_count
-from syntax.ast import Ast
+from spec.types import ANY_TYPE, TypeKind, Types
+from spec.spec import Resolution, ResolutionKind, Spec
+from spec.prelude_names import prelude_id, prelude_name, prelude_count
+from spec.ast import Ast
 
 
 def test_types_intern() raises:

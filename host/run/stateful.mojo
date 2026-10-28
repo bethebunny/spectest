@@ -12,7 +12,7 @@ stored for the next run."""
 
 from std.time import perf_counter_ns
 
-from check import types as ty
+from spec import types as ty
 from eval.api import explain, judge
 from eval.env import Env
 from eval.text import source_text

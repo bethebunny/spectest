@@ -1,10 +1,10 @@
 """`requires` clauses read as sets of one parameter's values."""
 
-import syntax.ast as sx
-from check.spec import Spec
+import spec.ast as sx
+from spec.spec import Spec
 from value.real import Real
 from sets import BitSet, SetContext
-from syntax.ast import Ast
+from spec.ast import Ast
 
 from .compile import SetCompiler, alias_elems, elem_of, only_arg
 from .ranges import float_equal, float_range

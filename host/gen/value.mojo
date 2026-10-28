@@ -1,6 +1,6 @@
 """draw_value: a value of any spec type a parameter can have."""
 
-from check.types import TypeKind, Types
+from spec.types import TypeKind, Types
 from mcheck.source import MANY_LABEL, Source
 from value.float_formats import format_by_id
 from value.value import Value

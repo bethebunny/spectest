@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, TestSuite
 from std.time import perf_counter_ns
 
-from syntax.ast import Ast, NodeKind
+from spec.ast import Ast, NodeKind
 from syntax_dump import dump
 from syntax.parser import parse_spec
 from syntax_testkit import spec_error

@@ -1,9 +1,9 @@
 """Why a boolean clause has its value: source text and value text of the
 subexpressions that matter, following the failing structure."""
 
-from check import types as ty
-from check.spec import Spec
-from syntax.ast import Op
+from spec import types as ty
+from spec.spec import Spec
+from spec.ast import Op
 from value.value import Value
 
 from .core import is_old_call, set_members, type_kind, value_of

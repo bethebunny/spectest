@@ -3,7 +3,7 @@
 from std.math import clamp
 from std.memory import bitcast
 
-from eval.coerce import int_from_bits
+from spec.bits import int_from_bits
 from mcheck.source import MANY_LABEL, Many, Source, index_to_int
 from value.bigint import BigInt
 from value.fixed import low_mask, signed_of

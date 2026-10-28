@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from check import types as ty
-from check.spec import ResolutionKind, Spec
+from spec import types as ty
+from spec.spec import ResolutionKind, Spec
 from check_testkit import (
     clause_expr,
     count_errors,
@@ -13,7 +13,7 @@ from check_testkit import (
     ok,
     type_text,
 )
-from syntax import ast
+from spec import ast
 
 
 def want(params: String, expr: String, expected: String) raises:

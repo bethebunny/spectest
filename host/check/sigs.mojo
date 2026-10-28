@@ -5,8 +5,8 @@ arguments are already typed. A rule that finds the call ill-typed raises a
 `TypingError` that names the argument to point at.
 """
 
-from check.types import TypeKind
-from check.psig import CallInfo, PreludeSig, TypingError
+from spec.types import TypeKind
+from spec.prelude_signatures import CallInfo, PreludeSig, TypingError
 from check.state import Checker
 
 

@@ -5,10 +5,10 @@ rules of functions, models and interfaces, then the whole-file `run`.
 from value.fixed import int_max, int_min
 from value.floats import exactly
 from value.real import Real
-from syntax.ast import Op
+from spec.ast import Op
 
 from check.exprs import assignable, infer_in, literal_member, poison_subtree, want_bool
-from check.spec import (
+from spec.spec import (
     Build,
     Clause,
     Const,
@@ -23,7 +23,7 @@ from check.spec import (
 )
 from check.state import Checker, Ctx, Var, Visit, cycle_text, is_builtin_type_name, is_reserved, qualify_error
 from check.typesyn import alias_type, ensure_const, record_type, resolve_type
-from check.types import Types
+from spec.types import Types
 
 
 # -- names ----------------------------------------------------------------------

@@ -7,14 +7,14 @@ diagnostics, one `path:line:col: message` per line, in source order. Declaration
 that fail are skipped, so one mistake reports once.
 """
 
-from syntax.ast import Ast, Diagnostic, NodeKind
+from spec.ast import Ast, Diagnostic, NodeKind
 from syntax.parser import parse_spec
 
 from check.decls import run
 from check.files import Files, resolve_files
-from check.spec import Spec
+from spec.spec import Spec
 from check.state import Checker
-from check.types import ANY_TYPE, Types
+from spec.types import ANY_TYPE, Types
 
 
 def check(var ast: Ast) raises -> Spec:

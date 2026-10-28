@@ -1,6 +1,6 @@
 """Source text and locations, as errors and explanations quote them."""
 
-from check.spec import Spec
+from spec.spec import Spec
 
 
 comptime SOURCE_CHARS = 100

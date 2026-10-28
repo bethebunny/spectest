@@ -5,12 +5,12 @@ interface's constructors and methods), parameter types, partitions, type aliases
 clauses. It accepts specs the checker rejects, which the partition error tests need.
 """
 
-import check.types as ty
-import syntax.ast as sx
-from check.spec import Clause, Fn, Param, Partition, PartitionClass, Spec
+import spec.types as ty
+import spec.ast as sx
+from spec.spec import Clause, Fn, Param, Partition, PartitionClass, Spec
 from partitions.compile import compile_set_aliased
 from sets import BitSet, SetContext
-from syntax.ast import Ast
+from spec.ast import Ast
 from syntax.parser import parse_spec
 
 

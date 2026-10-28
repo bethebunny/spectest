@@ -9,7 +9,7 @@ Every node's span runs from its first token to the last token consumed, so a cla
 covers its continuation lines.
 """
 
-from syntax.ast import Ast, File, NIL, Node, NodeKind, Op, Span
+from spec.ast import Ast, File, NIL, Node, NodeKind, Op, Span
 from syntax.lexer import Token, TokenKind, syntax_error, tokens
 
 

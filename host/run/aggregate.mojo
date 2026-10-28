@@ -8,10 +8,10 @@ a failure but never invents one."""
 
 from std.time import perf_counter_ns
 
-from check import types as ty
-from check.spec import Spec
+from spec import types as ty
+from spec.spec import Spec
 from eval.api import evaluate
-from eval.coerce import value_from_bits
+from spec.bits import value_from_bits
 from eval.core import type_kind, value_of
 from eval.env import Env, Run
 from eval.numbers import (
@@ -29,7 +29,7 @@ from eval.text import located, source_text
 from mcheck.rand import Rng
 from partitions.compile import compiled_set
 from sets import SetContext
-from syntax import ast
+from spec import ast
 from value.text import format_value
 from value.value import Value
 

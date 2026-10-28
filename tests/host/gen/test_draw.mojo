@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from check.types import Types
+from spec.types import Types
 from gen.sizes import Sizes
 from gen.value import draw_value
 from mcheck.source import Source
