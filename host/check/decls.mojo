@@ -21,7 +21,7 @@ from check.spec import (
     PartitionClass,
     aggregate_shape,
 )
-from check.state import Checker, Ctx, Var, Visit, is_builtin_type_name, is_reserved, qualify_error
+from check.state import Checker, Ctx, Var, Visit, cycle_text, is_builtin_type_name, is_reserved, qualify_error
 from check.typesyn import alias_type, ensure_const, record_type, resolve_type
 from check.types import Types
 
@@ -875,12 +875,12 @@ def _visit_def(mut c: Checker, d: Int, mut visits: List[Visit], mut path: List[I
         elif visits[callee] == .ON_PATH and not reported[callee]:
             reported[callee] = True
             var start = path.try_index(callee).value()
-            var first = c.spec.defs[callee].name.copy()
             var at = c.spec.defs[callee].node
             if start == len(path) - 1:
-                c.error(at, t"definition {first} calls itself")
+                var name = c.spec.defs[callee].name.copy()
+                c.error(at, t"definition {name} calls itself")
             else:
-                var cycle = " -> ".join([c.spec.defs[p].name.copy() for p in path[start:]] + [first.copy()])
+                var cycle = cycle_text([c.spec.defs[p].name.copy() for p in path[start:]])
                 c.error(at, t"definitions cannot call each other in a cycle: {cycle}")
     _ = path.pop()
     visits[d] = .DONE

@@ -5,7 +5,7 @@ arguments are already typed. A rule that finds the call ill-typed raises a
 `TypingError` that names the argument to point at.
 """
 
-from check import types as ty
+from check.types import TypeKind
 from check.psig import CallInfo, PreludeSig, TypingError
 from check.state import Checker
 
@@ -127,7 +127,7 @@ def _same_type(mut c: Checker, info: CallInfo) raises TypingError -> Int:
     return t
 
 
-def _type_arg(c: Checker, info: CallInfo, kinds: List[ty.TypeKind], what: StaticString) raises TypingError -> Int:
+def _type_arg(c: Checker, info: CallInfo, kinds: List[TypeKind], what: StaticString) raises TypingError -> Int:
     var t = info.targs[0]
     var k = c.tkind(t)
     if k == .ANY or k in kinds:
@@ -136,7 +136,7 @@ def _type_arg(c: Checker, info: CallInfo, kinds: List[ty.TypeKind], what: Static
 
 
 def _float_type_arg(c: Checker, info: CallInfo) raises TypingError -> Int:
-    return _type_arg(c, info, [ty.TypeKind.FLOAT], "a float type (f16, bf16, f32, f64)")
+    return _type_arg(c, info, [.FLOAT], "a float type (f16, bf16, f32, f64)")
 
 
 def _qe_operand(c: Checker, info: CallInfo, i: Int) raises TypingError -> Int:
@@ -253,13 +253,11 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             _real_like(c, info, 0)
             return t
         case .WRAP:
-            var t = _type_arg(c, info, [ty.TypeKind.FIXED_INT], "a fixed-width integer type (i8 ... u64)")
+            var t = _type_arg(c, info, [.FIXED_INT], "a fixed-width integer type (i8 ... u64)")
             _integer(c, info, 0)
             return t
         case .FITS:
-            _ = _type_arg(
-                c, info, [ty.TypeKind.FIXED_INT, ty.TypeKind.FLOAT], "a fixed-width integer or float type"
-            )
+            _ = _type_arg(c, info, [.FIXED_INT, .FLOAT], "a fixed-width integer or float type")
             _real_like(c, info, 0)
             return c.bool_
         case .LE_UINT:

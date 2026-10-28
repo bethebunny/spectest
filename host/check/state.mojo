@@ -32,6 +32,11 @@ __enum Visit(Equatable, ImplicitlyCopyable):
         return self._get_enum_discriminant() == other._get_enum_discriminant()
 
 
+def cycle_text(names: List[String]) -> String:
+    """`a -> b -> a`: the cycle through `names`, back to the first."""
+    return " -> ".join(names + [names[0].copy()])
+
+
 def last_index_of(names: List[String], name: StringSlice) -> Int:
     """The last position of `name` in `names`, or -1."""
     for i in reversed(range(len(names))):

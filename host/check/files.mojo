@@ -12,7 +12,7 @@ from std.pathlib import Path
 from syntax.ast import Ast, Diagnostic
 from syntax.parser import parse_into
 
-from check.state import Visit
+from check.state import Visit, cycle_text
 
 
 struct Files(Movable):
@@ -87,9 +87,8 @@ def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
             w.keys.append(key^)
             w.visits.append(.UNSEEN)
         elif w.visits[target] == .ON_PATH:
-            var cycle = [ast.files[f].path.copy() for f in w.stack[w.stack.index(target) :]]
-            var chain = " -> ".join(cycle + [ast.files[target].path.copy()])
-            w.diags.append(ast.diagnostic(d, t"{word} cycle: {chain}"))
+            var cycle = cycle_text([ast.files[f].path.copy() for f in w.stack[w.stack.index(target) :]])
+            w.diags.append(ast.diagnostic(d, t"{word} cycle: {cycle}"))
             continue
         var wants_prelude = kind == .PRELUDE or _is_prelude(ast, file)
         if _is_prelude(ast, target) != wants_prelude:
