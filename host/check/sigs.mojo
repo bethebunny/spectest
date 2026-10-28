@@ -192,9 +192,14 @@ def _eq(mut c: Checker, info: CallInfo) raises TypingError -> Int:
 
 
 def _eq_mode_ok(value: String, key: String) -> Bool:
-    if key == "float":
-        return value == "bits" or value == "ieee" or value == "nan_any"
-    return value == "exact" or value == "ignore"
+    """Whether `value` is a mode of eq's keyword `key`, float or order."""
+    match value:
+        case "bits" | "ieee" | "nan_any":
+            return key == "float"
+        case "exact" | "ignore":
+            return key == "order"
+        case _:
+            return False
 
 
 def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingError -> Int:

@@ -119,11 +119,8 @@ def assignable(c: Checker, actual: Int, target: Int, node: Int) -> Bool:
             if len(ts) != len(xs):
                 return False
             var written = node > 0 and c.kind_of(node) == .TUPLE and len(c.children(node)) == len(ts)
-            var elems = c.children(node) if written else List[Int]()
-            for i in range(len(ts)):
-                if not assignable(c, xs[i], ts[i], elems[i] if written else 0):
-                    return False
-            return True
+            var elems = c.children(node) if written else List[Int](length=len(ts), fill=0)
+            return all([assignable(c, x, t, n) for x, t, n in zip(xs, ts, elems)])
         case _:
             return False
 
@@ -1096,11 +1093,10 @@ def _culprit(info: CallInfo, err: TypingError, call: Int) -> Int:
     """The node a typing error points at: its argument, or else the call."""
     if 0 <= err.arg < len(info.args):
         return info.args[err.arg].node
-    var at = call
-    for kw in info.keywords:
+    for kw in reversed(info.keywords):
         if err.key and kw.key == err.key:
-            at = kw.node
-    return at
+            return kw.node
+    return call
 
 
 def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:

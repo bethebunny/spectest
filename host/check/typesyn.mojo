@@ -5,6 +5,7 @@ first use, so a declaration may use one declared later; a cycle is reported.
 """
 
 from check.state import Checker, Ctx, NO_TYPE, type_hint
+from check.types import ANY_TYPE
 
 
 def _no_args(mut c: Checker, node: Int, t: Int) -> Int:
@@ -94,16 +95,16 @@ def _named(mut c: Checker, node: Int, self_model: Int) -> Int:
         case "map":
             if len(args) != 2:
                 c.error(node, "map takes 2 type arguments: map<K, V>")
-                return 0
+                return ANY_TYPE
             return c.spec.types.map_of(args[0], args[1])
         case "list" | "option":
             if len(args) != 1:
                 c.error(node, t"{name} takes 1 type argument: {name}<T>")
-                return 0
+                return ANY_TYPE
             return c.spec.types.list_of(args[0]) if name == "list" else c.spec.types.option_of(args[0])
         case "set" | "unit":
             c.error(node, t"{name} is not a type that can be written in a spec")
-            return 0
+            return ANY_TYPE
         case _:
             pass
     if case .Some(en) = c.enum_index.get(name):
@@ -117,7 +118,7 @@ def _named(mut c: Checker, node: Int, self_model: Int) -> Int:
     var hint = type_hint(name)
     var did_you_mean = String(t" (did you mean {hint}?)") if hint else String()
     c.error(node, t"unknown type {name}{did_you_mean}")
-    return 0
+    return ANY_TYPE
 
 
 def _model(mut c: Checker, node: Int, name: String, model: Int, args: List[Int], self_model: Int) -> Int:
@@ -131,7 +132,7 @@ def _model(mut c: Checker, node: Int, name: String, model: Int, args: List[Int],
         var listed = ", ".join(tparams)
         var shape = String(t"{name}<{listed}>") if tparams else name.copy()
         c.error(node, t"{name} takes {len(tvars)} type argument(s): {shape}")
-        return 0
+        return ANY_TYPE
     for arg, tparam, bound in zip(args, tparams, bounds):
         if not c.satisfies(arg, bound):
             var what = "canonical equality" if bound == "Eq" else "a total order"
@@ -144,7 +145,7 @@ def alias_type(mut c: Checker, name: String, at: Int) -> Int:
         return done
     if name in c.active:
         c.error(at, t"type {name} is defined in terms of itself")
-        return 0
+        return ANY_TYPE
     c.active.append(name)
     var t = _top_level_type(c, c.child(c.alias_nodes.get(name).value(), 0))
     _ = c.active.pop()
@@ -157,7 +158,7 @@ def record_type(mut c: Checker, name: String, at: Int) -> Int:
         return done
     if name in c.active:
         c.error(at, t"record {name} contains itself")
-        return 0
+        return ANY_TYPE
     c.active.append(name)
     var fields: List[String] = []
     var types: List[Int] = []
@@ -170,7 +171,7 @@ def record_type(mut c: Checker, name: String, at: Int) -> Int:
         fields.append(field^)
         if c.child(p, 0) == 0:
             c.error(p, "a record field needs a type")
-            types.append(0)
+            types.append(ANY_TYPE)
         else:
             types.append(_top_level_type(c, c.child(p, 0)))
     _ = c.active.pop()

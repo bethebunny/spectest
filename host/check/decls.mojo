@@ -5,6 +5,7 @@ rules of functions, models and interfaces, then the whole-file `run`.
 from numeric.fixed import int_max, int_min
 from numeric.floats import exactly
 from numeric.real import Real
+from syntax.ast import Op
 
 from check.exprs import assignable, infer_in, literal_member, poison_subtree, want_bool
 from check.spec import (
@@ -468,18 +469,15 @@ def assign_ids(
         var id = String(t"{decl_id}#{i + 1}")
         if label:
             var labelled = String(t"{decl_id}.{label}")
-            var member = members.get(label)
-            var earlier = labels.get(label)
-            if member is not None:
+            if case .Some(member) = members.get(label):
                 c.error(
                     cl,
                     t"clause label {label} gives the ID {labelled}, which already names the "
-                    t"{member.value()} {labelled}: rename the label (e.g. {c.op_of(cl)} "
-                    t"{label}_holds:)",
+                    t"{member} {labelled}: rename the label (e.g. {c.op_of(cl)} {label}_holds:)",
                 )
                 label = String()
-            elif earlier is not None:
-                c.error(cl, t"clause label {label} is already used in {decl_id} (line {c.line_of(earlier.value())})")
+            elif case .Some(earlier) = labels.get(label):
+                c.error(cl, t"clause label {label} is already used in {decl_id} (line {c.line_of(earlier)})")
                 label = String()
             else:
                 labels[label] = cl
@@ -510,22 +508,27 @@ def check_freedoms(mut c: Checker, decl_id: String, clauses: List[Int]):
             continue
         var reported: List[String] = []
         for n in c.spec.ast.subtree(expr):
-            var r = c.spec.resolutions.get(n)
-            if r is None:
+            var name = _observed(c, n)
+            if name in reported:
                 continue
-            var kind = r.value().kind
-            if kind != .PRELUDE and kind != .OBSERVER and kind != .FIELD:
-                continue
-            ref name = r.value().name
-            var at = freedoms.get(name)
-            if at is None or name in reported:
-                continue
-            reported.append(name.copy())
-            c.error(
-                n,
-                t"this clause observes {name}, which {decl_id} declares {c.op_of(at.value())} "
-                t"(line {c.line_of(at.value())}): no clause may observe it",
-            )
+            if case .Some(at) = freedoms.get(name):
+                reported.append(name.copy())
+                c.error(
+                    n,
+                    t"this clause observes {name}, which {decl_id} declares {c.op_of(at)} (line {c.line_of(at)}): no "
+                    t"clause may observe it",
+                )
+
+
+def _observed(c: Checker, n: Int) -> String:
+    """The prelude function, observer or field that node `n` names, or ""."""
+    if case .Some(r) = c.spec.resolutions.get(n):
+        match r.kind:
+            case .PRELUDE | .OBSERVER | .FIELD:
+                return r.name.copy()
+            case _:
+                pass
+    return String()
 
 
 # -- models and interfaces ---------------------------------------------------------
@@ -561,24 +564,25 @@ def check_model(mut c: Checker, d: Int):
     for ci in ids:
         var op = c.spec.clauses[ci].kind
         var expr = c.spec.clauses[ci].expr
-        if op != .INVARIANT and op != .UNSPECIFIED and op != .IMPL_DEFINED and op != .PERF:
-            c.error(
-                c.spec.clauses[ci].node, t"{op} belongs to a function, constructor or method, not to {what} {name}"
-            )
-            if expr != 0:
-                poison_subtree(c, expr)
-            continue
-        if op != .INVARIANT or expr == 0:
-            continue
-        var ctx = Ctx(
-            tvars=c.ctx.tvars.copy(),
-            self_t=mt,
-            self_model=pos,
-            fields_of=pos,
-            allow_spec_fn=True,
-            no_result="an invariant describes an object's state: there is no result",
-        )
-        want_bool(c, expr, infer_in(c, ctx^, expr), "an invariant")
+        match op:
+            case .INVARIANT if expr != 0:
+                var ctx = Ctx(
+                    tvars=c.ctx.tvars.copy(),
+                    self_t=mt,
+                    self_model=pos,
+                    fields_of=pos,
+                    allow_spec_fn=True,
+                    no_result="an invariant describes an object's state: there is no result",
+                )
+                want_bool(c, expr, infer_in(c, ctx^, expr), "an invariant")
+            case .INVARIANT | .UNSPECIFIED | .IMPL_DEFINED | .PERF:
+                pass
+            case _:
+                c.error(
+                    c.spec.clauses[ci].node, t"{op} belongs to a function, constructor or method, not to {what} {name}"
+                )
+                if expr != 0:
+                    poison_subtree(c, expr)
     check_freedoms(c, name, ids)
     if is_iface:
         for f in c.spec.models[pos].ctors.copy():
@@ -629,14 +633,11 @@ def _callable_ctx(mut c: Checker, fpos: Int) -> Ctx:
 
 
 def check_callable(mut c: Checker, fpos: Int, what: String):
-    var node = c.spec.fns[fpos].node
     var decl_id = c.spec.fns[fpos].decl_id.copy()
-    var result = c.spec.fns[fpos].result
     var base = _callable_ctx(c, fpos)
-    var has_state = base.self_t >= 0 or any([c.contains_model(p.type) for p in base.params])
     var body: List[Int] = []
     var parts: List[Int] = []
-    var children = c.children(node)
+    var children = c.children(c.spec.fns[fpos].node)
     for k in children[3:]:
         match c.kind_of(k):
             case .CLAUSE:
@@ -652,39 +653,50 @@ def check_callable(mut c: Checker, fpos: Int, what: String):
     for ci in ids:
         var op = c.spec.clauses[ci].kind
         var expr = c.spec.clauses[ci].expr
-        if op == .INVARIANT:
-            c.error(c.spec.clauses[ci].node, t"invariant belongs to a model or interface; in a {what} use ensures")
-            if expr != 0:
-                poison_subtree(c, expr)
-            continue
-        if op == .MODIFIES:
-            _check_modifies(c, ci, decl_id, base)
-            continue
-        if op == .AGGREGATE:
-            _check_aggregate(c, ci, fpos, decl_id, base, what)
-            continue
-        if expr == 0:
-            continue
-        var ctx = base.copy()
-        var before_call = op == .REQUIRES or op == .RAISES or op == .MAY_RAISE
-        if before_call:
-            ctx.no_result = String(t"result is not available in {op}: it is evaluated on the inputs, before the call")
-            ctx.no_old = String(t"old(...) is only allowed in ensures; {op} already sees the state before the call")
-        else:
-            if result != c.unit:
-                ctx.result = result
-            ctx.no_result = String(t"{decl_id} returns nothing, so there is no result")
-            ctx.allow_spec_fn = True
-            if op == .ENSURES:
-                ctx.allow_old = has_state
-                ctx.no_old = String(
-                    t"old(...) needs state that the call can change, but {decl_id} has no handle parameter or self"
-                )
-        var raises = op == .RAISES or op == .MAY_RAISE
-        var what_clause = String(t"the condition of {op}") if raises else String(t"the {op} clause")
-        want_bool(c, expr, infer_in(c, ctx^, expr), what_clause)
+        match op:
+            case .INVARIANT:
+                c.error(c.spec.clauses[ci].node, t"invariant belongs to a model or interface; in a {what} use ensures")
+                if expr != 0:
+                    poison_subtree(c, expr)
+            case .MODIFIES:
+                _check_modifies(c, ci, decl_id, base)
+            case .AGGREGATE:
+                _check_aggregate(c, ci, fpos, decl_id, base, what)
+            case .RAISES | .MAY_RAISE if expr != 0:
+                want_bool(c, expr, infer_in(c, _before_call_ctx(base, op), expr), t"the condition of {op}")
+            case .REQUIRES if expr != 0:
+                want_bool(c, expr, infer_in(c, _before_call_ctx(base, op), expr), t"the {op} clause")
+            case _ if expr != 0:
+                want_bool(c, expr, infer_in(c, _after_call_ctx(c, base, fpos, op), expr), t"the {op} clause")
+            case _:
+                pass
     check_freedoms(c, decl_id, ids)
     c.ctx = Ctx()
+
+
+def _before_call_ctx(base: Ctx, op: Op) -> Ctx:
+    """The context of a clause evaluated on a call's inputs: requires, raises, may_raise."""
+    var ctx = base.copy()
+    ctx.no_result = String(t"result is not available in {op}: it is evaluated on the inputs, before the call")
+    ctx.no_old = String(t"old(...) is only allowed in ensures; {op} already sees the state before the call")
+    return ctx^
+
+
+def _after_call_ctx(c: Checker, base: Ctx, fpos: Int, op: Op) -> Ctx:
+    """The context of a clause that sees a call's result, a planned call of a spec function and,
+    in ensures, old(...)."""
+    ref f = c.spec.fns[fpos]
+    var ctx = base.copy()
+    if f.result != c.unit:
+        ctx.result = f.result
+    ctx.no_result = String(t"{f.decl_id} returns nothing, so there is no result")
+    ctx.allow_spec_fn = True
+    if op == .ENSURES:
+        ctx.allow_old = base.self_t >= 0 or any([c.contains_model(p.type) for p in base.params])
+        ctx.no_old = String(
+            t"old(...) needs state that the call can change, but {f.decl_id} has no handle parameter or self"
+        )
+    return ctx^
 
 
 def _check_modifies(mut c: Checker, ci: Int, decl_id: String, base: Ctx):
