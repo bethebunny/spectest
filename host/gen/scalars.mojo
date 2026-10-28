@@ -1,12 +1,13 @@
 """Scalar draws: integers, floats, strings and bytes, with v1's emphasis on edges."""
 
+from std.math import clamp
 from std.memory import bitcast
 
 from eval.coerce import int_from_bits
-from mcheck.source import Source, Many, MANY_LABEL, index_to_int
+from mcheck.source import MANY_LABEL, Many, Source, index_to_int
 from numeric.bigint import BigInt
 from numeric.fixed import low_mask, signed_of
-from numeric.formats import FloatFormat, F16, BF16, F32, F64
+from numeric.formats import BF16, F16, F32, F64, FloatFormat
 from wire.value import Value
 
 from .sizes import Sizes
@@ -15,11 +16,11 @@ from .sizes import Sizes
 # Integers
 
 
-def _seg(u: UInt64, start: Int, log_length: Int, n: UInt128) -> UInt64:
+def _segment_index(u: UInt64, *, start: Int, log_length: Int, n: UInt128) -> UInt64:
     """Where `u` falls in the segment of 256ths [start, start + 2**log_length), scaled
     to [0, n). Monotone, so a smaller `u` never gives a larger index."""
-    var off = UInt128(u) - (UInt128(start) << 56)
-    return UInt64((off * n) >> UInt128(56 + log_length))
+    var offset = UInt128(u) - (UInt128(start) << 56)
+    return UInt64((offset * n) >> UInt128(56 + log_length))
 
 
 def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt64:
@@ -30,9 +31,9 @@ def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt
     Within each, a smaller choice is a smaller magnitude."""
     var mask = low_mask(width)
     var u = src.draw_bits(64)
-    var seg = Int(u >> 56)
+    var segment = Int(u >> 56)
     var top = UInt64(1) << UInt64(width - 1)
-    if seg < 32:
+    if segment < 32:
         var lo = -16
         var hi = 16
         if not signed:
@@ -40,10 +41,10 @@ def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt
         elif width < 6:
             lo = -(1 << (width - 1))
             hi = (1 << (width - 1)) - 1
-        var idx = _seg(u, 0, 5, UInt128(hi - lo + 1))
-        return bitcast[DType.uint64](Int64(index_to_int(idx, lo, hi))) & mask
-    if seg < 96:
-        var k = 1 + Int(_seg(u, 32, 6, UInt128(width - 1)))
+        var index = _segment_index(u, start=0, log_length=5, n=UInt128(hi - lo + 1))
+        return UInt64(index_to_int(index, lo, hi)) & mask
+    if segment < 96:
+        var k = 1 + Int(_segment_index(u, start=32, log_length=6, n=UInt128(width - 1)))
         var j = Int(u & 3)
         var p = UInt64(1) << UInt64(k)
         if j == 2 and signed:
@@ -51,15 +52,14 @@ def draw_fixed_pattern(mut src: Source, width: Int, signed: Bool) raises -> UInt
         if j == 0 and (not signed or k < width - 1):
             return p
         return p - 1
-    if seg < 128:
-        var e = Int(_seg(u, 96, 5, 4))
+    if segment < 128:
+        var e = Int(_segment_index(u, start=96, log_length=5, n=4))
         return [top, top - 1, top + 1, top - 2][e] if signed else [0, mask, 1, mask - 1][e]
-    var idx = _seg(u, 128, 7, UInt128(1) << UInt128(width))
-    if signed:
-        var lo = signed_of(top, width)
-        var hi = -(lo + 1)
-        return bitcast[DType.uint64](Int64(index_to_int(idx, lo, hi))) & mask
-    return idx
+    var index = _segment_index(u, start=128, log_length=7, n=UInt128(1) << UInt128(width))
+    if not signed:
+        return index
+    var lo = signed_of(top, width)
+    return UInt64(index_to_int(index, lo, -(lo + 1))) & mask
 
 
 def draw_int_value(mut src: Source, width: Int, signed: Bool) raises -> Value:
@@ -68,7 +68,7 @@ def draw_int_value(mut src: Source, width: Int, signed: Bool) raises -> Value:
 
 def draw_unbounded_int(mut src: Source) raises -> Value:
     """Mostly small integers, sometimes near big powers of two, sometimes wide."""
-    var r = Int(src.draw_below(100))
+    var r = src.draw_choice(100)
     if r < 55:
         return Value.int(src.draw_int(-64, 64))
     if r < 70:
@@ -76,11 +76,11 @@ def draw_unbounded_int(mut src: Source) raises -> Value:
     var negative = src.draw_bool()
     var v: BigInt
     if r < 85:
-        var k = [8, 16, 31, 32, 53, 63, 64, 100, 128][Int(src.draw_below(9))]
-        v = (BigInt(1) << k) + BigInt([0, -1, 1][Int(src.draw_below(3))])
+        var k = [8, 16, 31, 32, 53, 63, 64, 100, 128][src.draw_choice(9)]
+        v = (BigInt(1) << k) + BigInt([0, -1, 1][src.draw_choice(3)])
     else:
         v = BigInt()
-        for _ in range(1 + Int(src.draw_below(4))):
+        for _ in range(1 + src.draw_choice(4)):
             v = (v << 64) + BigInt(src.draw_bits(64))
     return Value.int(-v if negative else v^)
 
@@ -88,17 +88,18 @@ def draw_unbounded_int(mut src: Source) raises -> Value:
 # Floats
 
 
-def _simple_magnitude(i: Int) -> Float64:
-    return [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 100.0, 1000.0, 0.5, 1.5, 0.25][i]
+comptime SIMPLE_MAGNITUDES: Array[Float64, 15] = [
+    1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 100.0, 1000.0, 0.5, 1.5, 0.25
+]
 
 
 def float64_bits_in(format: FloatFormat, x: Float64) -> UInt64:
     """The pattern of `x` rounded to `format`."""
-    if format.id == F64.id:
+    if format == F64:
         return bitcast[DType.uint64](x)
-    if format.id == F32.id:
+    if format == F32:
         return UInt64(bitcast[DType.uint32](Float32(x)))
-    if format.id == F16.id:
+    if format == F16:
         return UInt64(bitcast[DType.uint16](Float16(x)))
     return UInt64(bitcast[DType.uint16](BFloat16(x)))
 
@@ -112,28 +113,31 @@ def draw_float_bits(mut src: Source, format: FloatFormat) raises -> UInt64:
 
     Every class draws the same four choices (class, sign, a, b) with the same meaning,
     so shrinking can move a failure to a lower class by lowering the class and raising b."""
-    var cls = Int(src.draw_below(UInt64(FLOAT_CLASSES)))
-    var fb = format.fraction_bits
+    var float_class = src.draw_choice(FLOAT_CLASSES)
+    var fraction_bits = format.fraction_bits
     var bias = format.bias()
     var negative = src.draw_bool()
     var sign = format.sign_mask() if negative else UInt64(0)
     var a = src.draw_int(1 - bias, bias)
-    var b = src.draw_bits(fb)
-    if cls == 0:
-        return sign
-    if cls == 1:
-        var e = min(20, bias // 2)
-        return sign | (UInt64(bias + max(-e, min(e - 1, a))) << UInt64(fb)) | b
-    if cls == 2:
-        var x = _simple_magnitude(Int(b % 15))
-        return float64_bits_in(format, -x if negative else x)
-    if cls == 3:
-        return sign | (UInt64(bias + a) << UInt64(fb)) | b
-    if cls == 4:
-        return sign | (b % format.fraction_mask() + 1)
-    if cls == 5:
-        return sign | format.exponent_mask()
-    return sign | format.exponent_mask() | (b % format.fraction_mask() + 1)
+    var b = src.draw_bits(fraction_bits)
+    match float_class:
+        case 0:
+            return sign
+        case 1:
+            var e = min(20, bias // 2)
+            return sign | (UInt64(bias + clamp(a, -e, e - 1)) << UInt64(fraction_bits)) | b
+        case 2:
+            var magnitudes = materialize[SIMPLE_MAGNITUDES]()
+            var x = magnitudes[Int(b % UInt64(len(magnitudes)))]
+            return float64_bits_in(format, -x if negative else x)
+        case 3:
+            return sign | (UInt64(bias + a) << UInt64(fraction_bits)) | b
+        case 4:
+            return sign | (b % format.fraction_mask() + 1)
+        case 5:
+            return sign | format.exponent_mask()
+        case _:
+            return sign | format.exponent_mask() | (b % format.fraction_mask() + 1)
 
 
 # Sequences
@@ -160,11 +164,11 @@ struct Seq:
         self.i = 0
         self.open = False
 
-    def __init__(out self, n: Int, *, exactly: Bool):
-        """A sequence of exactly `n` elements."""
+    def __init__(out self, *, exactly: Int):
+        """A sequence of exactly `exactly` elements."""
         self.many = Many(0, 0, 0.0)
         self.long = True
-        self.n = n
+        self.n = exactly
         self.i = 0
         self.open = False
 
@@ -188,46 +192,44 @@ def draw_is_long(mut src: Source, sizes: Sizes, depth: Int, short: Int, *, long:
     return depth == 0 and sizes.has_long(short, long=long) and src.draw_bool(sizes.long_share)
 
 
-def _seq_of(mut src: Source, is_long: Bool, short: Int, long_lo: Int, long: Int) raises -> Seq:
-    return Seq(src.draw_int(long_lo, long), exactly=True) if is_long else Seq(0, short)
+def _seq_of(mut src: Source, is_long: Bool, *, short: Int, long_lo: Int, long: Int) raises -> Seq:
+    return Seq(exactly=src.draw_int(long_lo, long)) if is_long else Seq(0, short)
 
 
 def draw_seq(mut src: Source, sizes: Sizes, depth: Int, short: Int, *, long: Int) raises -> Seq:
     var is_long = draw_is_long(src, sizes, depth, short, long=long)
-    return _seq_of(src, is_long, short, sizes.long_lo(short), long)
+    return _seq_of(src, is_long, short=short, long_lo=sizes.long_lo(short), long=long)
 
 
 # Strings
 
 
-comptime INTERESTING = (
-    "\u0000\t\n\r \u007f éßİ́Σمאก中"
-    "あ​‍ ‮﻿�￿"
-)
+comptime INTERESTING: Array[Int, 24] = [
+    0x00, 0x09, 0x0A, 0x0D, 0x20, 0x7F,  # controls and spaces
+    0xA0, 0xE9, 0xDF, 0x130, 0x301, 0x3A3,  # no-break space, é, ß, İ, a combining acute, Σ
+    0x645, 0x5D0, 0xE01, 0x4E2D, 0x3042,  # Arabic, Hebrew, Thai, CJK, kana
+    0x200B, 0x200D, 0x2028, 0x202E, 0xFEFF,  # invisible, line separator, bidi override, BOM
+    0xFFFD, 0xFFFF,  # the replacement character and a noncharacter
+]
+# TODO: draw all 24; only the first 22 are drawn, and drawing more changes the strings
+# a seed gives
 comptime INTERESTING_COUNT = 22
-
-
-def _interesting(i: Int) -> Int:
-    for k, cp in enumerate(INTERESTING.codepoints()):
-        if k == i:
-            return Int(cp.to_u32())
-    return 0x20
 
 
 def draw_code_point(mut src: Source) raises -> Int:
     """A Unicode scalar value: half ASCII (one choice), the rest interesting
     characters, the BMP and the astral planes. Never a surrogate."""
-    var r = Int(src.draw_below(190))
+    var r = src.draw_choice(190)
     if r < 95:
         return (r + 16) % 95 + 32
     if r < 133:
-        return _interesting(Int(src.draw_below(UInt64(INTERESTING_COUNT))))
+        return materialize[INTERESTING]()[src.draw_choice(INTERESTING_COUNT)]
     if r < 171:
-        var c = Int(src.draw_below(0x10000 - 0x800))
+        var c = src.draw_choice(0x10000 - 0x800)
         return c + 0x800 if c >= 0xD800 else c
     if src.draw_bool(0.25):
-        return [0x1F600, 0x10000, 0x10FFFF, 0x1D11E][Int(src.draw_below(4))]
-    return 0x10000 + Int(src.draw_below(0x100000))
+        return [0x1F600, 0x10000, 0x10FFFF, 0x1D11E][src.draw_choice(4)]
+    return 0x10000 + src.draw_choice(0x100000)
 
 
 def append_utf8(mut out: List[UInt8], cp: Int):
@@ -236,46 +238,47 @@ def append_utf8(mut out: List[UInt8], cp: Int):
 
 def draw_string(mut src: Source, sizes: Sizes, depth: Int) raises -> Value:
     var seq = draw_seq(src, sizes, depth, sizes.max_text, long=sizes.long_text)
-    var out = List[UInt8]()
+    var text = String()
     while seq.more(src):
-        append_utf8(out, draw_code_point(src))
-    return Value.string(String(unsafe_from_utf8=Span(out)))
+        text += chr(draw_code_point(src))
+    return Value.string(text^)
 
 
 # Bytes
 
 
 def _bad_utf8(i: Int) -> List[UInt8]:
-    var sequences: List[List[Int]] = [
+    var sequences: List[List[UInt8]] = [
         [0x80], [0xC3], [0xE2, 0x82], [0xF0, 0x9F, 0x98], [0xC0, 0x80], [0xED, 0xA0, 0x80], [0xF4, 0x90, 0x80, 0x80], [0xFF]
     ]
-    return [UInt8(x) for x in sequences[i]]
+    return sequences[i].copy()
 
 
 def draw_bytes(mut src: Source, sizes: Sizes, depth: Int) raises -> Value:
     """Arbitrary bytes, UTF-8 encodings of text, or UTF-8 with one bad sequence."""
-    var kind = Int(src.draw_below(100))
+    var kind = src.draw_choice(100)
     var is_long = draw_is_long(src, sizes, depth, sizes.max_bytes, long=sizes.long_bytes)
     var limit = sizes.long_bytes if is_long else sizes.max_bytes
     var long_lo = sizes.long_lo(sizes.max_bytes)
     if kind < 60:
-        var seq = _seq_of(src, is_long, limit, long_lo, limit)
-        var data = List[UInt8]()
+        var seq = _seq_of(src, is_long, short=limit, long_lo=long_lo, long=limit)
+        var data: List[UInt8] = []
         while seq.more(src):
             data.append(UInt8(src.draw_bits(8)))
         return Value.bytes(data^)
-    var seq = _seq_of(src, is_long, limit // 2, long_lo // 2, limit // 2)
-    var text = List[UInt8]()
+    var seq = _seq_of(src, is_long, short=limit // 2, long_lo=long_lo // 2, long=limit // 2)
+    var data: List[UInt8] = []
     while seq.more(src):
-        append_utf8(text, draw_code_point(src))
-    var data = List(text[: min(limit, len(text))])
-    while is_long and len(data) < long_lo:
-        data.append(0x30)
+        append_utf8(data, draw_code_point(src))
+    data.shrink(min(limit, len(data)))
+    if is_long and len(data) < long_lo:
+        data.extend(List[UInt8](length=long_lo - len(data), fill=UInt8(ord("0"))))
     if kind >= 85:
-        var bad = _bad_utf8(Int(src.draw_below(8)))
-        var at = Int(src.draw_below(UInt64(len(data) + 1)))
+        var bad = _bad_utf8(src.draw_choice(8))
+        var at = src.draw_choice(len(data) + 1)
         var spliced = List(data[:at])
         spliced.extend(bad^)
         spliced.extend(data[at:])
-        data = List(spliced[: min(limit, len(spliced))])
+        spliced.shrink(min(limit, len(spliced)))
+        data = spliced^
     return Value.bytes(data^)

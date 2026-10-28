@@ -1,15 +1,7 @@
 """Small domains: types with at most 2**16 values, enumerated by index."""
 
-from check.types import (
-    Types,
-    BOOL as T_BOOL,
-    FIXED_INT as T_FIXED_INT,
-    FLOAT as T_FLOAT,
-    TUPLE as T_TUPLE,
-    OPTION as T_OPTION,
-    LITERAL as T_LITERAL,
-    ENUM as T_ENUM,
-)
+import check.types as ty
+from check.types import Types
 from eval.coerce import value_from_bits
 from wire.value import Value
 
@@ -21,37 +13,43 @@ def domain_size(types: Types, t: Int) -> Optional[UInt64]:
     integers of up to 16 bits, `f16` and `bf16`, enums and literal unions, options
     and tuples of these. None otherwise."""
     ref info = types.info(t)
-    var k = info.kind
     var n: UInt64
-    if k == T_BOOL:
-        n = 2
-    elif k == T_FIXED_INT:
-        if info.bits > 16:
-            return None
-        n = UInt64(1) << UInt64(info.bits)
-    elif k == T_FLOAT:
-        if info.bits > 2:
-            return None
-        n = 65536
-    elif k == T_LITERAL or k == T_ENUM:
-        n = UInt64(len(info.names))
-    elif k == T_OPTION:
-        var inner = domain_size(types, info.args[0])
-        if inner is None:
-            return None
-        n = inner.value() + 1
-    elif k == T_TUPLE:
-        n = 1
-        for arg in info.args:
-            var inner = domain_size(types, arg)
+    match info.kind:
+        case ty.BOOL:
+            n = 2
+        case ty.FIXED_INT:
+            if info.bits > 16:
+                return None
+            n = UInt64(1) << UInt64(info.bits)
+        case ty.FLOAT:
+            if info.bits > 2:  # the format ids of f16 and bf16
+                return None
+            n = 65536
+        case ty.LITERAL | ty.ENUM:
+            n = UInt64(len(info.names))
+        case ty.OPTION:
+            var inner = domain_size(types, info.args[0])
             if inner is None:
                 return None
-            n *= inner.value()
-            if n > MAX_DOMAIN:
-                return None
-    else:
-        return None
+            n = inner.value() + 1
+        case ty.TUPLE:
+            return product_size(types, info.args, limit=MAX_DOMAIN)
+        case _:
+            return None
     return n if n > 0 and n <= MAX_DOMAIN else None
+
+
+def product_size(types: Types, elems: List[Int], *, limit: UInt64) -> Optional[UInt64]:
+    """How many tuples of values of the types `elems` there are, when each has a small
+    domain and there are at most `limit`."""
+    var n: UInt64 = 1
+    for t in elems:
+        var size = domain_size(types, t)
+        # stopping past `limit` keeps the product from overflowing
+        if size is None or n > limit:
+            return None
+        n *= size.value()
+    return n if n <= limit else None
 
 
 def value_at(types: Types, t: Int, index: UInt64) raises -> Value:
@@ -64,18 +62,25 @@ def value_at(types: Types, t: Int, index: UInt64) raises -> Value:
     if index >= size.value():
         raise Error(t"gen: index out of the domain of {types.text(t)}")
     ref info = types.info(t)
-    var k = info.kind
-    if k == T_BOOL or k == T_FIXED_INT or k == T_FLOAT:
-        return value_from_bits(types, t, index)
-    if k == T_LITERAL or k == T_ENUM:
-        return Value.enum(info.name if k == T_ENUM else String(), info.names[Int(index)])
-    if k == T_OPTION:
-        return Value.none() if index == 0 else Value.some(value_at(types, info.args[0], index - 1))
-    var items = List[Value]()
+    match info.kind:
+        case ty.BOOL | ty.FIXED_INT | ty.FLOAT:
+            return value_from_bits(types, t, index)
+        case ty.LITERAL | ty.ENUM:
+            return Value.enum(info.name if info.kind == ty.ENUM else String(), info.names[Int(index)])
+        case ty.OPTION:
+            return Value.none() if index == 0 else Value.some(value_at(types, info.args[0], index - 1))
+        case _:
+            return Value.tuple(values_at(types, info.args, index))
+
+
+def values_at(types: Types, elems: List[Int], index: UInt64) raises -> List[Value]:
+    """The tuple of values of the types `elems` with index `index` in
+    `[0, product_size)`, the last varying fastest."""
+    var values: List[Value] = []
     var rest = index
-    for arg in reversed(info.args):
-        var s = domain_size(types, arg).value()
-        items.append(value_at(types, arg, rest % s))
-        rest //= s
-    items.reverse()
-    return Value.tuple(items^)
+    for t in reversed(elems):
+        var size = domain_size(types, t).value()
+        values.append(value_at(types, t, rest % size))
+        rest //= size
+    values.reverse()
+    return values^

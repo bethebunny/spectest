@@ -1,7 +1,7 @@
 """Models through their `build` calls, and the arguments of a call."""
 
+import check.types as ty
 from check.spec import Spec
-from check.types import Types, MODEL as T_MODEL
 from mcheck.source import Source
 from wire.value import Value
 
@@ -42,7 +42,7 @@ def is_not_drawn(v: Value) -> Bool:
 
 def _model_args(mut spec: Spec, model: Int, t: Int, targs: List[Int]) -> Int:
     """Param type `t` of a build of `model`, with its type arguments filled in."""
-    if len(targs) == 0:
+    if not targs:
         return t
     var names = spec.models[model].tparams.copy()
     return spec.types.substitute(t, names, targs)
@@ -56,7 +56,7 @@ def draw_model[
     model: Int,
     mut builder: B,
     sizes: Sizes,
-    targs: List[Int] = List[Int](),
+    targs: List[Int] = [],
     depth: Int = 0,
 ) raises -> Value:
     """A value of `model`: one of its builds, its arguments drawn by their declared
@@ -70,12 +70,12 @@ def draw_model[
         b
         for b in range(builds)
         if depth < sizes.max_model_depth
-        or not any([spec.types.kind(p.type) == T_MODEL for p in spec.models[model].builds[b].params])
+        or not any([spec.types.kind(p.type) == ty.MODEL for p in spec.models[model].builds[b].params])
     ]
-    if len(allowed) == 0:
+    if not allowed:
         src.reject()
     var b = allowed[src.draw_choice(len(allowed))]
-    var args = List[Value]()
+    var args: List[Value] = []
     for i in range(len(spec.models[model].builds[b].params)):
         var t = _model_args(spec, model, spec.models[model].builds[b].params[i].type, targs)
         args.append(_draw_arg(src, spec, t, builder, sizes, depth))
@@ -94,7 +94,7 @@ def _draw_arg[
     mut src: Source, mut spec: Spec, t: Int, mut builder: B, sizes: Sizes, depth: Int
 ) raises -> Value:
     """One value of type `t`; a model type goes through `draw_model`."""
-    if spec.types.kind(t) == T_MODEL:
+    if spec.types.kind(t) == ty.MODEL:
         var name = spec.types.info(t).name
         var targs = spec.types.info(t).args.copy()
         var model = spec.model_named(name)
@@ -112,7 +112,7 @@ def draw_args[
     func: Int,
     sizes: Sizes,
     mut builder: B,
-    tenv: List[Int] = List[Int](),
+    tenv: List[Int] = [],
     defaults: Bool = True,
 ) raises -> List[Value]:
     """One value per parameter of `spec.fns[func]`, in order, each in its own span.
@@ -122,7 +122,7 @@ def draw_args[
     `defaults` is set; a receiver is `not_drawn_marker`, for the caller to supply.
     A parameter of model type is built through `builder`.
     """
-    var out = List[Value]()
+    var out: List[Value] = []
     for i in range(len(spec.fns[func].params)):
         if i == 0 and spec.fns[func].receiver:
             out.append(not_drawn_marker())
@@ -130,12 +130,11 @@ def draw_args[
         src.start_span(PARAM_SPAN)
         if defaults and spec.fns[func].params[i].default != 0 and src.draw_below(4) == 0:
             out.append(default_marker())
-            src.stop_span()
-            continue
-        var t = spec.fns[func].params[i].type
-        if len(tenv) > 0:
-            var names = spec.fns[func].tparams.copy()
-            t = spec.types.substitute(t, names, tenv)
-        out.append(_draw_arg(src, spec, t, builder, sizes, 0))
+        else:
+            var t = spec.fns[func].params[i].type
+            if tenv:
+                var names = spec.fns[func].tparams.copy()
+                t = spec.types.substitute(t, names, tenv)
+            out.append(_draw_arg(src, spec, t, builder, sizes, 0))
         src.stop_span()
     return out^

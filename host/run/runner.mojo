@@ -24,7 +24,7 @@ from eval.coerce import bits_of_value, coerce_arg
 from eval.env import Env
 from eval.text import located, source_text
 from gen.classes import draw_in_classes
-from gen.domain import domain_size, value_at
+from gen.domain import product_size, values_at
 from gen.models import (
     default_marker,
     draw_args,
@@ -336,23 +336,11 @@ struct Prop(Property, Movable):
             self.part_class.append(-1)
         self.cov = [0 for _ in range(n * len(self.cov_names))]
         self.defaulted = [False for _ in func.params]
-        # A domain small enough to run every input.
-        var size = UInt64(1)
-        var small = True
-        for i in range(len(func.params)):
-            if i == 0 and func.receiver:
-                small = False
-                break
-            var d = domain_size(spec.types, self.ptypes[i])
-            if not d:
-                small = False
-                break
-            size *= d.value()
-            if size > UInt64(options.exhaustive_limit):
-                small = False
-                break
-        if small and size > 0 and size <= UInt64(options.exhaustive_limit):
-            self.domain = size
+        # A domain small enough to run every input (a receiver is built, not enumerated).
+        if not func.receiver:
+            var size = product_size(spec.types, self.ptypes, limit=UInt64(options.exhaustive_limit))
+            if size is not None:
+                self.domain = size.value()
 
     def keys(self) -> List[String]:
         return [String(self.loaded[].hash, "/", info.id) for info in self.infos]
@@ -362,13 +350,7 @@ struct Prop(Property, Movable):
     def draw(mut self, mut src: Source) raises -> List[Value]:
         ref spec = self.loaded[].spec
         if self.domain > 0:
-            var index = src.draw_below(self.domain)
-            var args = [Value.none() for _ in self.ptypes]
-            for j in reversed(range(len(args))):
-                var size = domain_size(spec.types, self.ptypes[j]).value()
-                args[j] = value_at(spec.types, self.ptypes[j], index % size)
-                index //= size
-            return args^
+            return values_at(spec.types, self.ptypes, src.draw_below(self.domain))
         var args = draw_args(src, spec, self.f, self.loaded[].sizes, self.host, self.tenv, True)
         if spec.fns[self.f].receiver:
             args[0] = draw_model(src, spec, spec.fns[self.f].owner, self.host, self.loaded[].sizes)
