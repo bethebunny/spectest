@@ -10,12 +10,17 @@ from .capi import (
     PyErr_Fetch,
     PyErr_NormalizeException,
     PyImport_ImportModule,
+    PyList_New,
+    PyList_SetItem,
     PyLong_FromLongLong,
     PyLong_FromUnsignedLongLong,
     PyObject_GetAttr,
     PyObject_GetAttrString,
     PyObject_Str,
     PyObject_Vectorcall,
+    PyObject_VectorcallMethod,
+    PyTuple_New,
+    PyTuple_SetItem,
     PyType_GetQualName,
     PyUnicode_AsUTF8AndSize,
     PyUnicode_FromStringAndSize,
@@ -58,29 +63,29 @@ def string_of(o: Owned) -> String:
     return string_of(o.ptr)
 
 
+def qualname(type: PyObjectPtr) -> Optional[String]:
+    var name = Owned(PyType_GetQualName(type))
+    return string_of(name) if name.ptr else None
+
+
 def python_error() -> Error:
     """Takes Python's current exception and describes it as `Type: message`."""
-    var kind = PyObjectPtr()
-    var value = PyObjectPtr()
-    var trace = PyObjectPtr()
-    PyErr_Fetch(kind, value, trace)
-    if not kind:
+    var kind = Owned(PyObjectPtr())
+    var value = Owned(PyObjectPtr())
+    var trace = Owned(PyObjectPtr())
+    PyErr_Fetch(kind.ptr, value.ptr, trace.ptr)
+    if not kind.ptr:
         return Error("RuntimeError: a C API call failed without an exception")
-    PyErr_NormalizeException(kind, value, trace)
-    # each Owned is destroyed after its last use
-    var kind_owner = Owned(kind)
-    var value_owner = Owned(value)
-    var trace_owner = Owned(trace)
-    var qual = Owned(PyType_GetQualName(kind_owner.ptr))
-    var name = string_of(qual) if qual.ptr else "exception"
+    PyErr_NormalizeException(kind.ptr, value.ptr, trace.ptr)
+    var name = qualname(kind.ptr).or_else("exception")
     var message = String()
-    if value_owner.ptr:
-        var text = Owned(PyObject_Str(value_owner.ptr))
+    if value.ptr:
+        var text = Owned(PyObject_Str(value.ptr))
         if text.ptr:
             message = string_of(text)
         else:
             PyErr_Clear()
-    return Error(name, ": ", message)
+    return Error(t"{name}: {message}")
 
 
 def checked(o: PyObjectPtr) raises -> PyObjectPtr:
@@ -106,16 +111,33 @@ def new_u64(value: UInt64) raises -> Owned:
     return Owned(checked(PyLong_FromUnsignedLongLong(value)))
 
 
+def new_list(var items: List[Owned]) raises -> Owned:
+    var list = Owned(checked(PyList_New(len(items))))
+    for i in reversed(range(len(items))):
+        _ = PyList_SetItem(list.ptr, i, items.pop().take())
+    return list^
+
+
+def new_tuple(var items: List[Owned]) raises -> Owned:
+    var tuple = Owned(checked(PyTuple_New(len(items))))
+    for i in reversed(range(len(items))):
+        _ = PyTuple_SetItem(tuple.ptr, i, items.pop().take())
+    return tuple^
+
+
 def call(callable: PyObjectPtr, args: List[Owned]) raises -> Owned:
     """`callable(*args)`."""
-    var pointers: List[PyObjectPtr] = []
-    for i in range(len(args)):
-        pointers.append(args[i].ptr)
-    var result = PyObject_Vectorcall(
-        callable, Int(pointers.unsafe_ptr()), len(pointers)
-    )
-    _ = len(pointers)  # keeps the vector alive through the call
-    return Owned(checked(result))
+    var vector = [args[i].ptr for i in range(len(args))]
+    return Owned(checked(PyObject_Vectorcall(callable, vector)))
+
+
+def call_method(
+    receiver: PyObjectPtr, name: PyObjectPtr, args: List[Owned]
+) raises -> Owned:
+    """`receiver.name(*args)`."""
+    var vector: List[PyObjectPtr] = [receiver]
+    vector.extend([args[i].ptr for i in range(len(args))])
+    return Owned(checked(PyObject_VectorcallMethod(name, vector)))
 
 
 def _interned(name: StringLiteral) raises -> PyObjectPtr:
@@ -126,67 +148,85 @@ def _class(module: Owned, name: StringLiteral) raises -> PyObjectPtr:
     return checked(PyObject_GetAttrString(module.ptr, name.as_c_string_span()))
 
 
-struct Wire(Movable):
-    """The wire classes of `spectest.driver.wire`, the singletons and the attribute
-    names, looked up once. They live as long as the process."""
+struct Classes(Movable):
+    """The classes of `spectest.driver.wire`."""
 
-    var float_cls: PyObjectPtr
-    var map_cls: PyObjectPtr
-    var record_cls: PyObjectPtr
-    var enum_cls: PyObjectPtr
-    var handle_cls: PyObjectPtr
-    var error_cls: PyObjectPtr
-    var converted_cls: PyObjectPtr
-    var none: PyObjectPtr
-    var true_: PyObjectPtr
-    var false_: PyObjectPtr
-    var n_fmt: PyObjectPtr
-    var n_bits: PyObjectPtr
-    var n_pairs: PyObjectPtr
-    var n_type: PyObjectPtr
-    var n_fields: PyObjectPtr
-    var n_member: PyObjectPtr
-    var n_id: PyObjectPtr
-    var n_cls: PyObjectPtr
-    var n_bases: PyObjectPtr
-    var n_message: PyObjectPtr
-    var n_value: PyObjectPtr
-    var m_resolve: PyObjectPtr
-    var m_call: PyObjectPtr
-    var m_get: PyObjectPtr
-    var m_observe: PyObjectPtr
-    var m_release: PyObjectPtr
+    var float: PyObjectPtr
+    var map: PyObjectPtr
+    var record: PyObjectPtr
+    var enum: PyObjectPtr
+    var handle: PyObjectPtr
+    var error: PyObjectPtr
+    var converted: PyObjectPtr
 
     def __init__(out self) raises:
         var module = Owned(
             checked(PyImport_ImportModule("spectest.driver.wire".as_c_string_span()))
         )
-        self.float_cls = _class(module, "Float")
-        self.map_cls = _class(module, "Map")
-        self.record_cls = _class(module, "Record")
-        self.enum_cls = _class(module, "Enum")
-        self.handle_cls = _class(module, "Handle")
-        self.error_cls = _class(module, "Error")
-        self.converted_cls = _class(module, "Converted")
+        self.float = _class(module, "Float")
+        self.map = _class(module, "Map")
+        self.record = _class(module, "Record")
+        self.enum = _class(module, "Enum")
+        self.handle = _class(module, "Handle")
+        self.error = _class(module, "Error")
+        self.converted = _class(module, "Converted")
+
+
+struct Names(Movable):
+    """The attributes of wire objects and the methods of the driver, as interned strs."""
+
+    var fmt: PyObjectPtr
+    var bits: PyObjectPtr
+    var pairs: PyObjectPtr
+    var type: PyObjectPtr
+    var fields: PyObjectPtr
+    var member: PyObjectPtr
+    var id: PyObjectPtr
+    var cls: PyObjectPtr
+    var bases: PyObjectPtr
+    var message: PyObjectPtr
+    var value: PyObjectPtr
+    var resolve: PyObjectPtr
+    var call: PyObjectPtr
+    var get: PyObjectPtr
+    var observe: PyObjectPtr
+    var release: PyObjectPtr
+
+    def __init__(out self) raises:
+        self.fmt = _interned("fmt")
+        self.bits = _interned("bits")
+        self.pairs = _interned("pairs")
+        self.type = _interned("type")
+        self.fields = _interned("fields")
+        self.member = _interned("member")
+        self.id = _interned("id")
+        self.cls = _interned("cls")
+        self.bases = _interned("bases")
+        self.message = _interned("message")
+        self.value = _interned("value")
+        self.resolve = _interned("resolve")
+        self.call = _interned("call")
+        self.get = _interned("get")
+        self.observe = _interned("observe")
+        self.release = _interned("release")
+
+
+struct Wire(Movable):
+    """The wire classes, the names and the singletons, looked up once. They live as long
+    as the process."""
+
+    var classes: Classes
+    var names: Names
+    var none: PyObjectPtr
+    var true: PyObjectPtr
+    var false: PyObjectPtr
+
+    def __init__(out self) raises:
+        self.classes = Classes()
+        self.names = Names()
         self.none = object_symbol("_Py_NoneStruct")
-        self.true_ = object_symbol("_Py_TrueStruct")
-        self.false_ = object_symbol("_Py_FalseStruct")
-        self.n_fmt = _interned("fmt")
-        self.n_bits = _interned("bits")
-        self.n_pairs = _interned("pairs")
-        self.n_type = _interned("type")
-        self.n_fields = _interned("fields")
-        self.n_member = _interned("member")
-        self.n_id = _interned("id")
-        self.n_cls = _interned("cls")
-        self.n_bases = _interned("bases")
-        self.n_message = _interned("message")
-        self.n_value = _interned("value")
-        self.m_resolve = _interned("resolve")
-        self.m_call = _interned("call")
-        self.m_get = _interned("get")
-        self.m_observe = _interned("observe")
-        self.m_release = _interned("release")
+        self.true = object_symbol("_Py_TrueStruct")
+        self.false = object_symbol("_Py_FalseStruct")
 
 
 def _unloaded() -> Optional[Wire]:

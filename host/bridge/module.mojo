@@ -13,23 +13,25 @@ Functions:
 A spec error raises `spectest.SpecError` when that exists, else `ValueError`.
 """
 
-from std.ffi import _Global
+from std.ffi import _Global, c_int
 from std.memory.alloc import unsafe_alloc
-from std.python._cpython import PyObjectPtr
+from std.python._cpython import (
+    METH_FASTCALL,
+    PyMethodDef,
+    PyModuleDef,
+    PyObjectPtr,
+    _fn_ptr_as_opaque,
+)
 from std.time import perf_counter_ns
 
 from wire.value import Value
 
 from bridge.capi import (
-    METH_FASTCALL,
     METH_NOARGS,
     METH_O,
-    MethodDef,
-    ModuleDef,
     Py_DecRef,
     Py_NewRef,
     PyErr_Clear,
-    PyErr_Occurred,
     PyErr_SetObject,
     PyFloat_FromDouble,
     PyImport_ImportModule,
@@ -38,14 +40,11 @@ from bridge.capi import (
     PyModuleDef_Init,
     PyObject_GetAttrString,
     PyUnicode_FromStringAndSize,
-    address,
-    leaked,
     pointer_symbol,
-    text,
 )
 from bridge.client import DriverClient
 from bridge.convert import from_python, to_python
-from bridge.pyutil import python_error, string_of, wire
+from bridge.pyutil import string_of, wire
 
 from run.items import items_of
 from run.load import Loaded, load as load_spec
@@ -54,49 +53,57 @@ from run.stateful import run_declaration
 
 comptime VERSION = "0.1.0.dev0"
 
-
-struct Registry(Movable):
-    """The loaded specs and the drivers they run against, by handle."""
-
-    var specs: List[Optional[Loaded]]
-    var drivers: List[Optional[DriverClient]]
-
-    def __init__(out self):
-        self.specs = List[Optional[Loaded]]()
-        self.drivers = List[Optional[DriverClient]]()
+comptime Arguments = Span[PyObjectPtr, MutUntrackedOrigin]
+"""A METH_FASTCALL function's arguments (borrowed)."""
 
 
-def _new_registry() -> Registry:
-    return Registry()
+@fieldwise_init
+struct Session(Movable):
+    """A loaded spec and the driver it runs against."""
+
+    var loaded: Loaded
+    var driver: DriverClient
 
 
-comptime _REGISTRY = _Global["spectest_run_registry", _new_registry]
+def _no_sessions() -> List[Optional[Session]]:
+    return []
 
 
-def registry() raises -> Pointer[Registry, MutUntrackedOrigin]:
-    return _REGISTRY.get_or_create_ptr()
+comptime _SESSIONS = _Global["spectest_bridge_sessions", _no_sessions]
+
+
+def _sessions() raises -> Pointer[List[Optional[Session]], MutUntrackedOrigin]:
+    """The sessions by handle. An unloaded one leaves None, so later handles keep
+    their place."""
+    return _SESSIONS.get_or_create_ptr()
+
+
+def _slot(spec: PyObjectPtr) raises -> ref [MutUntrackedOrigin] Optional[Session]:
+    var handle = PyLong_AsLong(spec)
+    var sessions = _sessions()
+    if handle < 0 or handle >= len(sessions[]) or sessions[][handle] is None:
+        raise Error("TypeError: not a loaded spec")
+    return sessions[][handle]
 
 
 def _raise(e: Error) -> PyObjectPtr:
     """Sets Python's error from a Mojo error and returns NULL. The prefixes `TypeError: `
     and `SpecError: ` pick the class (RuntimeError otherwise)."""
     var message = String(e)
-    var kind = pointer_symbol("PyExc_RuntimeError")
     comptime TYPE = "TypeError: "
     comptime SPEC = "SpecError: "
-    # the temporary avoids aliasing `message` in its own assignment
     if message.startswith(TYPE):
-        kind = pointer_symbol("PyExc_TypeError")
-        var rest = String(message[byte = TYPE.byte_length() :])
-        message = rest^
-    elif message.startswith(SPEC):
-        kind = _spec_error_class()
-        var rest = String(message[byte = SPEC.byte_length() :])
-        message = rest^
-    var made = PyUnicode_FromStringAndSize(message)
-    if made:
-        PyErr_SetObject(kind, made)
-        Py_DecRef(made)
+        return _raise(pointer_symbol("PyExc_TypeError"), message.removeprefix(TYPE))
+    if message.startswith(SPEC):
+        return _raise(_spec_error_class(), message.removeprefix(SPEC))
+    return _raise(pointer_symbol("PyExc_RuntimeError"), message)
+
+
+def _raise(kind: PyObjectPtr, message: StringSpan) -> PyObjectPtr:
+    var text = PyUnicode_FromStringAndSize(message)
+    if text:
+        PyErr_SetObject(kind, text)
+        Py_DecRef(text)
     return PyObjectPtr()
 
 
@@ -112,161 +119,125 @@ def _spec_error_class() -> PyObjectPtr:
     return pointer_symbol("PyExc_ValueError")
 
 
-def _argument(args: Int, i: Int) -> PyObjectPtr:
-    return Pointer[PyObjectPtr, MutUntrackedOrigin](unsafe_from_address=args)[
-        unsafe_offset=i
-    ]
+def _fastcall[
+    function: def(Arguments) thin raises -> PyObjectPtr,
+    signature: StaticString,
+    arity: Int,
+](
+    module: PyObjectPtr, args: Pointer[PyObjectPtr, MutUntrackedOrigin], nargs: Int
+) abi("C") -> PyObjectPtr:
+    try:
+        if nargs != arity:
+            raise Error(t"TypeError: {signature} takes {arity} arguments")
+        return function(Arguments(unsafe_ptr=args, length=nargs))
+    except e:
+        return _raise(e)
+
+
+def _one_argument[
+    function: def(PyObjectPtr) thin raises -> PyObjectPtr
+](module: PyObjectPtr, obj: PyObjectPtr) abi("C") -> PyObjectPtr:
+    try:
+        return function(obj)
+    except e:
+        return _raise(e)
 
 
 def _values(list: PyObjectPtr) raises -> List[Value]:
-    var v = from_python(list)
-    if v.kind != .LIST:
+    var value = from_python(list)
+    if value.kind != .LIST:
         raise Error("TypeError: args must be a list of wire objects")
-    return v.items()
+    return value.items()
 
 
 def version(module: PyObjectPtr, unused: PyObjectPtr) abi("C") -> PyObjectPtr:
     return PyUnicode_FromStringAndSize(VERSION)
 
 
-def echo(module: PyObjectPtr, obj: PyObjectPtr) abi("C") -> PyObjectPtr:
+def echo(obj: PyObjectPtr) raises -> PyObjectPtr:
+    return to_python(from_python(obj))
+
+
+def call(args: Arguments) raises -> PyObjectPtr:
+    var client = DriverClient(args[0])
+    var target = client.resolve(string_of(args[1]))
+    return to_python(client.call(target, _values(args[2])))
+
+
+def bench(args: Arguments) raises -> PyObjectPtr:
+    var client = DriverClient(args[0])
+    var target = client.resolve(string_of(args[1]))
+    var values = _values(args[2])
+    var n = PyLong_AsLong(args[3])
+    if n <= 0:
+        raise Error("TypeError: n must be a positive int")
+    var start = perf_counter_ns()
+    for _ in range(n):
+        _ = client.call(target, values)
+    var elapsed = perf_counter_ns() - start
+    return PyFloat_FromDouble(Float64(elapsed) / 1e9 / Float64(n))
+
+
+def load(args: Arguments) raises -> PyObjectPtr:
+    var path = string_of(args[0])
+    var loaded: Loaded
     try:
-        return to_python(from_python(obj))
+        loaded = load_spec(path)
     except e:
-        return _raise(e)
+        raise Error(t"SpecError: {e}")
+    var sessions = _sessions()
+    sessions[].append(Session(loaded^, DriverClient(args[1])))
+    return PyLong_FromSsize_t(len(sessions[]) - 1)
 
 
-def call(module: PyObjectPtr, args: Int, nargs: Int) abi("C") -> PyObjectPtr:
-    try:
-        if nargs != 3:
-            raise Error("TypeError: call(driver, name, args) takes 3 arguments")
-        var client = DriverClient(_argument(args, 0))
-        var name = _name(_argument(args, 1))
-        var target = client.resolve(name)
-        return to_python(client.call(target, _values(_argument(args, 2))))
-    except e:
-        return _raise(e)
+def items(spec: PyObjectPtr) raises -> PyObjectPtr:
+    return result_to_python(Value.list(items_of(_slot(spec).value().loaded)))
 
 
-def bench(module: PyObjectPtr, args: Int, nargs: Int) abi("C") -> PyObjectPtr:
-    try:
-        if nargs != 4:
-            raise Error("TypeError: bench(driver, name, args, n) takes 4 arguments")
-        var client = DriverClient(_argument(args, 0))
-        var target = client.resolve(_name(_argument(args, 1)))
-        var values = _values(_argument(args, 2))
-        var n = PyLong_AsLong(_argument(args, 3))
-        if n <= 0:
-            raise Error("TypeError: n must be a positive int")
-        var start = perf_counter_ns()
-        for _ in range(n):
-            _ = client.call(target, values)
-        var elapsed = perf_counter_ns() - start
-        return PyFloat_FromDouble(Float64(elapsed) / 1e9 / Float64(n))
-    except e:
-        return _raise(e)
+def run(args: Arguments) raises -> PyObjectPtr:
+    ref session = _slot(args[0]).value()
+    var decl = string_of(args[1])
+    var options = parse_options(args[2])
+    var result = run_declaration(session.loaded, decl, options, session.driver)
+    return result_to_python(result.to_value())
 
 
-def _handle(o: PyObjectPtr) raises -> Int:
-    var n = PyLong_AsLong(o)
-    var reg = registry()
-    if n < 0 or n >= len(reg[].specs) or reg[].specs[n] is None:
-        raise Error("TypeError: not a loaded spec")
-    return n
+def unload(spec: PyObjectPtr) raises -> PyObjectPtr:
+    _slot(spec) = None
+    return Py_NewRef(wire()[].none)
 
 
-def load(module: PyObjectPtr, args: Int, nargs: Int) abi("C") -> PyObjectPtr:
-    try:
-        if nargs != 2:
-            raise Error("TypeError: load(path, driver) takes 2 arguments")
-        var path = _name(_argument(args, 0))
-        var loaded: Loaded
-        try:
-            loaded = load_spec(path)
-        except e:
-            raise Error("SpecError: ", e)
-        var reg = registry()
-        reg[].specs.append(Optional(loaded^))
-        reg[].drivers.append(Optional(DriverClient(_argument(args, 1))))
-        return PyLong_FromSsize_t(len(reg[].specs) - 1)
-    except e:
-        return _raise(e)
+def _method[
+    T: TrivialRegisterPassable
+](name: StaticString, function: T, flags: c_int, doc: StaticString) -> PyMethodDef:
+    return PyMethodDef(
+        name.as_c_string_span(), _fn_ptr_as_opaque(function), flags, doc.as_c_string_span()
+    )
 
 
-def items(module: PyObjectPtr, spec: PyObjectPtr) abi("C") -> PyObjectPtr:
-    try:
-        var h = _handle(spec)
-        var reg = registry()
-        return result_to_python(Value.list(items_of(reg[].specs[h].value())))
-    except e:
-        return _raise(e)
-
-
-def run(module: PyObjectPtr, args: Int, nargs: Int) abi("C") -> PyObjectPtr:
-    try:
-        if nargs != 3:
-            raise Error("TypeError: run(spec, decl, options) takes 3 arguments")
-        var h = _handle(_argument(args, 0))
-        var decl = _name(_argument(args, 1))
-        var options = parse_options(_argument(args, 2))
-        var reg = registry()
-        var result = run_declaration(
-            reg[].specs[h].value(), decl, options, reg[].drivers[h].value()
-        )
-        return result_to_python(result.to_value())
-    except e:
-        return _raise(e)
-
-
-def unload(module: PyObjectPtr, spec: PyObjectPtr) abi("C") -> PyObjectPtr:
-    try:
-        var h = _handle(spec)
-        var reg = registry()
-        reg[].specs[h] = None
-        reg[].drivers[h] = None
-        return Py_NewRef(wire()[].none)
-    except e:
-        return _raise(e)
-
-
-def _name(o: PyObjectPtr) raises -> String:
-    var name = string_of(o)
-    if name == "?" and PyErr_Occurred():
-        raise python_error()
-    return name^
-
-
-def methods() -> Int:
-    var table: List[MethodDef] = [
-        MethodDef(text("version"), address(version), METH_NOARGS, text("version() -> str")),
-        MethodDef(text("echo"), address(echo), METH_O, text("echo(obj): a wire object through a Value and back")),
-        MethodDef(text("call"), address(call), METH_FASTCALL, text("call(driver, name, args): resolve name and call it through the driver")),
-        MethodDef(text("bench"), address(bench), METH_FASTCALL, text("bench(driver, name, args, n) -> seconds per call")),
-        MethodDef(text("load"), address(load), METH_FASTCALL, text("load(path, driver) -> spec handle")),
-        MethodDef(text("items"), address(items), METH_O, text("items(spec) -> list of clause dicts")),
-        MethodDef(text("run"), address(run), METH_FASTCALL, text("run(spec, decl, options) -> result dict")),
-        MethodDef(text("unload"), address(unload), METH_O, text("unload(spec) -> None")),
-        MethodDef(0, 0, 0, 0),
+def _methods() -> OptionalPointer[PyMethodDef, MutUntrackedOrigin]:
+    """The module's functions, in a table that lives as long as the process (as C's
+    tables must)."""
+    var table: List[PyMethodDef] = [
+        _method("version", version, METH_NOARGS, "version() -> str"),
+        _method("echo", _one_argument[echo], METH_O, "echo(obj): a wire object through a Value and back"),
+        _method("call", _fastcall[call, "call(driver, name, args)", 3], METH_FASTCALL, "call(driver, name, args): resolve name and call it through the driver"),
+        _method("bench", _fastcall[bench, "bench(driver, name, args, n)", 4], METH_FASTCALL, "bench(driver, name, args, n) -> seconds per call"),
+        _method("load", _fastcall[load, "load(path, driver)", 2], METH_FASTCALL, "load(path, driver) -> spec handle"),
+        _method("items", _one_argument[items], METH_O, "items(spec) -> list of clause dicts"),
+        _method("run", _fastcall[run, "run(spec, decl, options)", 3], METH_FASTCALL, "run(spec, decl, options) -> result dict"),
+        _method("unload", _one_argument[unload], METH_O, "unload(spec) -> None"),
+        PyMethodDef(),
     ]
-    return leaked(table^)
+    return table.unsafe_take_allocation().unsafe_leak()
 
 
 @export
 def PyInit__host() abi("C") -> PyObjectPtr:
-    var definition = unsafe_alloc[ModuleDef](1)
-    definition[] = ModuleDef(
-        ob_refcnt=1,
-        ob_type=0,
-        m_init=0,
-        m_index=0,
-        m_copy=0,
-        m_name=text("spectest._host"),
-        m_doc=text("The spectest host: Value conversion and the driver client."),
-        m_size=0,
-        m_methods=methods(),
-        m_slots=0,
-        m_traverse=0,
-        m_clear=0,
-        m_free=0,
-    )
-    return PyModuleDef_Init(Int(definition))
+    var definition = unsafe_alloc[PyModuleDef](1)  # C reads it as long as the process lives
+    definition.unsafe_write(PyModuleDef("spectest._host"))
+    definition[].base.object_base.object_ref_count = 1  # as PyModuleDef_HEAD_INIT sets it
+    definition[].docstring = "The spectest host: Value conversion and the driver client.".as_c_string_span()
+    definition[].size = 0
+    definition[].methods = _methods()
+    return PyModuleDef_Init(definition)

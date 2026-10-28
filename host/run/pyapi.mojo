@@ -1,7 +1,12 @@
 """The Python side of the API: options read from a dict, results built as dicts."""
 
 from std.memory import bitcast
-from std.python._cpython import PyObjectPtr
+from std.python._cpython import (
+    Py_TPFLAGS_DICT_SUBCLASS,
+    Py_TPFLAGS_LIST_SUBCLASS,
+    Py_TPFLAGS_UNICODE_SUBCLASS,
+    PyObjectPtr,
+)
 
 from bridge.capi import (
     Py_DecRef,
@@ -23,17 +28,12 @@ from wire.value import Value
 
 from .options import RunOptions
 
-comptime Py_TPFLAGS_DICT_SUBCLASS: UInt64 = 1 << 29
-comptime Py_TPFLAGS_UNICODE: UInt64 = 1 << 28
-comptime Py_TPFLAGS_LIST: UInt64 = 1 << 25
-
-
 def _is_dict(o: PyObjectPtr) -> Bool:
     return Bool(PyType_GetFlags(ob_type(o)) & Py_TPFLAGS_DICT_SUBCLASS)
 
 
 def _text(o: PyObjectPtr, what: String) raises -> String:
-    if not (PyType_GetFlags(ob_type(o)) & Py_TPFLAGS_UNICODE):
+    if not (PyType_GetFlags(ob_type(o)) & Py_TPFLAGS_UNICODE_SUBCLASS):
         raise Error(String("TypeError: ", what, " must be a str"))
     return string_of(o)
 
@@ -90,7 +90,7 @@ def parse_options(o: PyObjectPtr) raises -> RunOptions:
                         opts.inst_types.append(_text(arg, "a type argument"))
             case "examples":
                 if not is_none:
-                    if not (PyType_GetFlags(ob_type(value)) & Py_TPFLAGS_LIST):
+                    if not (PyType_GetFlags(ob_type(value)) & Py_TPFLAGS_LIST_SUBCLASS):
                         raise Error("TypeError: examples must be a list")
                     for i in range(PyList_Size(value)):
                         var example = PyList_GetItem(value, i)
