@@ -1,6 +1,6 @@
 """Writes f64_repr.txt: lines of `<bit pattern in decimal> <Python repr of that float>`.
 
-Run from the repository root: `python tests/host/numeric/data/gen_f64_repr.py`.
+Run from the repository root: `python tests/mojo/value/data/gen_f64_repr.py`.
 The patterns are fixed: a seeded random sample plus the extremes and powers of ten.
 """
 

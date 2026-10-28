@@ -42,8 +42,8 @@ def test_example_declaration_counts() raises:
 
 
 def test_sample_spec_dumps_as_expected() raises:
-    var ast = parse_spec(read("tests/host/syntax/data/sample.spec"), "sample.spec")
-    var expected = read("tests/host/syntax/data/sample.dump")
+    var ast = parse_spec(read("tests/mojo/specfile/data/sample.spec"), "sample.spec")
+    var expected = read("tests/mojo/specfile/data/sample.dump")
     var lines = expected.split("\n")
     var decls = ast.nodes[ast.root()].children.copy()
     var n = 0

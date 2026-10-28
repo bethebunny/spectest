@@ -104,8 +104,8 @@ def parse_decimal(text: StringSlice) -> UInt64:
 
 
 def test_f64_matches_python_repr() raises:
-    """tests/host/numeric/data/f64_repr.txt is written by gen_f64_repr.py."""
-    var lines = open("tests/host/numeric/data/f64_repr.txt", "r").read().split("\n")
+    """tests/mojo/value/data/f64_repr.txt is written by gen_f64_repr.py."""
+    var lines = open("tests/mojo/value/data/f64_repr.txt", "r").read().split("\n")
     var count = 0
     for line in lines:
         if line.byte_length() == 0:

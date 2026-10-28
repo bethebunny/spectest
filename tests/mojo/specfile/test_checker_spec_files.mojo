@@ -34,8 +34,8 @@ def thread_cpu_ns() -> Int:
 
 
 def sample() raises -> Spec:
-    var src = Path("tests/host/check/data/v2.spec").read_text()
-    return check_source(src, "tests/host/check/data/v2.spec")
+    var src = Path("tests/mojo/specfile/data/v2.spec").read_text()
+    return check_source(src, "tests/mojo/specfile/data/v2.spec")
 
 
 def test_the_sample_checks() raises:
