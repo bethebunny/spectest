@@ -240,5 +240,17 @@ def test_models_inside_types() raises:
     assert_equal(Int(found[1].handle_id()), 2)
 
 
+def test_handles_inside_a_tuple() raises:
+    var types = Types()
+    var box = types.model("pkg.Box", [], False)
+    var pair = types.tuple_of([box, box])
+    var v = Value.tuple([Value.handle(3, "pkg.Box"), Value.handle(4, "pkg.Box")])
+    var found = handles_of(types, v, pair, "pkg.Box")
+    assert_equal(len(found), 2)
+    assert_equal(Int(found[0].handle_id()), 3)
+    assert_equal(Int(found[1].handle_id()), 4)
+    assert_equal(len(handles_of(types, Value.tuple([Value.handle(3, "pkg.Box")]), pair, "pkg.Box")), 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
