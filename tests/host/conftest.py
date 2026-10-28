@@ -38,7 +38,7 @@ import subprocess
 import sys
 import uuid
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager, suppress
 from functools import cache
 from importlib.metadata import version
@@ -189,7 +189,7 @@ def binary(unit: Path) -> Path:
 
 
 @contextmanager
-def locked(unit: Path, *, wait: bool) -> Iterator[bool]:
+def locked(unit: Path, *, wait: bool) -> Generator[bool]:
     """Whether this process holds `unit`'s build lock, waiting for it if `wait`."""
     BUILDS.mkdir(exist_ok=True)
     with (BUILDS / f"{stem(unit)}.lock").open("w") as lock:
