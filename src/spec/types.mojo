@@ -45,28 +45,28 @@ __enum TypeKind(Equatable, Hashable, ImplicitlyCopyable, Intable, Writable):
     """A type's kind. Writes as its lowercase name, which for a kind of one type, eg.
     `bool` or `qerr`, is how a spec writes the type."""
 
-    case ANY
-    case BOOL
-    case INT
-    case FIXED_INT
-    case FLOAT
-    case REAL
-    case STRING
-    case BYTES
-    case UNIT
-    case QERR
-    case LIST
-    case MAP
-    case TUPLE
-    case OPTION
-    case SET
-    case LITERAL
-    case ENUM
-    case RECORD
-    case MODEL
-    case TYPEVAR
-    case FN
-    case CHOICE
+    case Any
+    case Bool
+    case Int
+    case FixedInt
+    case Float
+    case Real
+    case String
+    case Bytes
+    case Unit
+    case Qerr
+    case List
+    case Map
+    case Tuple
+    case Option
+    case Set
+    case Literal
+    case Enum
+    case Record
+    case Model
+    case TypeVar
+    case Fn
+    case Choice
 
     def __eq__(self, other: Self) -> Bool:
         return self._get_enum_discriminant() == other._get_enum_discriminant()
@@ -83,7 +83,7 @@ __enum TypeKind(Equatable, Hashable, ImplicitlyCopyable, Intable, Writable):
     def has_components(self) -> Bool:
         """Whether the `args` of its types are types that their values hold."""
         match self:
-            case .LIST | .OPTION | .SET | .MAP | .TUPLE | .RECORD | .MODEL:
+            case .List | .Option | .Set | .Map | .Tuple | .Record | .Model:
                 return True
             case _:
                 return False
@@ -116,7 +116,7 @@ struct TypeInfo(Copyable, Equatable, Hashable):
 
     def key(self) -> Self:
         """What it is interned under: itself, or only kind and name for an enum or record."""
-        if self.kind == .ENUM or self.kind == .RECORD:
+        if self.kind == .Enum or self.kind == .Record:
             return Self(self.kind, name=self.name.copy())
         return self.copy()
 
@@ -129,7 +129,7 @@ struct Types(Movable):
     def __init__(out self):
         self.infos = []
         self.index = {}
-        _ = self.intern(TypeInfo(.ANY))
+        _ = self.intern(TypeInfo(.Any))
 
     # Interning
 
@@ -144,62 +144,62 @@ struct Types(Movable):
     # Constructors
 
     def bool_(mut self) -> Int:
-        return self.intern(TypeInfo(.BOOL))
+        return self.intern(TypeInfo(.Bool))
 
     def int_(mut self) -> Int:
-        return self.intern(TypeInfo(.INT))
+        return self.intern(TypeInfo(.Int))
 
     def fixed(mut self, bits: Int, signed: Bool) -> Int:
-        return self.intern(TypeInfo(.FIXED_INT, bits=bits, signed=signed))
+        return self.intern(TypeInfo(.FixedInt, bits=bits, signed=signed))
 
     def float_(mut self, format_id: UInt8) -> Int:
-        return self.intern(TypeInfo(.FLOAT, bits=Int(format_id)))
+        return self.intern(TypeInfo(.Float, bits=Int(format_id)))
 
     def real(mut self) -> Int:
-        return self.intern(TypeInfo(.REAL))
+        return self.intern(TypeInfo(.Real))
 
     def string(mut self) -> Int:
-        return self.intern(TypeInfo(.STRING))
+        return self.intern(TypeInfo(.String))
 
     def bytes(mut self) -> Int:
-        return self.intern(TypeInfo(.BYTES))
+        return self.intern(TypeInfo(.Bytes))
 
     def unit(mut self) -> Int:
-        return self.intern(TypeInfo(.UNIT))
+        return self.intern(TypeInfo(.Unit))
 
     def qerr(mut self) -> Int:
-        return self.intern(TypeInfo(.QERR))
+        return self.intern(TypeInfo(.Qerr))
 
     def list_of(mut self, elem: Int) -> Int:
-        return self.intern(TypeInfo(.LIST, args=[elem]))
+        return self.intern(TypeInfo(.List, args=[elem]))
 
     def map_of(mut self, key: Int, value: Int) -> Int:
-        return self.intern(TypeInfo(.MAP, args=[key, value]))
+        return self.intern(TypeInfo(.Map, args=[key, value]))
 
     def tuple_of(mut self, elems: List[Int]) -> Int:
-        return self.intern(TypeInfo(.TUPLE, args=elems.copy()))
+        return self.intern(TypeInfo(.Tuple, args=elems.copy()))
 
     def option_of(mut self, elem: Int) -> Int:
-        return self.intern(TypeInfo(.OPTION, args=[elem]))
+        return self.intern(TypeInfo(.Option, args=[elem]))
 
     def set_of(mut self, elem: Int) -> Int:
-        return self.intern(TypeInfo(.SET, args=[elem]))
+        return self.intern(TypeInfo(.Set, args=[elem]))
 
     def literal(mut self, values: List[String]) -> Int:
-        return self.intern(TypeInfo(.LITERAL, names=values.copy()))
+        return self.intern(TypeInfo(.Literal, names=values.copy()))
 
     def enum_(mut self, var name: String, members: List[String]) -> Int:
-        return self.intern(TypeInfo(.ENUM, name=name^, names=members.copy()))
+        return self.intern(TypeInfo(.Enum, name=name^, names=members.copy()))
 
     def record(mut self, var name: String, fields: List[String], field_types: List[Int]) -> Int:
-        return self.intern(TypeInfo(.RECORD, name=name^, args=field_types.copy(), names=fields.copy()))
+        return self.intern(TypeInfo(.Record, name=name^, args=field_types.copy(), names=fields.copy()))
 
     def model(mut self, var name: String, args: List[Int], is_interface: Bool) -> Int:
-        return self.intern(TypeInfo(.MODEL, signed=is_interface, name=name^, args=args.copy()))
+        return self.intern(TypeInfo(.Model, signed=is_interface, name=name^, args=args.copy()))
 
     def typevar(mut self, var name: String, bound: String) -> Int:
         """`bound` is "Eq", "Ord" or "" for none."""
-        var info = TypeInfo(.TYPEVAR, name=name^)
+        var info = TypeInfo(.TypeVar, name=name^)
         if bound:
             info.names.append(bound)
         return self.intern(info^)
@@ -208,10 +208,10 @@ struct Types(Movable):
         return [self.typevar(name, bound) for name, bound in zip(names, bounds)]
 
     def fn_(mut self, params: List[Int], names: List[String], result: Int) -> Int:
-        return self.intern(TypeInfo(.FN, args=params + [result], names=names.copy()))
+        return self.intern(TypeInfo(.Fn, args=params + [result], names=names.copy()))
 
     def choice(mut self, constants: List[String], elem: Int) -> Int:
-        return self.intern(TypeInfo(.CHOICE, args=[elem], names=constants.copy()))
+        return self.intern(TypeInfo(.Choice, args=[elem], names=constants.copy()))
 
     def scalar(mut self, name: StringSlice) -> Optional[Int]:
         """The built-in type a one-word name denotes: bool, int, i8..i64, u8..u64,
@@ -254,27 +254,27 @@ struct Types(Movable):
         """The type as a spec writes it: `list<f64>`, `(int, string)`, `"a" | "b"`."""
         ref i = self.infos[t]
         match i.kind:
-            case .ANY:
+            case .Any:
                 return "?"
-            case .BOOL | .INT | .REAL | .STRING | .BYTES | .UNIT | .QERR:
+            case .Bool | .Int | .Real | .String | .Bytes | .Unit | .Qerr:
                 return String(i.kind)
-            case .FIXED_INT:
+            case .FixedInt:
                 return _fixed_text(i.bits, i.signed)
-            case .FLOAT:
+            case .Float:
                 return String(self.format(t))
-            case .LIST | .OPTION | .SET:
+            case .List | .Option | .Set:
                 return String(t"{i.kind}<{self.text(i.args[0])}>")
-            case .MAP:
+            case .Map:
                 return String(t"map<{self.text(i.args[0])}, {self.text(i.args[1])}>")
-            case .TUPLE:
+            case .Tuple:
                 return String(t"({self._texts(i.args)})")
-            case .LITERAL:
+            case .Literal:
                 return " | ".join([String(t"\"{n}\"") for n in i.names])
-            case .CHOICE:
+            case .Choice:
                 return " | ".join(i.names)
-            case .MODEL if i.args:
+            case .Model if i.args:
                 return String(t"{i.name}<{self._texts(i.args)}>")
-            case .FN:
+            case .Fn:
                 var result = len(i.args) - 1
                 return String(t"({self._texts(i.args[:result])}) -> {self.text(i.args[result])}")
             case _:
@@ -285,11 +285,11 @@ struct Types(Movable):
 
     def is_integer(self, t: Int) -> Bool:
         var k = self.kind(t)
-        return k == .INT or k == .FIXED_INT
+        return k == .Int or k == .FixedInt
 
     def is_numeric(self, t: Int) -> Bool:
         match self.kind(t):
-            case .INT | .FIXED_INT | .FLOAT | .REAL:
+            case .Int | .FixedInt | .Float | .Real:
                 return True
             case _:
                 return False
@@ -297,7 +297,7 @@ struct Types(Movable):
     def is_fixed_width(self, t: Int) -> Bool:
         """Types whose values are finite sets of bit patterns, where partition sets apply."""
         match self.kind(t):
-            case .FIXED_INT | .FLOAT | .BOOL:
+            case .FixedInt | .Float | .Bool:
                 return True
             case _:
                 return False
@@ -315,11 +315,11 @@ struct Types(Movable):
         """The equality rule: may `==`, `!=` and `in` be used on values of type t?"""
         ref i = self.infos[t]
         match i.kind:
-            case .BOOL | .INT | .FIXED_INT | .REAL | .STRING | .BYTES | .LITERAL | .ENUM | .UNIT | .QERR:
+            case .Bool | .Int | .FixedInt | .Real | .String | .Bytes | .Literal | .Enum | .Unit | .Qerr:
                 return True
-            case .LIST | .OPTION | .MAP | .TUPLE | .RECORD:
+            case .List | .Option | .Map | .Tuple | .Record:
                 return all([self.has_canonical_eq(a) for a in i.args])
-            case .TYPEVAR:
+            case .TypeVar:
                 return Bool(i.names)
             case _:
                 return False
@@ -329,11 +329,11 @@ struct Types(Movable):
         after promotion to real; qerr's componentwise order is partial."""
         ref i = self.infos[t]
         match i.kind:
-            case .INT | .FIXED_INT | .REAL | .STRING | .BYTES | .BOOL:
+            case .Int | .FixedInt | .Real | .String | .Bytes | .Bool:
                 return True
-            case .TYPEVAR:
+            case .TypeVar:
                 return Bool(i.names) and i.names[0] == "Ord"
-            case .TUPLE | .LIST:
+            case .Tuple | .List:
                 return all([self.has_total_order(a) for a in i.args])
             case _:
                 return False
@@ -341,10 +341,10 @@ struct Types(Movable):
     def substitute(mut self, t: Int, vars: List[String], values: List[Int]) -> Int:
         """Replaces the type variables named in `vars` by the types in `values`."""
         var info = self.infos[t].copy()
-        if info.kind == .TYPEVAR:
+        if info.kind == .TypeVar:
             var at = vars.try_index(info.name)
             return values[at.value()] if at is not None else t
-        if not info.args or info.kind == .RECORD:
+        if not info.args or info.kind == .Record:
             return t
         var args = [self.substitute(a, vars, values) for a in info.args]
         if args == info.args:

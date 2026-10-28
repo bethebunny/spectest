@@ -199,7 +199,7 @@ def _class_holds[
     H: EvalHost
 ](spec: Spec, func: Fn, part: Partition, c: Int, value: Value, mut host: H) raises -> Bool:
     var expr = part.classes[c].expr
-    if type_kind(spec, expr) != .SET:
+    if type_kind(spec, expr) != .Set:
         var params = List[Value](length=len(func.params), fill=Value.none())
         params[part.param] = value.copy()
         var held = evaluate(spec, expr, Env(params^), host)

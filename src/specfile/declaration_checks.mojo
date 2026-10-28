@@ -374,7 +374,7 @@ def check_default(mut c: Checker, p: Param):
         return
     var t = p.type
     if not assignable(c, dt, t, default):
-        if c.tkind(t) == .LITERAL and c.kind_of(default) == .STR:
+        if c.tkind(t) == .Literal and c.kind_of(default) == .STR:
             literal_member(c, t, default)
         else:
             c.error(default, t"the default of {p.name} must be a {c.text(t)}, but it is {c.text(dt)}")
@@ -383,7 +383,7 @@ def check_default(mut c: Checker, p: Param):
     if value is None:
         return
     match c.tkind(t):
-        case .FIXED_INT:
+        case .FixedInt:
             var bits = c.spec.types.infos[t].bits
             var signed = c.spec.types.infos[t].signed
             if not _in_fixed_range(value.value(), bits, signed):
@@ -392,7 +392,7 @@ def check_default(mut c: Checker, p: Param):
                     t"{c.source_of(default)} is not a {c.text(t)} value ({int_min(bits, signed)} to "
                     t"{int_max(bits, signed)})",
                 )
-        case .FLOAT:
+        case .Float:
             if exactly(c.spec.types.format(t), value.value()) is None:
                 c.error(default, t"{c.source_of(default)} is not exactly representable as {c.text(t)}")
         case _:
@@ -759,7 +759,7 @@ def _check_partition(mut c: Checker, fpos: Int, part: Int, base: Ctx, decl_id: S
             var t = infer_in(c, ctx^, expr, st)
             if not c.is_any(t) and t != st:
                 var pt = c.text(ptype)
-                var all_name = "nan" if c.tkind(ptype) == .FLOAT else "all"
+                var all_name = "nan" if c.tkind(ptype) == .Float else "all"
                 c.error(
                     expr,
                     t"class {cname} of the {pt} parameter {pname} must be a set of {pt} values ({pt}.{all_name}, "

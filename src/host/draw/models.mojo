@@ -69,7 +69,7 @@ def draw_model[
         b
         for b in range(builds)
         if depth < sizes.max_model_depth
-        or not any([spec.types.kind(p.type) == .MODEL for p in spec.models[model].builds[b].params])
+        or not any([spec.types.kind(p.type) == .Model for p in spec.models[model].builds[b].params])
     ]
     if not allowed:
         src.reject()
@@ -93,7 +93,7 @@ def _draw_arg[
     mut src: Source, mut spec: Spec, t: Int, mut builder: B, sizes: Sizes, depth: Int
 ) raises -> Value:
     """One value of type `t`; a model type goes through `draw_model`."""
-    if spec.types.kind(t) == .MODEL:
+    if spec.types.kind(t) == .Model:
         var name = spec.types.info(t).name
         var targs = spec.types.info(t).args.copy()
         var model = spec.model_named(name)

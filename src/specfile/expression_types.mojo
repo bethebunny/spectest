@@ -31,13 +31,13 @@ def poison_subtree(mut c: Checker, e: Int):
 
 def want_bool(mut c: Checker, node: Int, t: Int, what: Some[Writable]):
     var k = c.tkind(t)
-    if k != .BOOL and k != .ANY:
+    if k != .Bool and k != .Any:
         c.error(node, t"{what} must be a bool, but this is {c.text(t)}")
 
 
 def want_int(mut c: Checker, node: Int, t: Int, what: StaticString):
     if not c.is_integer(t) and not c.is_any(t):
-        var hint = " (use // for integer division)" if c.tkind(t) == .REAL else ""
+        var hint = " (use // for integer division)" if c.tkind(t) == .Real else ""
         c.error(node, t"{what} must be an integer, but it is {c.text(t)}{hint}")
 
 
@@ -88,32 +88,32 @@ def assignable(c: Checker, actual: Int, target: Int, node: Int) -> Bool:
     var kt = c.tkind(target)
     var ka = c.tkind(actual)
     match kt:
-        case .FIXED_INT:
-            return c.is_integer(actual) or ka == .REAL
-        case .FLOAT | .REAL:
+        case .FixedInt:
+            return c.is_integer(actual) or ka == .Real
+        case .Float | .Real:
             return c.is_numeric(actual)
-        case .INT:
+        case .Int:
             return c.is_integer(actual)
-        case .LITERAL | .CHOICE:
+        case .Literal | .Choice:
             ref names = c.spec.types.infos[target].names
             if ka == kt:
                 return all([v in names for v in c.spec.types.infos[actual].names])
-            if kt == .LITERAL:
+            if kt == .Literal:
                 return node > 0 and c.kind_of(node) == .STR and c.text_of(node) in names
             return node > 0 and _choice_has(c, target, node)
-        case .STRING:
+        case .String:
             return c.is_stringish(actual)
-        case .LIST if ka == .LIST:
+        case .List if ka == .List:
             if node > 0 and c.kind_of(node) == .LIST and c.children(node):
                 return all([assignable(c, c.spec.node_types[x], c.arg(target, 0), x) for x in c.children(node)])
             return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0)
-        case .OPTION if ka == .OPTION:
+        case .Option if ka == .Option:
             return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0)
-        case .MAP if ka == .MAP:
+        case .Map if ka == .Map:
             return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0) and assignable(
                 c, c.arg(actual, 1), c.arg(target, 1), 0
             )
-        case .TUPLE if ka == .TUPLE:
+        case .Tuple if ka == .Tuple:
             ref ts = c.spec.types.infos[target].args
             ref xs = c.spec.types.infos[actual].args
             if len(ts) != len(xs):
@@ -227,7 +227,7 @@ def lookup(mut c: Checker, e: Int) -> Int:
         var only = c.ctx.only_param.copy()
         if c.ctx.in_partition_set:
             var pt = c.text(ptype)
-            var set_name = "nan" if c.tkind(ptype) == .FLOAT else "all"
+            var set_name = "nan" if c.tkind(ptype) == .Float else "all"
             c.error(
                 e,
                 t"classes of the fixed-width parameter {only} are sets of values, so {name} cannot appear in "
@@ -317,7 +317,7 @@ def unknown_name(mut c: Checker, e: Int, name: String):
         if c.ctx.self_t >= 0 and c.ctx.self_model >= 0 and c.observer_pos(c.ctx.self_model, name) >= 0:
             hints.append(String(t"self.{name}"))
         for p in c.ctx.params:
-            if c.tkind(p.type) == .MODEL and p.name != "":
+            if c.tkind(p.type) == .Model and p.name != "":
                 var model = c.model_pos_of_type(p.type)
                 if model >= 0 and c.observer_pos(model, name) >= 0:
                     hints.append(String(t"{p.name}.{name}"))
@@ -335,11 +335,11 @@ def infer_unary(mut c: Checker, e: Int) -> Int:
     if c.op_of(e) == .NOT:
         want_bool(c, operand, t, "the operand of not")
         return c.bool_
-    if c.is_any(t) or c.tkind(t) == .FLOAT:
+    if c.is_any(t) or c.tkind(t) == .Float:
         return t
     if c.is_integer(t):
         return c.int_
-    if c.tkind(t) == .REAL:
+    if c.tkind(t) == .Real:
         return c.real_
     c.error(e, t"unary - needs a number, but the operand is {c.text(t)}")
     return c.poison
@@ -349,7 +349,7 @@ def infer_binary(mut c: Checker, e: Int, expected: Int) -> Int:
     var op = c.op_of(e)
     var left = c.child(e, 0)
     var right = c.child(e, 1)
-    var side = expected if expected >= 0 and c.tkind(expected) == .SET else NO_TYPE
+    var side = expected if expected >= 0 and c.tkind(expected) == .Set else NO_TYPE
     var lt = infer(c, left, side)
     var rt = infer(c, right, side)
     match op:
@@ -359,7 +359,7 @@ def infer_binary(mut c: Checker, e: Int, expected: Int) -> Int:
             return c.bool_
         case .BITOR | .BITAND:
             return c.int_ if c.is_integer(lt) and c.is_integer(rt) else set_op(c, e, lt, rt)
-        case .SUB if c.tkind(lt) == .SET or c.tkind(rt) == .SET:
+        case .SUB if c.tkind(lt) == .Set or c.tkind(rt) == .Set:
             return set_op(c, e, lt, rt)
         case .EQ | .NE:
             return equality(c, e, lt, rt)
@@ -392,9 +392,9 @@ def set_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     if c.is_poison(lt) or c.is_poison(rt):
         return c.poison
     var op = c.op_of(e)
-    if c.tkind(lt) != .SET or c.tkind(rt) != .SET:
+    if c.tkind(lt) != .Set or c.tkind(rt) != .Set:
         var bitwise = op == .BITOR or op == .BITAND
-        if bitwise and c.tkind(lt) == .BOOL and c.tkind(rt) == .BOOL:
+        if bitwise and c.tkind(lt) == .Bool and c.tkind(rt) == .Bool:
             var word = "or" if op == .BITOR else "and"
             c.error(e, t"{op} combines partition sets or integers; for booleans write {word}")
         elif bitwise:
@@ -412,20 +412,20 @@ def eq_message(c: Checker, op: String, t: Int, bad: Int) -> String:
     var inside = String() if t == bad else String(t" (inside {c.text(t)})")
     var what = c.text(bad)
     match c.tkind(bad):
-        case .FLOAT:
+        case .Float:
             return String(
                 t"{op} is not defined on {what}{inside}: floats have no implicit equality. Use same(a, b) for "
                 t"bit-identical values, ieee_eq(a, b) for IEEE 754 equality, real(a) {op} real(b) to compare "
                 t"numerically, or eq(a, b, float=...) for collections"
             )
-        case .MODEL:
+        case .Model:
             return String(
                 t"{op} is not defined on {what} handles{inside}: compare their observers (a.items == b.items) "
                 t"or use eq(a, b, ...)"
             )
-        case .TYPEVAR:
+        case .TypeVar:
             return String(t"{op} needs equality on {what}{inside}: declare it as {c.spec.types.infos[bad].name}: Eq")
-        case .SET:
+        case .Set:
             return String(t"{op} is not defined on partition sets")
         case _:
             return String(t"{op} is not defined on {what}{inside}")
@@ -433,12 +433,12 @@ def eq_message(c: Checker, op: String, t: Int, bad: Int) -> String:
 
 def qerr_comparison(mut c: Checker, e: Int, lt: Int, rt: Int) -> Bool:
     """Check a comparison with a qerr operand; False when neither side is a qerr."""
-    var lq = c.tkind(lt) == .QERR
-    var rq = c.tkind(rt) == .QERR
+    var lq = c.tkind(lt) == .Qerr
+    var rq = c.tkind(rt) == .Qerr
     if not lq and not rq:
         return False
     var other = rt if lq else lt
-    var ok = c.tkind(other) == .QERR or c.is_any(other) or (c.is_numeric(other) and c.tkind(other) != .FLOAT)
+    var ok = c.tkind(other) == .Qerr or c.is_any(other) or (c.is_numeric(other) and c.tkind(other) != .Float)
     if not ok:
         c.error(
             e,
@@ -464,8 +464,8 @@ def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     var op = String(c.op_of(e))
     var left = c.child(e, 0)
     var right = c.child(e, 1)
-    var lc = c.tkind(lt) == .CHOICE
-    if lc or c.tkind(rt) == .CHOICE:
+    var lc = c.tkind(lt) == .Choice
+    if lc or c.tkind(rt) == .Choice:
         var choice = lt if lc else rt
         var other = rt if lc else lt
         if not (other == choice or c.is_any(other) or _choice_has(c, choice, right if lc else left)):
@@ -496,7 +496,7 @@ def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
 def literal_member(mut c: Checker, at: Int, b: Int):
     """Reports a string literal `b` compared with or given as a literal union `at` that
     is not one of its values."""
-    if c.tkind(at) == .LITERAL and c.kind_of(b) == .STR and c.text_of(b) not in c.spec.types.infos[at].names:
+    if c.tkind(at) == .Literal and c.kind_of(b) == .STR and c.text_of(b) not in c.spec.types.infos[at].names:
         c.error(b, t"\"{c.text_of(b)}\" is not one of {c.text(at)}")
 
 
@@ -511,9 +511,9 @@ def ordering(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     elif not c.ordered(j):
         var hint: String
         match c.tkind(j):
-            case .TYPEVAR:
+            case .TypeVar:
                 hint = String(t": declare it as {c.spec.types.infos[j].name}: Ord")
-            case .MODEL:
+            case .Model:
                 hint = ": compare their observers"
             case _:
                 hint = String()
@@ -526,13 +526,13 @@ def membership(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         return c.bool_
     var elem: Int
     match c.tkind(rt):
-        case .LIST | .MAP:
+        case .List | .Map:
             elem = c.arg(rt, 0)
-        case .STRING | .LITERAL:
+        case .String | .Literal:
             if not c.is_stringish(lt) and not c.is_any(lt):
                 c.error(e, t"in on a string looks for a substring, but the left side is {c.text(lt)}")
             return c.bool_
-        case .SET:
+        case .Set:
             c.error(
                 e,
                 "partition sets are not values: in a clause test the value directly, e.g. is_nan(x) or x < 0",
@@ -557,8 +557,8 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         return c.poison if c.is_poison(lt) or c.is_poison(rt) else ANY_TYPE
     var lk = c.tkind(lt)
     var rk = c.tkind(rt)
-    if lk == .QERR or rk == .QERR:
-        if op == .ADD and lk == .QERR and rk == .QERR:
+    if lk == .Qerr or rk == .Qerr:
+        if op == .ADD and lk == .Qerr and rk == .Qerr:
             return c.qerr_
         c.error(
             e,
@@ -567,7 +567,7 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         )
         return c.poison
     if op == .ADD:
-        if lk == .LIST and rk == .LIST:
+        if lk == .List and rk == .List:
             var j = c.join(lt, rt)
             if j < 0:
                 c.error(e, t"cannot concatenate {c.text(lt)} and {c.text(rt)}")
@@ -575,7 +575,7 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
             return j
         if c.is_stringish(lt) and c.is_stringish(rt):
             return c.string_
-        if lk == .BYTES and rk == .BYTES:
+        if lk == .Bytes and rk == .Bytes:
             return c.bytes_
     if c.is_numeric(lt) and c.is_numeric(rt):
         match op:
@@ -590,7 +590,7 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
                 )
                 return c.poison
             case _:
-                var inexact = lk == .FLOAT or lk == .REAL or rk == .FLOAT or rk == .REAL
+                var inexact = lk == .Float or lk == .Real or rk == .Float or rk == .Real
                 return c.real_ if inexact else c.int_
     c.error(e, t"cannot apply {op} to {c.text(lt)} and {c.text(rt)}")
     return c.poison
@@ -640,13 +640,13 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
     else:
         var it = infer(c, iterable)
         match c.tkind(it):
-            case .LIST | .MAP:
+            case .List | .Map:
                 elem = c.arg(it, 0)
-            case .STRING | .LITERAL:
+            case .String | .Literal:
                 elem = c.string_
-            case .BYTES:
+            case .Bytes:
                 elem = c.int_
-            case .ANY:
+            case .Any:
                 elem = it
             case _:
                 c.error(iterable, t"{kind}(...) ranges over a list, string, bytes or map, but this is {c.text(it)}")
@@ -669,7 +669,7 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
         case _:
             if c.is_any(bt):
                 return bt
-            if c.tkind(bt) == .QERR:
+            if c.tkind(bt) == .Qerr:
                 return c.qerr_
             if c.is_integer(bt):
                 return c.int_
@@ -711,7 +711,7 @@ def set_scalar(mut c: Checker, e: Int) -> Int:
     if is_call:
         return scalar if c.has_set_constructor(scalar, member) else NO_TYPE
     var constant = c.type_constant(scalar, member)
-    return scalar if constant >= 0 and c.tkind(constant) == .SET else NO_TYPE
+    return scalar if constant >= 0 and c.tkind(constant) == .Set else NO_TYPE
 
 
 def _find_set_scalar(mut c: Checker, n: Int) -> Int:
@@ -746,7 +746,7 @@ def set_iterable(mut c: Checker, e: Int) -> Int:
     c.ctx.in_partition_set = True
     var t = infer(c, it, c.spec.types.set_of(elem))
     c.ctx.in_partition_set = saved
-    if c.tkind(t) == .SET:
+    if c.tkind(t) == .Set:
         return c.arg(t, 0)
     if not c.is_any(t):
         c.error(it, t"{kind}(...) ranges over a set of {c.text(elem)} values, but this is {c.text(t)}")
@@ -850,7 +850,7 @@ def _call_by_attr(mut c: Checker, e: Int, f: Int) -> Int:
         if not known_type_root:
             return fail_call(c, e, f, t"unknown function {chain}")
     var vt = infer(c, base)
-    if c.tkind(vt) == .MODEL:
+    if c.tkind(vt) == .Model:
         var model = c.model_pos_of_type(vt)
         if model >= 0:
             return call_observer(c, e, vt, model, attr, False)
@@ -942,7 +942,7 @@ def bind_tvars(
 ):
     """Solves the type variables `tvars` in `pattern` from `actual`, into `names` and `types`."""
     var pk = c.tkind(pattern)
-    if pk == .TYPEVAR:
+    if pk == .TypeVar:
         var name = c.spec.types.infos[pattern].name.copy()
         if name in tvars:
             if c.is_any(actual):
@@ -959,12 +959,12 @@ def bind_tvars(
     if c.tkind(actual) != pk:
         return
     match pk:
-        case .LIST | .OPTION | .SET:
+        case .List | .Option | .Set:
             bind_tvars(c, c.arg(pattern, 0), c.arg(actual, 0), names, types, tvars)
-        case .MAP:
+        case .Map:
             bind_tvars(c, c.arg(pattern, 0), c.arg(actual, 0), names, types, tvars)
             bind_tvars(c, c.arg(pattern, 1), c.arg(actual, 1), names, types, tvars)
-        case .TUPLE | .MODEL:
+        case .Tuple | .Model:
             var pattern_args = c.spec.types.infos[pattern].args.copy()
             var actual_args = c.spec.types.infos[actual].args.copy()
             for p, x in zip(pattern_args, actual_args):
@@ -1221,7 +1221,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
                 return en
     var vt = infer(c, base)
     match c.tkind(vt):
-        case .MODEL if c.model_pos_of_type(vt) >= 0:
+        case .Model if c.model_pos_of_type(vt) >= 0:
             var model = c.model_pos_of_type(vt)
             var observer = c.observer_pos(model, attr)
             if observer < 0:
@@ -1232,22 +1232,22 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
                 return c.poison
             c.resolve(e, .Observer, attr, index=observer, owner=model)
             return c.observer_type(vt, model, observer)
-        case .RECORD:
+        case .Record:
             var field = c.spec.types.infos[vt].names.try_index(attr)
             if field is None:
                 c.error(e, t"record {c.text(vt)} has no field {attr}")
                 return c.poison
             c.resolve(e, .RecordField, attr, index=field.value(), owner=vt)
             return c.arg(vt, field.value())
-        case .QERR:
+        case .Qerr:
             if attr == "steps" or attr == "nans":
                 c.resolve(e, .QerrPart, attr)
                 return c.int_
             c.error(e, t"qerr has no part {attr}: its parts are steps and nans")
             return c.poison
-        case .ANY:
+        case .Any:
             return c.poison
-        case .TUPLE:
+        case .Tuple:
             c.error(e, "tuple fields are numbered: .0, .1, ...")
             return c.poison
         case _:
@@ -1268,8 +1268,8 @@ def type_const(mut c: Checker, e: Int, scalar: Int, attr: String) -> Int:
         c.error(e, t"{scalar_name} has no constant {attr}{available}")
         return c.poison
     c.resolve(e, .TypeConst, attr, index=scalar)
-    if c.tkind(t) == .SET and not c.ctx.in_partition_set:
-        var hint = classifier_hint(attr) if c.tkind(scalar) == .FLOAT else String()
+    if c.tkind(t) == .Set and not c.ctx.in_partition_set:
+        var hint = classifier_hint(attr) if c.tkind(scalar) == .Float else String()
         var test = String(t"; in a clause, test the value with {hint}") if hint else String()
         c.error(
             e,
@@ -1289,12 +1289,12 @@ def infer_tuple_index(mut c: Checker, e: Int) -> Int:
     except:
         pass
     match c.tkind(vt):
-        case .TUPLE:
+        case .Tuple:
             if index < len(c.spec.types.infos[vt].args):
                 return c.arg(vt, index)
             c.error(e, t".{digits} is out of range for {c.text(vt)}")
             return c.poison
-        case .ANY:
+        case .Any:
             return c.poison
         case _:
             c.error(e, t".{digits} needs a tuple, but the value is {c.text(vt)}")
@@ -1307,7 +1307,7 @@ def infer_index(mut c: Checker, e: Int) -> Int:
     var it = infer(c, index)
     var k = c.tkind(vt)
     match k:
-        case .MAP:
+        case .Map:
             var key = c.arg(vt, 0)
             var bad = c.non_eq_part(key)
             if bad >= 0:
@@ -1315,14 +1315,14 @@ def infer_index(mut c: Checker, e: Int) -> Int:
             elif c.join(it, key) < 0 and not c.is_any(it):
                 c.error(index, t"the keys of {c.text(vt)} are {c.text(key)}, not {c.text(it)}")
             return c.arg(vt, 1)
-        case .LIST | .STRING | .LITERAL | .BYTES:
+        case .List | .String | .Literal | .Bytes:
             want_int(c, index, it, "an index")
-            if k == .LIST:
+            if k == .List:
                 return c.arg(vt, 0)
-            return c.int_ if k == .BYTES else c.string_
-        case .ANY:
+            return c.int_ if k == .Bytes else c.string_
+        case .Any:
             return c.poison
-        case .TUPLE:
+        case .Tuple:
             c.error(e, "tuple fields are selected with .0, .1, ..., not [i]")
             return c.poison
         case _:
@@ -1335,11 +1335,11 @@ def infer_slice(mut c: Checker, e: Int) -> Int:
     want_int(c, c.child(e, 1), infer(c, c.child(e, 1)), "a slice bound")
     want_int(c, c.child(e, 2), infer(c, c.child(e, 2)), "a slice bound")
     match c.tkind(vt):
-        case .LIST | .BYTES:
+        case .List | .Bytes:
             return vt
-        case .STRING | .LITERAL:
+        case .String | .Literal:
             return c.string_
-        case .ANY:
+        case .Any:
             return c.poison
         case _:
             c.error(e, t"cannot slice a {c.text(vt)}")
@@ -1368,7 +1368,7 @@ def infer_list(mut c: Checker, e: Int) -> Int:
 
 
 def infer_set(mut c: Checker, e: Int, expected: Int) -> Int:
-    if not c.ctx.in_partition_set or expected < 0 or c.tkind(expected) != .SET:
+    if not c.ctx.in_partition_set or expected < 0 or c.tkind(expected) != .Set:
         for x in c.children(e):
             _ = infer(c, x)
         c.error(e, "{...} is a partition set: it only appears in a partition class of a fixed-width parameter")
@@ -1382,12 +1382,12 @@ def infer_set(mut c: Checker, e: Int, expected: Int) -> Int:
             continue
         var good: Bool
         match ek:
-            case .FLOAT:
+            case .Float:
                 good = c.is_numeric(t)
-            case .FIXED_INT:
+            case .FixedInt:
                 good = c.is_integer(t)
             case _:
-                good = c.tkind(t) == .BOOL
+                good = c.tkind(t) == .Bool
         if not good:
             var want = String("number") if c.is_numeric(elem) else c.text(elem)
             c.error(x, t"a member of a set of {c.text(elem)} values must be a {want}, not {c.text(t)}")

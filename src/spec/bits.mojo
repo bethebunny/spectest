@@ -16,11 +16,11 @@ def value_from_bits(types: ty.Types, t: Int, bits: UInt64) raises -> Value:
     """The value of fixed-width type `t` with bit pattern `bits`."""
     ref info = types.info(t)
     match info.kind:
-        case .BOOL:
+        case .Bool:
             return Value.bool(bits != 0)
-        case .FIXED_INT:
+        case .FixedInt:
             return int_from_bits(bits, info.bits, info.signed)
-        case .FLOAT:
+        case .Float:
             return Value.float(format_by_id(UInt8(info.bits)), bits)
         case _:
             raise Error(t"{types.text(t)} is not a fixed-width type")

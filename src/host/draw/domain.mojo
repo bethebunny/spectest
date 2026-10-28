@@ -14,24 +14,24 @@ def domain_size(types: Types, t: Int) -> Optional[UInt64]:
     ref info = types.info(t)
     var n: UInt64
     match info.kind:
-        case .BOOL:
+        case .Bool:
             n = 2
-        case .FIXED_INT:
+        case .FixedInt:
             if info.bits > 16:
                 return None
             n = UInt64(1) << UInt64(info.bits)
-        case .FLOAT:
+        case .Float:
             if info.bits > 2:  # the format ids of f16 and bf16
                 return None
             n = 65536
-        case .LITERAL | .ENUM:
+        case .Literal | .Enum:
             n = UInt64(len(info.names))
-        case .OPTION:
+        case .Option:
             var inner = domain_size(types, info.args[0])
             if inner is None:
                 return None
             n = inner.value() + 1
-        case .TUPLE:
+        case .Tuple:
             return product_size(types, info.args, limit=MAX_DOMAIN)
         case _:
             return None
@@ -62,11 +62,11 @@ def value_at(types: Types, t: Int, index: UInt64) raises -> Value:
         raise Error(t"gen: index out of the domain of {types.text(t)}")
     ref info = types.info(t)
     match info.kind:
-        case .BOOL | .FIXED_INT | .FLOAT:
+        case .Bool | .FixedInt | .Float:
             return value_from_bits(types, t, index)
-        case .LITERAL | .ENUM:
-            return Value.enum(info.name if info.kind == .ENUM else String(), info.names[Int(index)])
-        case .OPTION:
+        case .Literal | .Enum:
+            return Value.enum(info.name if info.kind == .Enum else String(), info.names[Int(index)])
+        case .Option:
             return Value.none() if index == 0 else Value.some(value_at(types, info.args[0], index - 1))
         case _:
             return Value.tuple(values_at(types, info.args, index))

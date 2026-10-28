@@ -18,7 +18,7 @@ def _argument(i: Int) -> String:
 def _float(c: Checker, info: CallInfo, i: Int) raises TypingError:
     var t = info.args[i].type
     var k = c.tkind(t)
-    if k == .FLOAT or k == .ANY:
+    if k == .Float or k == .Any:
         return
     var hint = String(t" ({c.text(t)} is not a float type; floats are f16, bf16, f32, f64)") if c.is_numeric(t) else String()
     raise TypingError(t"{info.name} takes a float, but {_argument(i)} is {c.text(t)}{hint}", arg=i)
@@ -38,14 +38,14 @@ def _integer(c: Checker, info: CallInfo, i: Int) raises TypingError:
     var t = info.args[i].type
     if c.is_integer(t) or c.is_any(t):
         return
-    var hint = " (use // for integer division)" if c.tkind(t) == .REAL else ""
+    var hint = " (use // for integer division)" if c.tkind(t) == .Real else ""
     raise TypingError(t"{info.name} takes an integer, but {_argument(i)} is {c.text(t)}{hint}", arg=i)
 
 
 def _bytes(c: Checker, info: CallInfo, i: Int) raises TypingError:
     var t = info.args[i].type
     var k = c.tkind(t)
-    if k == .BYTES or k == .ANY:
+    if k == .Bytes or k == .Any:
         return
     raise TypingError(t"{info.name} takes bytes, but {_argument(i)} is {c.text(t)}", arg=i)
 
@@ -53,7 +53,7 @@ def _bytes(c: Checker, info: CallInfo, i: Int) raises TypingError:
 def _model(c: Checker, info: CallInfo, i: Int) raises TypingError:
     var t = info.args[i].type
     var k = c.tkind(t)
-    if k == .MODEL or k == .ANY:
+    if k == .Model or k == .Any:
         return
     raise TypingError(t"{info.name} takes a model or interface handle, but {_argument(i)} is {c.text(t)}", arg=i)
 
@@ -62,9 +62,9 @@ def _list_elem(c: Checker, info: CallInfo, i: Int) raises TypingError -> Int:
     """The element type of a list argument."""
     var t = info.args[i].type
     match c.tkind(t):
-        case .LIST:
+        case .List:
             return c.arg(t, 0)
-        case .ANY:
+        case .Any:
             return t
         case _:
             raise TypingError(t"{info.name} takes a list, but {_argument(i)} is {c.text(t)}", arg=i)
@@ -73,9 +73,9 @@ def _list_elem(c: Checker, info: CallInfo, i: Int) raises TypingError -> Int:
 def _option_elem(c: Checker, info: CallInfo, i: Int) raises TypingError -> Int:
     var t = info.args[i].type
     match c.tkind(t):
-        case .OPTION:
+        case .Option:
             return c.arg(t, 0)
-        case .ANY:
+        case .Any:
             return t
         case _:
             raise TypingError(t"{info.name} takes an option, but {_argument(i)} is {c.text(t)}", arg=i)
@@ -88,14 +88,14 @@ def _eq_elems(c: Checker, info: CallInfo, elem: Int) raises TypingError:
     ref name = c.spec.types.infos[bad].name
     var hint: String
     match c.tkind(bad):
-        case .FLOAT:
+        case .Float:
             hint = (
                 "floats have no canonical equality; map them to bits(x) or real(x) first, "
                 "or compare whole values with eq(a, b, float=...)"
             )
-        case .MODEL:
+        case .Model:
             hint = String(t"model {name} handles have no canonical equality")
-        case .TYPEVAR:
+        case .TypeVar:
             hint = String(t"declare the type parameter as {name}: Eq")
         case _:
             hint = String(t"{c.text(bad)} has no canonical equality")
@@ -109,9 +109,9 @@ def _ordered_elems(c: Checker, info: CallInfo, elem: Int) raises TypingError:
         return
     var hint: String
     match c.tkind(elem):
-        case .FLOAT:
+        case .Float:
             hint = "floats have no total order (NaN); map them to real(x) first"
-        case .TYPEVAR:
+        case .TypeVar:
             hint = String(t"declare the type parameter as {c.spec.types.infos[elem].name}: Ord")
         case _:
             hint = String(t"{c.text(elem)} has no total order")
@@ -131,20 +131,20 @@ def _same_type(mut c: Checker, info: CallInfo) raises TypingError -> Int:
 def _type_arg(c: Checker, info: CallInfo, kinds: List[TypeKind], what: StaticString) raises TypingError -> Int:
     var t = info.targs[0]
     var k = c.tkind(t)
-    if k == .ANY or k in kinds:
+    if k == .Any or k in kinds:
         return t
     raise TypingError(t"{info.name}<{c.text(t)}>: the type argument must be {what}")
 
 
 def _float_type_arg(c: Checker, info: CallInfo) raises TypingError -> Int:
-    return _type_arg(c, info, [.FLOAT], "a float type (f16, bf16, f32, f64)")
+    return _type_arg(c, info, [.Float], "a float type (f16, bf16, f32, f64)")
 
 
 def _qe_operand(c: Checker, info: CallInfo, i: Int) raises TypingError -> Int:
     """The type of an operand of qe without a type argument, which is a float."""
     var t = info.args[i].type
     var k = c.tkind(t)
-    if k == .FLOAT or k == .ANY:
+    if k == .Float or k == .Any:
         return t
     var hint = String(
         t" ({c.text(t)} is not a float: round a real first, qe(result, round<f64>(r)), "
@@ -157,7 +157,7 @@ def _qe(mut c: Checker, info: CallInfo) raises TypingError -> Int:
     if not info.targs:
         var a = _qe_operand(c, info, 0)
         var b = _qe_operand(c, info, 1)
-        if c.tkind(a) == .FLOAT and c.tkind(b) == .FLOAT and a != b:
+        if c.tkind(a) == .Float and c.tkind(b) == .Float and a != b:
             raise TypingError(
                 t"qe compares two floats of one format, but got {c.text(a)} and {c.text(b)}: convert one first", arg=1
             )
@@ -167,7 +167,7 @@ def _qe(mut c: Checker, info: CallInfo) raises TypingError -> Int:
         var a = arg.type
         if c.is_any(a) or c.is_any(t):
             continue
-        if c.tkind(a) == .FLOAT and a != t:
+        if c.tkind(a) == .Float and a != t:
             raise TypingError(t"qe<{c.text(t)}> compares {c.text(t)} values, but {_argument(i)} is {c.text(a)}", arg=i)
         if not c.is_numeric(a):
             raise TypingError(
@@ -224,14 +224,14 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             return _qe(c, info)
         case .QerrPart:
             var k = c.tkind(first)
-            if k != .QERR and k != .ANY:
+            if k != .Qerr and k != .Any:
                 raise TypingError(
                     t"{info.name} takes a qerr (the value of qe(a, b)), but argument 1 is {c.text(first)}", arg=0
                 )
             return c.int_
         case .Cr:
             var k = c.tkind(first)
-            if k == .FLOAT or k == .ANY:
+            if k == .Float or k == .Any:
                 return first
             var hint = String(t"; for a real use mp.{info.name[byte=3:]}") if c.is_numeric(first) else String()
             raise TypingError(
@@ -254,11 +254,11 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             _real_like(c, info, 0)
             return t
         case .Wrap:
-            var t = _type_arg(c, info, [.FIXED_INT], "a fixed-width integer type (i8 ... u64)")
+            var t = _type_arg(c, info, [.FixedInt], "a fixed-width integer type (i8 ... u64)")
             _integer(c, info, 0)
             return t
         case .Fits:
-            _ = _type_arg(c, info, [.FIXED_INT, .FLOAT], "a fixed-width integer or float type")
+            _ = _type_arg(c, info, [.FixedInt, .Float], "a fixed-width integer or float type")
             _real_like(c, info, 0)
             return c.bool_
         case .LeUint:
@@ -266,7 +266,7 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             return c.int_
         case .Len:
             match c.tkind(first):
-                case .LIST | .STRING | .LITERAL | .BYTES | .MAP | .ANY:
+                case .List | .String | .Literal | .Bytes | .Map | .Any:
                     return c.int_
                 case _:
                     raise TypingError(
@@ -275,7 +275,7 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
         case .Sorted:
             var elem = _list_elem(c, info, 0)
             _ordered_elems(c, info, elem)
-            return first if c.tkind(first) == .LIST else c.spec.types.list_of(elem)
+            return first if c.tkind(first) == .List else c.spec.types.list_of(elem)
         case .IsSorted:
             _ordered_elems(c, info, _list_elem(c, info, 0))
             return c.bool_
@@ -306,9 +306,9 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             return c.int_
         case .Keys | .Values:
             match c.tkind(first):
-                case .MAP:
+                case .Map:
                     return c.spec.types.list_of(c.arg(first, 0 if sig.rule == .Keys else 1))
-                case .ANY:
+                case .Any:
                     return c.spec.types.list_of(first)
                 case _:
                     raise TypingError(t"{info.name} takes a map, but argument 1 is {c.text(first)}", arg=0)

@@ -156,14 +156,14 @@ def _judge(
     var env = Env()
     var bound = evaluate(spec, shape.bound, env, host) if shape.bound != 0 else Value.int(0)
     var members: Members
-    if type_kind(spec, iterable) == .SET:
+    if type_kind(spec, iterable) == .Set:
         members = _set_members(
             spec, ctx, iterable, limit=options.exhaustive_limit, samples=options.aggregate_samples, seed=seed
         )
     else:
         var run = Run()
         members = Members(elements(value_of(spec, iterable, env, run, host), String(kind, "(...)")))
-    var sum = qerr_zero() if type_kind(spec, shape.top) == .QERR else Value.int(0)
+    var sum = qerr_zero() if type_kind(spec, shape.top) == .Qerr else Value.int(0)
     var largest: Optional[Value] = None
     var failures = 0
     var evaluated = 0

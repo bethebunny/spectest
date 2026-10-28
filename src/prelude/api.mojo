@@ -109,7 +109,7 @@ def _type_arg(who: String, args: CallArgs) raises -> Int:
 
 def _float_type(who: String, args: CallArgs, types: ty.Types) raises -> FloatFormat:
     var t = _type_arg(who, args)
-    if types.kind(t) != .FLOAT:
+    if types.kind(t) != .Float:
         raise fail(String(t"{who}<{types.text(t)}>"), t"{types.text(t)} is not a float format")
     return format_by_id(UInt8(types.info(t).bits))
 
@@ -120,9 +120,9 @@ def _fixed_width(who: String, args: CallArgs, types: ty.Types) raises -> Value:
     ref info = types.info(t)
     ref x = args.args[0]
     match info.kind:
-        case .FIXED_INT:
+        case .FixedInt:
             return wrap(x, info.bits, info.signed) if who == "wrap" else fits_int(x, info.bits, info.signed)
-        case .FLOAT if who == "fits":
+        case .Float if who == "fits":
             return fits_float(x, format_by_id(UInt8(info.bits)))
         case _:
             var kind = "integer" if who == "wrap" else "scalar"

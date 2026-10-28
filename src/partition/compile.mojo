@@ -36,24 +36,24 @@ struct Elem(Equatable, ImplicitlyCopyable):
 
     @staticmethod
     def bool() -> Self:
-        return Self(.BOOL, 1, False, NO_FORMAT)
+        return Self(.Bool, 1, False, NO_FORMAT)
 
     @staticmethod
     def int(width: Int, *, signed: Bool) -> Self:
-        return Self(.FIXED_INT, width, signed, NO_FORMAT)
+        return Self(.FixedInt, width, signed, NO_FORMAT)
 
     @staticmethod
     def float(format: FloatFormat) -> Self:
-        return Self(.FLOAT, format.width(), True, format)
+        return Self(.Float, format.width(), True, format)
 
     def is_bool(self) -> Bool:
-        return self.kind == .BOOL
+        return self.kind == .Bool
 
     def is_int(self) -> Bool:
-        return self.kind == .FIXED_INT
+        return self.kind == .FixedInt
 
     def is_float(self) -> Bool:
-        return self.kind == .FLOAT
+        return self.kind == .Float
 
     def name(self) -> String:
         if self.is_int():
@@ -71,11 +71,11 @@ def elem_of(types: ty.Types, t: Int) -> Optional[Elem]:
     """The element type for type id `t`, or None when it is not fixed-width."""
     ref info = types.info(t)
     match info.kind:
-        case .BOOL:
+        case .Bool:
             return Elem.bool()
-        case .FIXED_INT:
+        case .FixedInt:
             return Elem.int(info.bits, signed=info.signed)
-        case .FLOAT:
+        case .Float:
             try:
                 return Elem.float(format_by_id(UInt8(info.bits)))
             except:
