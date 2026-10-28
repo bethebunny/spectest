@@ -11,7 +11,7 @@ from syntax import ast
 from syntax.ast import Diagnostic
 
 from check import types as ty
-from check.psig import PreludeSig, make_sig
+from check.psig import PreludeSig, prelude_sig
 from check.spec import Resolution, ResolutionKind, Spec
 
 
@@ -34,7 +34,15 @@ comptime FLOAT_SET_NAMES = "nan inf zero subnormal normal finite positive negati
 
 def index_of(names: List[String], name: StringSlice) -> Int:
     """The first position of `name` in `names`, or -1."""
-    for i in range(len(names)):
+    for i, n in enumerate(names):
+        if n == name:
+            return i
+    return -1
+
+
+def last_index_of(names: List[String], name: StringSlice) -> Int:
+    """The last position of `name` in `names`, or -1."""
+    for i in reversed(range(len(names))):
         if names[i] == name:
             return i
     return -1
@@ -188,10 +196,7 @@ struct Ctx(Copyable, Movable):
 
     def local_index(self, name: String) -> Int:
         """The innermost binding of `name`."""
-        for i in reversed(range(len(self.loc_names))):
-            if self.loc_names[i] == name:
-                return i
-        return -1
+        return last_index_of(self.loc_names, name)
 
 
 struct Checker:
@@ -224,9 +229,6 @@ struct Checker:
     var def_edges: List[List[Int]]
     var def_nodes: List[Int]
     var cur_def: Int
-    var sig_msg: String
-    var sig_arg: Int
-    var sig_key: String
     var unit: Int
     var bool_: Int
     var int_: Int
@@ -260,12 +262,9 @@ struct Checker:
         self.def_edges = []
         self.def_nodes = []
         self.cur_def = -1
-        self.sig_msg = String()
-        self.sig_arg = -1
-        self.sig_key = String()
         for k, word in enumerate(materialize[NAMES]()):
             self.prelude_ids[String(word)] = k
-            self.prelude_sigs.append(make_sig(String(word)))
+            self.prelude_sigs.append(prelude_sig(String(word)))
         self.poison = self.spec.types.intern(ty.TypeInfo(.ANY, name="poison"))
         self.unit = self.spec.types.unit()
         self.bool_ = self.spec.types.bool_()

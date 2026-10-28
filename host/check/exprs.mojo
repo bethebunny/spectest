@@ -11,15 +11,10 @@ from numeric.literal import is_integer_literal
 from syntax import ast
 
 from check import types as ty
-from check.psig import CallInfo
-from check.sigs import type_prelude
+from check.psig import Arg, CallInfo, TypingError
+from check.sigs import prelude_type
 from check.spec import Param, ResolutionKind
-from check.state import (
-    Checker,
-    NO_TYPE,
-    K_PARTITION_SET,
-    classifier_hint,
-)
+from check.state import Checker, K_PARTITION_SET, NO_TYPE, classifier_hint, last_index_of
 from check.typesyn import ensure_const, resolve_type
 
 
@@ -896,25 +891,21 @@ def set_iterable(mut c: Checker, e: Int) -> Int:
 # -- calls ----------------------------------------------------------------------
 
 
-def infer_args(mut c: Checker, e: Int, mut info: CallInfo):
-    var kids = c.children(e)
-    for i in range(2, len(kids)):
-        var arg = kids[i]
-        var expr = c.child(arg, 0)
-        var t = infer(c, expr)
-        var key = c.text_of(arg)
-        if key == "":
-            info.args.append(t)
-            info.nodes.append(expr)
+def call_info(mut c: Checker, e: Int, var name: String) -> CallInfo:
+    """The call `e` with its arguments typed."""
+    var info = CallInfo(name^)
+    for node in c.call_args(e):
+        var expr = c.child(node, 0)
+        var arg = Arg(c.text_of(node), infer(c, expr), expr)
+        if arg.key:
+            info.keywords.append(arg^)
         else:
-            info.kw_keys.append(key^)
-            info.kw_types.append(t)
-            info.kw_nodes.append(expr)
+            info.args.append(arg^)
+    return info^
 
 
 def fail_call(mut c: Checker, e: Int, node: Int, message: Some[Writable]) -> Int:
-    var info = CallInfo(String())
-    infer_args(c, e, info)
+    _ = call_info(c, e, "")
     poison_subtree(c, c.child(e, 0))
     var text = String(message)
     if text != "":
@@ -1021,10 +1012,9 @@ def infer_call(mut c: Checker, e: Int) -> Int:
 def call_extern(mut c: Checker, e: Int, chain: String) -> Int:
     """A call of a qualified callable the spec doesn't declare, in an observer's
     reading expression: it takes the observer's declared type."""
-    var info = CallInfo(chain)
-    infer_args(c, e, info)
+    var info = call_info(c, e, chain)
     set_call_res(c, e, .EXTERN, 0, -1, chain)
-    c.set_type(c.child(e, 0), c.spec.types.fn_(info.args, List[String](), c.ctx.extern_result))
+    c.set_type(c.child(e, 0), c.spec.types.fn_(info.arg_types(), [], c.ctx.extern_result))
     return c.ctx.extern_result
 
 
@@ -1042,77 +1032,54 @@ def call_old(mut c: Checker, e: Int) -> Int:
     var saved_scope = c.ctx.old_scope
     c.ctx.in_old = True
     c.ctx.old_scope = len(c.ctx.loc_names)
-    var info = CallInfo(String())
-    infer_args(c, e, info)
+    var info = call_info(c, e, "")
     c.ctx.in_old = saved_in
     c.ctx.old_scope = saved_scope
     set_call_res(c, e, .OLD, 0, -1, "old")
-    var t = info.args[0] if len(info.args) == 1 else c.poison
-    c.set_type(f, c.spec.types.fn_([t], List[String](), t))
+    var t = info.args[0].type if len(info.args) == 1 else c.poison
+    c.set_type(f, c.spec.types.fn_([t], [], t))
     return t
 
 
-struct Bound(Copyable, Movable):
-    var names: List[String]
-    var ptypes: List[Int]
-    var atypes: List[Int]
-    var nodes: List[Int]
+@fieldwise_init
+struct Binding(Copyable):
+    """An argument of a call bound to its parameter."""
 
-    def __init__(out self):
-        self.names = List[String]()
-        self.ptypes = List[Int]()
-        self.atypes = List[Int]()
-        self.nodes = List[Int]()
+    var param: String
+    var param_type: Int
+    var type: Int
+    var node: Int
 
 
-def bind_args(
-    mut c: Checker,
-    e: Int,
-    what: String,
-    params: List[Param],
-    ptypes: List[Int],
-    info: CallInfo,
-    mut out: Bound,
-) -> Bool:
+def bindings(
+    mut c: Checker, e: Int, what: String, params: List[Param], param_types: List[Int], info: CallInfo
+) -> Optional[List[Binding]]:
+    """The arguments of call `e` bound to `params` in order, or None after an error."""
     if len(info.args) > len(params):
         c.error(e, t"{what} takes {len(params)} argument(s), but {len(info.args)} are given")
-        return False
-    var given = List[Bool](length=len(params), fill=False)
-    var slot_type = List[Int](length=len(params), fill=0)
-    var slot_node = List[Int](length=len(params), fill=0)
-    for i in range(len(info.args)):
-        given[i] = True
-        slot_type[i] = info.args[i]
-        slot_node[i] = info.nodes[i]
-    for j in range(len(info.kw_keys)):
-        var idx = -1
-        for i in range(len(params)):
-            if params[i].name == info.kw_keys[j]:
-                idx = i
-        if idx < 0:
-            c.error(info.kw_nodes[j], t"{what} has no parameter named {info.kw_keys[j]}")
-            return False
-        if given[idx]:
-            c.error(info.kw_nodes[j], t"argument {info.kw_keys[j]} of {what} is given twice")
-            return False
-        given[idx] = True
-        slot_type[idx] = info.kw_types[j]
-        slot_node[idx] = info.kw_nodes[j]
-    var missing = String()
-    for i in range(len(params)):
-        if not given[i] and params[i].default == 0:
-            missing += ", " if missing else ""
-            missing += params[i].name
-    if missing != "":
-        c.error(e, t"{what} needs argument {missing}")
-        return False
-    for i in range(len(params)):
-        if given[i]:
-            out.names.append(params[i].name)
-            out.ptypes.append(ptypes[i])
-            out.atypes.append(slot_type[i])
-            out.nodes.append(slot_node[i])
-    return True
+        return None
+    var slots = [Optional(a.copy()) for a in info.args] + List[Optional[Arg]](
+        length=len(params) - len(info.args), fill=None
+    )
+    var names = [p.name.copy() for p in params]
+    for kw in info.keywords:
+        var at = last_index_of(names, kw.key)
+        if at < 0:
+            c.error(kw.node, t"{what} has no parameter named {kw.key}")
+            return None
+        if slots[at] is not None:
+            c.error(kw.node, t"argument {kw.key} of {what} is given twice")
+            return None
+        slots[at] = kw.copy()
+    var missing = [p.name.copy() for p, slot in zip(params, slots) if slot is None and p.default == 0]
+    if missing:
+        c.error(e, t"{what} needs argument {', '.join(missing)}")
+        return None
+    var out: List[Binding] = []
+    for p, t, slot in zip(params, param_types, slots):
+        if case .Some(arg) = slot:
+            out.append(Binding(p.name.copy(), t, arg.type, arg.node))
+    return out^
 
 
 def bind_tvars(
@@ -1189,13 +1156,13 @@ def check_declared_call(
     var ptypes = List[Int]()
     for p in params:
         ptypes.append(p.type)
-    var bound = Bound()
-    if not bind_args(c, e, name, params, ptypes, info, bound):
+    var bound = bindings(c, e, name, params, ptypes, info)
+    if bound is None:
         return c.poison
     var sn = List[String]()
     var st = List[Int]()
-    for i in range(len(bound.names)):
-        bind_tvars(c, bound.ptypes[i], bound.atypes[i], sn, st, tparams)
+    for b in bound.value():
+        bind_tvars(c, b.param_type, b.type, sn, st, tparams)
     var ok = True
     for i in range(len(sn)):
         var bi = -1
@@ -1205,14 +1172,10 @@ def check_declared_call(
         if bi >= 0 and not c.satisfies(st[i], bounds[bi]):
             c.error(e, t"{name}: {c.text(st[i])} does not satisfy {tparams[bi]}: {bounds[bi]}")
             ok = False
-    for i in range(len(bound.names)):
-        var target = c.spec.types.substitute(bound.ptypes[i], sn, st)
-        if not assignable(c, bound.atypes[i], target, bound.nodes[i]):
-            c.error(
-                bound.nodes[i],
-                t"argument {bound.names[i]} of {name} is a {c.text(target)}, but this is "
-                t"{c.text(bound.atypes[i])}",
-            )
+    for b in bound.value():
+        var target = c.spec.types.substitute(b.param_type, sn, st)
+        if not assignable(c, b.type, target, b.node):
+            c.error(b.node, t"argument {b.param} of {name} is a {c.text(target)}, but this is {c.text(b.type)}")
             ok = False
     var un = List[String]()
     var ut = List[Int]()
@@ -1230,8 +1193,7 @@ def check_declared_call(
 
 def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
     var f = c.child(e, 0)
-    var info = CallInfo(name)
-    infer_args(c, e, info)
+    var info = call_info(c, e, name)
     var fn_owner = c.spec.fns[pos].owner
     set_call_res(c, e, .SPEC_FN, pos, fn_owner, name)
     c.set_type(f, _fn_type(c, c.spec.fns[pos].params.copy(), c.spec.fns[pos].result))
@@ -1267,8 +1229,7 @@ def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
 
 def call_def(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
     var f = c.child(e, 0)
-    var info = CallInfo(name)
-    infer_args(c, e, info)
+    var info = call_info(c, e, name)
     set_call_res(c, e, .DEF, pos, -1, name)
     if c.cur_def >= 0:
         c.def_edges[c.cur_def].append(pos)
@@ -1292,47 +1253,49 @@ def _plural(n: Int) -> String:
 def call_prelude(mut c: Checker, e: Int, name: String, pid: Int) -> Int:
     var f = c.child(e, 0)
     var sig = c.prelude_sigs[pid].copy()
-    var info = CallInfo(name)
-    infer_args(c, e, info)
+    var info = call_info(c, e, name)
     set_call_res(c, e, .PRELUDE, pid, -1, name)
     for tn in c.children(c.child(e, 1)):
         info.targs.append(resolve_type(c, tn))
     var ok = True
-    var ntargs = len(info.targs)
-    if sig.type_args != ntargs and not (sig.optional_type_args and ntargs == 0):
-        if sig.type_args > 0 and ntargs == 0:
+    var targs = len(info.targs)
+    if sig.type_args != targs and not (sig.optional_type_args and targs == 0):
+        if sig.type_args > 0 and targs == 0:
             c.error(e, t"{name} needs a type argument: {sig.shape}")
         elif sig.type_args == 0:
             c.error(e, t"{name} takes no type arguments: {sig.shape}")
         else:
             c.error(e, t"{name} takes {sig.type_args} type argument(s): {sig.shape}")
         ok = False
-    if len(info.args) < sig.lo or len(info.args) > sig.hi:
-        c.error(e, t"{name} takes {sig.lo} argument{_plural(sig.lo)}: {sig.shape}")
+    if len(info.args) != sig.arity:
+        c.error(e, t"{name} takes {sig.arity} argument{_plural(sig.arity)}: {sig.shape}")
         ok = False
-    for j in range(len(info.kw_keys)):
-        if not (sig.has_kwargs and (info.kw_keys[j] == "float" or info.kw_keys[j] == "order")):
-            c.error(
-                info.kw_nodes[j],
-                t"{name} has no argument named {info.kw_keys[j]}: {sig.shape}",
-            )
+    for kw in info.keywords:
+        if not (sig.has_kwargs and (kw.key == "float" or kw.key == "order")):
+            c.error(kw.node, t"{name} has no argument named {kw.key}: {sig.shape}")
             ok = False
     if not ok:
         c.set_type(f, c.poison)
         return c.poison
-    var t = type_prelude(c, sig, info)
-    if c.sig_msg != "":
-        var where = e
-        if c.sig_arg >= 0 and c.sig_arg < len(info.nodes):
-            where = info.nodes[c.sig_arg]
-        elif c.sig_key != "":
-            for j in range(len(info.kw_keys)):
-                if info.kw_keys[j] == c.sig_key:
-                    where = info.kw_nodes[j]
-        c.error(where, c.sig_msg.copy())
+    var t: Int
+    try:
+        t = prelude_type(c, sig, info)
+    except err:
+        c.error(_culprit(info, err, e), err.message)
         t = c.poison
-    c.set_type(f, c.spec.types.fn_(info.args, List[String](), t))
+    c.set_type(f, c.spec.types.fn_(info.arg_types(), [], t))
     return t
+
+
+def _culprit(info: CallInfo, err: TypingError, call: Int) -> Int:
+    """The node a typing error points at: its argument, or else the call."""
+    if 0 <= err.arg < len(info.args):
+        return info.args[err.arg].node
+    var at = call
+    for kw in info.keywords:
+        if err.key and kw.key == err.key:
+            at = kw.node
+    return at
 
 
 def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
@@ -1412,8 +1375,7 @@ def call_observer(
             f,
             t"{mname} has no observer {name} (its observers: {c.observer_names(model)})",
         )
-    var info = CallInfo(name)
-    infer_args(c, e, info)
+    var info = call_info(c, e, name)
     var kind = ResolutionKind.FIELD if is_field else ResolutionKind.OBSERVER
     set_call_res(c, e, kind, oi, model, name)
     var params = c.spec.models[model].observers[oi].params.copy()
@@ -1439,16 +1401,14 @@ def call_observer(
             String(name, " is a field of ", mname, " and takes no arguments: write ", ("" if is_field else "x."), name),
         )
         return c.poison
-    var bound = Bound()
-    if not bind_args(c, e, mname + "." + name, params, ptypes, info, bound):
+    var bound = bindings(c, e, mname + "." + name, params, ptypes, info)
+    if bound is None:
         return c.poison
     var ok = True
-    for i in range(len(bound.names)):
-        if not assignable(c, bound.atypes[i], bound.ptypes[i], bound.nodes[i]):
+    for b in bound.value():
+        if not assignable(c, b.type, b.param_type, b.node):
             c.error(
-                bound.nodes[i],
-                t"argument {bound.names[i]} of {mname}.{name} is a {c.text(bound.ptypes[i])}, but this is "
-                t"{c.text(bound.atypes[i])}",
+                b.node, t"argument {b.param} of {mname}.{name} is a {c.text(b.param_type)}, but this is {c.text(b.type)}"
             )
             ok = False
     return result if ok else c.poison

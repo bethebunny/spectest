@@ -1,196 +1,201 @@
-"""The system prelude's signature records: arity, type arguments, keyword arguments,
-the human-readable shape used in messages, and which typing rule applies (see sigs.mojo).
+"""The system prelude's signatures: arity, type arguments, keyword arguments, the shape
+messages show, and the typing rule that applies (see sigs.mojo). Also what a rule sees
+of a call, and how it rejects one.
 """
 
 
-# Typing rules, by family.
-comptime T_FLOAT_PRED = 0
-comptime T_BITS = 1
-comptime T_SAME_FLOAT = 2
-comptime T_ULP = 3
-comptime T_QE = 4
-comptime T_QERR_PART = 5
-comptime T_SAME = 6
-comptime T_IEEE_EQ = 7
-comptime T_REAL = 8
-comptime T_ROUND = 9
-comptime T_WRAP = 10
-comptime T_FITS = 11
-comptime T_MP = 12
-comptime T_CR = 13
-comptime T_LE_UINT = 14
-comptime T_LEN = 15
-comptime T_SORTED = 16
-comptime T_IS_SORTED = 17
-comptime T_TWO_LISTS = 18
-comptime T_DISTINCT = 19
-comptime T_INDEX_OF = 20
-comptime T_KEYS = 21
-comptime T_VALUES = 22
-comptime T_RANGE = 23
-comptime T_SOME = 24
-comptime T_OPT_PRED = 25
-comptime T_UNWRAP = 26
-comptime T_VALID_UTF8 = 27
-comptime T_CODEPOINTS = 28
-comptime T_FRESH = 29
-comptime T_TWO_MODELS = 30
-comptime T_EQ = 31
-comptime T_BIT_LENGTH = 32
-comptime T_FROM_CODEPOINTS = 33
+__enum Rule(Equatable, ImplicitlyCopyable):
+    """A typing rule, shared by the prelude functions of a family."""
+
+    case FLOAT_PRED
+    case BITS
+    case SAME_FLOAT
+    case ULP
+    case QE
+    case QERR_PART
+    case SAME
+    case IEEE_EQ
+    case REAL
+    case ROUND
+    case WRAP
+    case FITS
+    case MP
+    case CR
+    case LE_UINT
+    case LEN
+    case SORTED
+    case IS_SORTED
+    case TWO_LISTS
+    case DISTINCT
+    case INDEX_OF
+    case KEYS
+    case VALUES
+    case RANGE
+    case SOME
+    case OPT_PRED
+    case UNWRAP
+    case VALID_UTF8
+    case CODEPOINTS
+    case FRESH
+    case TWO_MODELS
+    case EQ
+    case BIT_LENGTH
+    case FROM_CODEPOINTS
+
+    def __eq__(self, other: Self) -> Bool:
+        return self._get_enum_discriminant() == other._get_enum_discriminant()
 
 
-struct PreludeSig(Copyable, Movable):
-    var name: String
+struct PreludeSig(Copyable):
     var shape: String
-    var lo: Int
-    var hi: Int
+    """The signature as messages show it, eg. `sorted(xs: list<A>) -> list<A>`."""
+    var arity: Int
+    var rule: Rule
     var type_args: Int
     var optional_type_args: Bool
     var has_kwargs: Bool
-    var typer: Int
 
     def __init__(
         out self,
-        name: String,
-        shape: String,
+        shape: Some[Writable],
         arity: Int,
-        typer: Int,
+        rule: Rule,
+        *,
         type_args: Int = 0,
         optional_type_args: Bool = False,
         has_kwargs: Bool = False,
     ):
-        self.name = name
-        self.shape = shape
-        self.lo = arity
-        self.hi = arity
+        self.shape = String(shape)
+        self.arity = arity
+        self.rule = rule
         self.type_args = type_args
         self.optional_type_args = optional_type_args
         self.has_kwargs = has_kwargs
-        self.typer = typer
 
 
-def _starts(name: String, prefix: StringSlice) -> Bool:
-    return name.startswith(prefix)
+def prelude_sig(name: String) -> PreludeSig:
+    match name:
+        case "is_nan" | "is_inf" | "is_finite" | "is_zero" | "is_subnormal" | "signbit":
+            return PreludeSig(t"{name}(x: T) -> bool", 1, .FLOAT_PRED)
+        case "bits":
+            return PreludeSig("bits(x: T) -> int", 1, .BITS)
+        case "next_up" | "next_down":
+            return PreludeSig(t"{name}(x: T) -> T", 1, .SAME_FLOAT)
+        case "ulp":
+            return PreludeSig("ulp<T>(r: real) -> real", 1, .ULP, type_args=1)
+        case "qe":
+            return PreludeSig(
+                "qe(a: T, b: T) -> qerr (or qe<T>(a, b))", 2, .QE, type_args=1, optional_type_args=True
+            )
+        case "steps" | "nans":
+            return PreludeSig(t"{name}(e: qerr) -> int", 1, .QERR_PART)
+        case "same":
+            return PreludeSig("same(a: A, b: A) -> bool", 2, .SAME)
+        case "ieee_eq":
+            return PreludeSig("ieee_eq(a: T, b: T) -> bool", 2, .IEEE_EQ)
+        case "real":
+            return PreludeSig("real(x: real) -> real", 1, .REAL)
+        case "round":
+            return PreludeSig("round<T>(r: real) -> T", 1, .ROUND, type_args=1)
+        case "wrap":
+            return PreludeSig("wrap<I>(n: int) -> I", 1, .WRAP, type_args=1)
+        case "fits":
+            return PreludeSig("fits<I>(n: real) -> bool", 1, .FITS, type_args=1)
+        case _ if name.startswith("mp."):
+            return PreludeSig(t"{name}(x: real) -> real", 1, .MP)
+        case _ if name.startswith("cr."):
+            return PreludeSig(t"{name}(x: T) -> T", 1, .CR)
+        case "le_uint":
+            return PreludeSig("le_uint(b: bytes) -> int", 1, .LE_UINT)
+        case "len":
+            return PreludeSig("len(x: list<A> | string | bytes | map<K, V>) -> int", 1, .LEN)
+        case "sorted":
+            return PreludeSig("sorted(xs: list<A>) -> list<A>", 1, .SORTED)
+        case "is_sorted":
+            return PreludeSig("is_sorted(xs: list<A>) -> bool", 1, .IS_SORTED)
+        case "is_permutation" | "is_subsequence":
+            return PreludeSig(t"{name}(a: list<A>, b: list<A>) -> bool", 2, .TWO_LISTS)
+        case "distinct":
+            return PreludeSig("distinct(xs: list<A>) -> bool", 1, .DISTINCT)
+        case "index_of":
+            return PreludeSig("index_of(xs: list<A>, x: A) -> int", 2, .INDEX_OF)
+        case "keys":
+            return PreludeSig("keys(m: map<K, V>) -> list<K>", 1, .KEYS)
+        case "values":
+            return PreludeSig("values(m: map<K, V>) -> list<V>", 1, .VALUES)
+        case "range":
+            return PreludeSig("range(a: int, b: int) -> list<int>", 2, .RANGE)
+        case "some":
+            return PreludeSig("some(x: A) -> option<A>", 1, .SOME)
+        case "is_some" | "is_none":
+            return PreludeSig(t"{name}(o: option<A>) -> bool", 1, .OPT_PRED)
+        case "unwrap":
+            return PreludeSig("unwrap(o: option<A>) -> A", 1, .UNWRAP)
+        case "valid_utf8":
+            return PreludeSig("valid_utf8(b: bytes) -> bool", 1, .VALID_UTF8)
+        case "codepoints":
+            return PreludeSig("codepoints(s: string) -> list<int>", 1, .CODEPOINTS)
+        case "fresh":
+            return PreludeSig("fresh(h: model) -> bool", 1, .FRESH)
+        case "same_object" | "shares_memory":
+            return PreludeSig(t"{name}(a: model, b: model) -> bool", 2, .TWO_MODELS)
+        case "eq":
+            return PreludeSig(
+                'eq(a: A, b: A, float="bits"|"ieee"|"nan_any", order="exact"|"ignore") -> bool',
+                2,
+                .EQ,
+                has_kwargs=True,
+            )
+        case "bit_length":
+            return PreludeSig("bit_length(n: int) -> int", 1, .BIT_LENGTH)
+        case _:
+            return PreludeSig("from_codepoints(xs: list<int>) -> string", 1, .FROM_CODEPOINTS)
 
 
-def make_sig(name: String) -> PreludeSig:
-    if (
-        name == "is_nan"
-        or name == "is_inf"
-        or name == "is_finite"
-        or name == "is_zero"
-        or name == "is_subnormal"
-        or name == "signbit"
-    ):
-        return PreludeSig(name, name + "(x: T) -> bool", 1, T_FLOAT_PRED)
-    if name == "bits":
-        return PreludeSig(name, "bits(x: T) -> int", 1, T_BITS)
-    if name == "next_up" or name == "next_down":
-        return PreludeSig(name, name + "(x: T) -> T", 1, T_SAME_FLOAT)
-    if name == "ulp":
-        return PreludeSig(name, "ulp<T>(r: real) -> real", 1, T_ULP, type_args=1)
-    if name == "qe":
-        return PreludeSig(
-            name,
-            "qe(a: T, b: T) -> qerr (or qe<T>(a, b))",
-            2,
-            T_QE,
-            type_args=1,
-            optional_type_args=True,
-        )
-    if name == "steps" or name == "nans":
-        return PreludeSig(name, name + "(e: qerr) -> int", 1, T_QERR_PART)
-    if name == "same":
-        return PreludeSig(name, "same(a: A, b: A) -> bool", 2, T_SAME)
-    if name == "ieee_eq":
-        return PreludeSig(name, "ieee_eq(a: T, b: T) -> bool", 2, T_IEEE_EQ)
-    if name == "real":
-        return PreludeSig(name, "real(x: real) -> real", 1, T_REAL)
-    if name == "round":
-        return PreludeSig(name, "round<T>(r: real) -> T", 1, T_ROUND, type_args=1)
-    if name == "wrap":
-        return PreludeSig(name, "wrap<I>(n: int) -> I", 1, T_WRAP, type_args=1)
-    if name == "fits":
-        return PreludeSig(name, "fits<I>(n: real) -> bool", 1, T_FITS, type_args=1)
-    if _starts(name, "mp."):
-        return PreludeSig(name, name + "(x: real) -> real", 1, T_MP)
-    if _starts(name, "cr."):
-        return PreludeSig(name, name + "(x: T) -> T", 1, T_CR)
-    if name == "le_uint":
-        return PreludeSig(name, "le_uint(b: bytes) -> int", 1, T_LE_UINT)
-    if name == "len":
-        return PreludeSig(
-            name, "len(x: list<A> | string | bytes | map<K, V>) -> int", 1, T_LEN
-        )
-    if name == "sorted":
-        return PreludeSig(name, "sorted(xs: list<A>) -> list<A>", 1, T_SORTED)
-    if name == "is_sorted":
-        return PreludeSig(name, "is_sorted(xs: list<A>) -> bool", 1, T_IS_SORTED)
-    if name == "is_permutation" or name == "is_subsequence":
-        return PreludeSig(
-            name, name + "(a: list<A>, b: list<A>) -> bool", 2, T_TWO_LISTS
-        )
-    if name == "distinct":
-        return PreludeSig(name, "distinct(xs: list<A>) -> bool", 1, T_DISTINCT)
-    if name == "index_of":
-        return PreludeSig(name, "index_of(xs: list<A>, x: A) -> int", 2, T_INDEX_OF)
-    if name == "keys":
-        return PreludeSig(name, "keys(m: map<K, V>) -> list<K>", 1, T_KEYS)
-    if name == "values":
-        return PreludeSig(name, "values(m: map<K, V>) -> list<V>", 1, T_VALUES)
-    if name == "range":
-        return PreludeSig(name, "range(a: int, b: int) -> list<int>", 2, T_RANGE)
-    if name == "some":
-        return PreludeSig(name, "some(x: A) -> option<A>", 1, T_SOME)
-    if name == "is_some" or name == "is_none":
-        return PreludeSig(name, name + "(o: option<A>) -> bool", 1, T_OPT_PRED)
-    if name == "unwrap":
-        return PreludeSig(name, "unwrap(o: option<A>) -> A", 1, T_UNWRAP)
-    if name == "valid_utf8":
-        return PreludeSig(name, "valid_utf8(b: bytes) -> bool", 1, T_VALID_UTF8)
-    if name == "codepoints":
-        return PreludeSig(name, "codepoints(s: string) -> list<int>", 1, T_CODEPOINTS)
-    if name == "fresh":
-        return PreludeSig(name, "fresh(h: model) -> bool", 1, T_FRESH)
-    if name == "same_object" or name == "shares_memory":
-        return PreludeSig(
-            name, name + "(a: model, b: model) -> bool", 2, T_TWO_MODELS
-        )
-    if name == "eq":
-        return PreludeSig(
-            name,
-            'eq(a: A, b: A, float="bits"|"ieee"|"nan_any", order="exact"|"ignore")'
-            " -> bool",
-            2,
-            T_EQ,
-            has_kwargs=True,
-        )
-    if name == "bit_length":
-        return PreludeSig(name, "bit_length(n: int) -> int", 1, T_BIT_LENGTH)
-    return PreludeSig(
-        name, "from_codepoints(xs: list<int>) -> string", 1, T_FROM_CODEPOINTS
-    )
+@fieldwise_init
+struct Arg(Copyable):
+    """A typed argument of a call."""
+
+    var key: String
+    """Its keyword, or "" for a positional argument."""
+    var type: Int
+    var node: Int
+    """Its expression."""
 
 
-struct CallInfo(Copyable, Movable):
+struct CallInfo(Copyable):
     """What a typing rule sees of one call."""
 
     var name: String
-    var args: List[Int]
-    var nodes: List[Int]
-    var kw_keys: List[String]
-    var kw_types: List[Int]
-    var kw_nodes: List[Int]
+    var args: List[Arg]
+    """The positional arguments, in order."""
+    var keywords: List[Arg]
     var targs: List[Int]
+    """The explicit type arguments, `T` of `round<T>(r)`."""
 
-    def __init__(out self, name: String):
-        self.name = name
-        self.args = List[Int]()
-        self.nodes = List[Int]()
-        self.kw_keys = List[String]()
-        self.kw_types = List[Int]()
-        self.kw_nodes = List[Int]()
-        self.targs = List[Int]()
+    def __init__(out self, var name: String):
+        self.name = name^
+        self.args = []
+        self.keywords = []
+        self.targs = []
+
+    def arg_types(self) -> List[Int]:
+        return [a.type for a in self.args]
 
 
+struct TypingError(Copyable, Writable):
+    """A call that its typing rule rejects."""
+
+    var message: String
+    var arg: Int
+    """The position of the argument at fault, or -1."""
+    var key: String
+    """The keyword argument at fault, or ""."""
+
+    def __init__(out self, message: Some[Writable], *, arg: Int = -1, var key: String = ""):
+        self.message = String(message)
+        self.arg = arg
+        self.key = key^
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(self.message)

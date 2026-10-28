@@ -1,274 +1,194 @@
 """Typing of the system prelude's functions.
 
-`make_sig` gives the signature record of one prelude name (arity, type arguments,
-keyword arguments, a human-readable shape for messages and the typing rule), and
-`type_prelude` applies the rule to a call whose arguments are already typed. A rule
-that finds the call ill-typed sets `Checker.sig_msg` (and `sig_arg` or `sig_key` for
-the argument to point at) and returns the poison type.
+`prelude_type` applies a prelude function's typing rule (see psig.mojo) to a call whose
+arguments are already typed. A rule that finds the call ill-typed raises a
+`TypingError` that names the argument to point at.
 """
 
-from syntax import ast
-
 from check import types as ty
-from check.psig import (
-    CallInfo,
-    PreludeSig,
-    T_FLOAT_PRED,
-    T_BITS,
-    T_SAME_FLOAT,
-    T_ULP,
-    T_QE,
-    T_QERR_PART,
-    T_SAME,
-    T_IEEE_EQ,
-    T_REAL,
-    T_ROUND,
-    T_WRAP,
-    T_FITS,
-    T_MP,
-    T_CR,
-    T_LE_UINT,
-    T_LEN,
-    T_SORTED,
-    T_IS_SORTED,
-    T_TWO_LISTS,
-    T_DISTINCT,
-    T_INDEX_OF,
-    T_KEYS,
-    T_VALUES,
-    T_RANGE,
-    T_SOME,
-    T_OPT_PRED,
-    T_UNWRAP,
-    T_VALID_UTF8,
-    T_CODEPOINTS,
-    T_FRESH,
-    T_TWO_MODELS,
-    T_BIT_LENGTH,
-    T_FROM_CODEPOINTS,
-)
-from check.state import Checker, NO_TYPE
+from check.psig import CallInfo, PreludeSig, TypingError
+from check.state import Checker
 
 
-def _ord(i: Int) -> String:
-    return "argument " + String(i + 1)
+def _argument(i: Int) -> String:
+    return String(t"argument {i + 1}")
 
 
-def _fail(mut c: Checker, message: Some[Writable], arg: Int = -1, key: String = "") -> Int:
-    c.sig_msg = String(message)
-    c.sig_arg = arg
-    c.sig_key = key
-    return c.poison
-
-
-def _float(mut c: Checker, info: CallInfo, i: Int) -> Bool:
-    var t = info.args[i]
+def _float(c: Checker, info: CallInfo, i: Int) raises TypingError:
+    var t = info.args[i].type
     var k = c.tkind(t)
     if k == .FLOAT or k == .ANY:
-        return True
-    var hint = String()
-    if c.is_numeric(t):
-        hint = (
-            " (" + c.text(t) + " is not a float type; floats are f16, bf16, f32, f64)"
-        )
-    _ = _fail(
-        c,
-        info.name + " takes a float, but " + _ord(i) + " is " + c.text(t) + hint,
-        i,
-    )
-    return False
+        return
+    var hint = String(t" ({c.text(t)} is not a float type; floats are f16, bf16, f32, f64)") if c.is_numeric(t) else String()
+    raise TypingError(t"{info.name} takes a float, but {_argument(i)} is {c.text(t)}{hint}", arg=i)
 
 
-def _real_like(mut c: Checker, info: CallInfo, i: Int) -> Bool:
-    var t = info.args[i]
+def _real_like(c: Checker, info: CallInfo, i: Int) raises TypingError:
+    var t = info.args[i].type
     if c.is_numeric(t) or c.is_any(t):
-        return True
-    _ = _fail(
-        c,
-        info.name
-        + " takes a number (int, fixed-width int, float or real), but "
-        + _ord(i)
-        + " is "
-        + c.text(t),
-        i,
+        return
+    raise TypingError(
+        t"{info.name} takes a number (int, fixed-width int, float or real), but {_argument(i)} is {c.text(t)}",
+        arg=i,
     )
-    return False
 
 
-def _integer(mut c: Checker, info: CallInfo, i: Int) -> Bool:
-    var t = info.args[i]
+def _integer(c: Checker, info: CallInfo, i: Int) raises TypingError:
+    var t = info.args[i].type
     if c.is_integer(t) or c.is_any(t):
-        return True
-    var hint = String()
-    if c.tkind(t) == .REAL:
-        hint = " (use // for integer division)"
-    _ = _fail(
-        c,
-        info.name + " takes an integer, but " + _ord(i) + " is " + c.text(t) + hint,
-        i,
-    )
-    return False
+        return
+    var hint = " (use // for integer division)" if c.tkind(t) == .REAL else ""
+    raise TypingError(t"{info.name} takes an integer, but {_argument(i)} is {c.text(t)}{hint}", arg=i)
 
 
-def _list(mut c: Checker, info: CallInfo, i: Int) -> Int:
-    """The element type of a list argument; -1 (with the failure recorded) otherwise."""
-    var t = info.args[i]
-    var k = c.tkind(t)
-    if k == .LIST:
-        return c.arg(t, 0)
-    if k == .ANY:
-        return t
-    _ = _fail(
-        c, info.name + " takes a list, but " + _ord(i) + " is " + c.text(t), i
-    )
-    return NO_TYPE
-
-
-def _option(mut c: Checker, info: CallInfo, i: Int) -> Int:
-    var t = info.args[i]
-    var k = c.tkind(t)
-    if k == .OPTION:
-        return c.arg(t, 0)
-    if k == .ANY:
-        return t
-    _ = _fail(
-        c, info.name + " takes an option, but " + _ord(i) + " is " + c.text(t), i
-    )
-    return NO_TYPE
-
-
-def _bytes(mut c: Checker, info: CallInfo, i: Int) -> Bool:
-    var t = info.args[i]
+def _bytes(c: Checker, info: CallInfo, i: Int) raises TypingError:
+    var t = info.args[i].type
     var k = c.tkind(t)
     if k == .BYTES or k == .ANY:
-        return True
-    _ = _fail(
-        c, info.name + " takes bytes, but " + _ord(i) + " is " + c.text(t), i
-    )
-    return False
+        return
+    raise TypingError(t"{info.name} takes bytes, but {_argument(i)} is {c.text(t)}", arg=i)
 
 
-def _model(mut c: Checker, info: CallInfo, i: Int) -> Bool:
-    var t = info.args[i]
+def _model(c: Checker, info: CallInfo, i: Int) raises TypingError:
+    var t = info.args[i].type
     var k = c.tkind(t)
     if k == .MODEL or k == .ANY:
-        return True
-    _ = _fail(
-        c,
-        info.name
-        + " takes a model or interface handle, but "
-        + _ord(i)
-        + " is "
-        + c.text(t),
-        i,
-    )
-    return False
+        return
+    raise TypingError(t"{info.name} takes a model or interface handle, but {_argument(i)} is {c.text(t)}", arg=i)
 
 
-def _eq_elems(mut c: Checker, info: CallInfo, elem: Int, what: String) -> Bool:
+def _list_elem(c: Checker, info: CallInfo, i: Int) raises TypingError -> Int:
+    """The element type of a list argument."""
+    var t = info.args[i].type
+    match c.tkind(t):
+        case .LIST:
+            return c.arg(t, 0)
+        case .ANY:
+            return t
+        case _:
+            raise TypingError(t"{info.name} takes a list, but {_argument(i)} is {c.text(t)}", arg=i)
+
+
+def _option_elem(c: Checker, info: CallInfo, i: Int) raises TypingError -> Int:
+    var t = info.args[i].type
+    match c.tkind(t):
+        case .OPTION:
+            return c.arg(t, 0)
+        case .ANY:
+            return t
+        case _:
+            raise TypingError(t"{info.name} takes an option, but {_argument(i)} is {c.text(t)}", arg=i)
+
+
+def _eq_elems(c: Checker, info: CallInfo, elem: Int) raises TypingError:
     var bad = c.non_eq_part(elem)
     if bad < 0:
-        return True
+        return
+    ref name = c.spec.types.infos[bad].name
     var hint: String
-    var bk = c.tkind(bad)
-    if bk == .FLOAT:
-        hint = (
-            "floats have no canonical equality; map them to bits(x) or real(x) first, "
-            "or compare whole values with eq(a, b, float=...)"
-        )
-    elif bk == .MODEL:
-        hint = "model " + c.spec.types.infos[bad].name + " handles have no canonical equality"
-    elif bk == .TYPEVAR:
-        hint = "declare the type parameter as " + c.spec.types.infos[bad].name + ": Eq"
-    else:
-        hint = c.text(bad) + " has no canonical equality"
-    _ = _fail(
-        c,
-        t"{info.name} compares {what} with ==, but {c.text(elem)} has no canonical equality: "
-        t"{hint}",
+    match c.tkind(bad):
+        case .FLOAT:
+            hint = (
+                "floats have no canonical equality; map them to bits(x) or real(x) first, "
+                "or compare whole values with eq(a, b, float=...)"
+            )
+        case .MODEL:
+            hint = String(t"model {name} handles have no canonical equality")
+        case .TYPEVAR:
+            hint = String(t"declare the type parameter as {name}: Eq")
+        case _:
+            hint = String(t"{c.text(bad)} has no canonical equality")
+    raise TypingError(
+        t"{info.name} compares elements with ==, but {c.text(elem)} has no canonical equality: {hint}"
     )
-    return False
 
 
-def _ordered_elems(mut c: Checker, info: CallInfo, elem: Int) -> Bool:
+def _ordered_elems(c: Checker, info: CallInfo, elem: Int) raises TypingError:
     if c.ordered(elem):
-        return True
+        return
     var hint: String
-    var k = c.tkind(elem)
-    if k == .FLOAT:
-        hint = "floats have no total order (NaN); map them to real(x) first"
-    elif k == .TYPEVAR:
-        hint = "declare the type parameter as " + c.spec.types.infos[elem].name + ": Ord"
-    else:
-        hint = c.text(elem) + " has no total order"
-    _ = _fail(
-        c,
-        info.name
-        + " needs ordered elements, but the elements are "
-        + c.text(elem)
-        + ": "
-        + hint,
-        0,
-    )
-    return False
+    match c.tkind(elem):
+        case .FLOAT:
+            hint = "floats have no total order (NaN); map them to real(x) first"
+        case .TYPEVAR:
+            hint = String(t"declare the type parameter as {c.spec.types.infos[elem].name}: Ord")
+        case _:
+            hint = String(t"{c.text(elem)} has no total order")
+    raise TypingError(t"{info.name} needs ordered elements, but the elements are {c.text(elem)}: {hint}", arg=0)
 
 
-def _same_type(mut c: Checker, info: CallInfo, i: Int, j: Int) -> Int:
-    var t = c.join(info.args[i], info.args[j])
+def _same_type(mut c: Checker, info: CallInfo) raises TypingError -> Int:
+    """The common type of the two arguments."""
+    var a = info.args[0].type
+    var b = info.args[1].type
+    var t = c.join(a, b)
     if t < 0:
-        _ = _fail(
-            c,
-            info.name
-            + " compares two values of one type, but got "
-            + c.text(info.args[i])
-            + " and "
-            + c.text(info.args[j]),
-            j,
-        )
+        raise TypingError(t"{info.name} compares two values of one type, but got {c.text(a)} and {c.text(b)}", arg=1)
     return t
 
 
-def _type_arg(mut c: Checker, info: CallInfo, kinds: List[ty.TypeKind], what: String) -> Int:
+def _type_arg(c: Checker, info: CallInfo, kinds: List[ty.TypeKind], what: StaticString) raises TypingError -> Int:
     var t = info.targs[0]
     var k = c.tkind(t)
-    if k == .ANY:
+    if k == .ANY or k in kinds:
         return t
-    for want in kinds:
-        if k == want:
-            return t
-    _ = _fail(c, t"{info.name}<{c.text(t)}>: the type argument must be {what}")
-    return NO_TYPE
+    raise TypingError(t"{info.name}<{c.text(t)}>: the type argument must be {what}")
 
 
-def _qe_untyped(mut c: Checker, info: CallInfo, i: Int) -> Int:
-    var t = info.args[i]
+def _float_type_arg(c: Checker, info: CallInfo) raises TypingError -> Int:
+    return _type_arg(c, info, [ty.TypeKind.FLOAT], "a float type (f16, bf16, f32, f64)")
+
+
+def _qe_operand(c: Checker, info: CallInfo, i: Int) raises TypingError -> Int:
+    """The type of an operand of qe without a type argument, which is a float."""
+    var t = info.args[i].type
     var k = c.tkind(t)
     if k == .FLOAT or k == .ANY:
         return t
-    var hint = String()
-    if c.is_numeric(t):
-        hint = (
-            " ("
-            + c.text(t)
-            + " is not a float: round a real first, qe(result, round<f64>(r)), "
-            "or name the format, qe<f64>(result, r))"
+    var hint = String(
+        t" ({c.text(t)} is not a float: round a real first, qe(result, round<f64>(r)), "
+        t"or name the format, qe<f64>(result, r))"
+    ) if c.is_numeric(t) else String()
+    raise TypingError(t"qe compares two floats of one format, but {_argument(i)} is {c.text(t)}{hint}", arg=i)
+
+
+def _qe(mut c: Checker, info: CallInfo) raises TypingError -> Int:
+    if not info.targs:
+        var a = _qe_operand(c, info, 0)
+        var b = _qe_operand(c, info, 1)
+        if c.tkind(a) == .FLOAT and c.tkind(b) == .FLOAT and a != b:
+            raise TypingError(
+                t"qe compares two floats of one format, but got {c.text(a)} and {c.text(b)}: convert one first", arg=1
+            )
+        return c.qerr_
+    var t = _float_type_arg(c, info)
+    for i, arg in enumerate(info.args):
+        var a = arg.type
+        if c.is_any(a) or c.is_any(t):
+            continue
+        if c.tkind(a) == .FLOAT and a != t:
+            raise TypingError(t"qe<{c.text(t)}> compares {c.text(t)} values, but {_argument(i)} is {c.text(a)}", arg=i)
+        if not c.is_numeric(a):
+            raise TypingError(
+                t"qe<{c.text(t)}> takes {c.text(t)} values or numbers, but {_argument(i)} is {c.text(a)}", arg=i
+            )
+    return c.qerr_
+
+
+def _eq(mut c: Checker, info: CallInfo) raises TypingError -> Int:
+    var t = _same_type(c, info)
+    for kw in info.keywords:
+        if kw.key != "float" and kw.key != "order":
+            continue
+        var choices = '"bits" | "ieee" | "nan_any"' if kw.key == "float" else '"exact" | "ignore"'
+        if c.kind_of(kw.node) != .STR or not _eq_mode_ok(c.text_of(kw.node), kw.key):
+            raise TypingError(t"eq: {kw.key}= must be one of {choices}", key=kw.key.copy())
+    if not any([kw.key == "float" for kw in info.keywords]) and c.contains_float(t):
+        raise TypingError(
+            t"eq compares values of type {c.text(t)}, which contain floats: say how to compare them with "
+            t'float="bits" (bit-identical), float="ieee" or float="nan_any"'
         )
-    _ = _fail(
-        c,
-        "qe compares two floats of one format, but "
-        + _ord(i)
-        + " is "
-        + c.text(t)
-        + hint,
-        i,
-    )
-    return NO_TYPE
-
-
-def _float_type_arg(mut c: Checker, info: CallInfo) -> Int:
-    return _type_arg(
-        c, info, [ty.TypeKind.FLOAT], "a float type (f16, bf16, f32, f64)"
-    )
+    return c.bool_
 
 
 def _eq_mode_ok(value: String, key: String) -> Bool:
@@ -277,303 +197,151 @@ def _eq_mode_ok(value: String, key: String) -> Bool:
     return value == "exact" or value == "ignore"
 
 
-def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
-    """The result type of a prelude call, or the poison type with `sig_msg` set."""
-    c.sig_msg = String()
-    var k = sig.typer
-    var t0 = info.args[0] if len(info.args) > 0 else c.poison
-    if k == T_FLOAT_PRED:
-        if not _float(c, info, 0):
-            return c.poison
-        return c.bool_
-    if k == T_BITS:
-        if not _float(c, info, 0):
-            return c.poison
-        return c.int_
-    if k == T_SAME_FLOAT:
-        if not _float(c, info, 0):
-            return c.poison
-        return t0
-    if k == T_ULP:
-        if _float_type_arg(c, info) < 0:
-            return c.poison
-        if not _real_like(c, info, 0):
-            return c.poison
-        return c.real_
-    if k == T_QE:
-        if len(info.targs) > 0:
-            var t = _float_type_arg(c, info)
-            if t < 0:
-                return c.poison
-            for i in range(2):
-                var a = info.args[i]
-                if c.is_any(a) or c.is_any(t):
-                    continue
-                if c.tkind(a) == .FLOAT and a != t:
-                    return _fail(
-                        c,
-                        "qe<"
-                        + c.text(t)
-                        + "> compares "
-                        + c.text(t)
-                        + " values, but "
-                        + _ord(i)
-                        + " is "
-                        + c.text(a),
-                        i,
-                    )
-                if not c.is_numeric(a):
-                    return _fail(
-                        c,
-                        "qe<"
-                        + c.text(t)
-                        + "> takes "
-                        + c.text(t)
-                        + " values or numbers, but "
-                        + _ord(i)
-                        + " is "
-                        + c.text(a),
-                        i,
-                    )
-            return c.qerr_
-        var a = _qe_untyped(c, info, 0)
-        if a < 0:
-            return c.poison
-        var b = _qe_untyped(c, info, 1)
-        if b < 0:
-            return c.poison
-        if c.tkind(a) == .FLOAT and c.tkind(b) == .FLOAT and a != b:
-            return _fail(
-                c,
-                "qe compares two floats of one format, but got "
-                + c.text(a)
-                + " and "
-                + c.text(b)
-                + ": convert one first",
-                1,
-            )
-        return c.qerr_
-    if k == T_QERR_PART:
-        var kk = c.tkind(t0)
-        if kk != .QERR and kk != .ANY:
-            return _fail(
-                c,
-                info.name
-                + " takes a qerr (the value of qe(a, b)), but argument 1 is "
-                + c.text(t0),
-                0,
-            )
-        return c.int_
-    if k == T_CR:
-        var kk = c.tkind(t0)
-        if kk == .FLOAT or kk == .ANY:
+def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingError -> Int:
+    """The result type of a prelude call."""
+    var t0 = info.args[0].type if info.args else c.poison
+    match sig.rule:
+        case .FLOAT_PRED:
+            _float(c, info, 0)
+            return c.bool_
+        case .BITS:
+            _float(c, info, 0)
+            return c.int_
+        case .SAME_FLOAT:
+            _float(c, info, 0)
             return t0
-        var hint = String()
-        if c.is_numeric(t0):
-            hint = "; for a real use mp." + String(info.name[byte=3:])
-        return _fail(
-            c,
-            info.name
-            + " rounds in the format of its argument, so it takes a float, but "
-            "argument 1 is "
-            + c.text(t0)
-            + hint,
-            0,
-        )
-    if k == T_SAME:
-        if _same_type(c, info, 0, 1) < 0:
-            return c.poison
-        return c.bool_
-    if k == T_IEEE_EQ:
-        if not _float(c, info, 0) or not _float(c, info, 1):
-            return c.poison
-        return c.bool_
-    if k == T_REAL or k == T_MP:
-        if not _real_like(c, info, 0):
-            return c.poison
-        return c.real_
-    if k == T_ROUND:
-        var t = _float_type_arg(c, info)
-        if t < 0:
-            return c.poison
-        if not _real_like(c, info, 0):
-            return c.poison
-        return t
-    if k == T_WRAP:
-        var t = _type_arg(
-            c, info, [ty.TypeKind.FIXED_INT], "a fixed-width integer type (i8 ... u64)"
-        )
-        if t < 0:
-            return c.poison
-        if not _integer(c, info, 0):
-            return c.poison
-        return t
-    if k == T_FITS:
-        if (
-            _type_arg(
+        case .ULP:
+            _ = _float_type_arg(c, info)
+            _real_like(c, info, 0)
+            return c.real_
+        case .QE:
+            return _qe(c, info)
+        case .QERR_PART:
+            var k = c.tkind(t0)
+            if k != .QERR and k != .ANY:
+                raise TypingError(
+                    t"{info.name} takes a qerr (the value of qe(a, b)), but argument 1 is {c.text(t0)}", arg=0
+                )
+            return c.int_
+        case .CR:
+            var k = c.tkind(t0)
+            if k == .FLOAT or k == .ANY:
+                return t0
+            var hint = String(t"; for a real use mp.{info.name[byte=3:]}") if c.is_numeric(t0) else String()
+            raise TypingError(
+                t"{info.name} rounds in the format of its argument, so it takes a float, but argument 1 is "
+                t"{c.text(t0)}{hint}",
+                arg=0,
+            )
+        case .SAME:
+            _ = _same_type(c, info)
+            return c.bool_
+        case .IEEE_EQ:
+            _float(c, info, 0)
+            _float(c, info, 1)
+            return c.bool_
+        case .REAL | .MP:
+            _real_like(c, info, 0)
+            return c.real_
+        case .ROUND:
+            var t = _float_type_arg(c, info)
+            _real_like(c, info, 0)
+            return t
+        case .WRAP:
+            var t = _type_arg(c, info, [ty.TypeKind.FIXED_INT], "a fixed-width integer type (i8 ... u64)")
+            _integer(c, info, 0)
+            return t
+        case .FITS:
+            _ = _type_arg(
                 c, info, [ty.TypeKind.FIXED_INT, ty.TypeKind.FLOAT], "a fixed-width integer or float type"
             )
-            < 0
-        ):
-            return c.poison
-        if not _real_like(c, info, 0):
-            return c.poison
-        return c.bool_
-    if k == T_LE_UINT:
-        if not _bytes(c, info, 0):
-            return c.poison
-        return c.int_
-    if k == T_LEN:
-        var kk = c.tkind(t0)
-        if (
-            kk == .LIST
-            or kk == .STRING
-            or kk == .LITERAL
-            or kk == .BYTES
-            or kk == .MAP
-            or kk == .ANY
-        ):
+            _real_like(c, info, 0)
+            return c.bool_
+        case .LE_UINT:
+            _bytes(c, info, 0)
             return c.int_
-        return _fail(
-            c,
-            "len takes a list, string, bytes or map, but argument 1 is " + c.text(t0),
-            0,
-        )
-    if k == T_SORTED:
-        var elem = _list(c, info, 0)
-        if elem < 0 or not _ordered_elems(c, info, elem):
-            return c.poison
-        if c.tkind(t0) == .LIST:
-            return t0
-        return c.spec.types.list_of(elem)
-    if k == T_IS_SORTED:
-        var elem = _list(c, info, 0)
-        if elem < 0 or not _ordered_elems(c, info, elem):
-            return c.poison
-        return c.bool_
-    if k == T_TWO_LISTS:
-        var a = _list(c, info, 0)
-        if a < 0:
-            return c.poison
-        var b = _list(c, info, 1)
-        if b < 0:
-            return c.poison
-        var elem = c.join(a, b)
-        if elem < 0:
-            return _fail(
-                c,
-                info.name
-                + " takes two lists of one element type, but got "
-                + c.text(info.args[0])
-                + " and "
-                + c.text(info.args[1]),
-                1,
-            )
-        if not _eq_elems(c, info, elem, "elements"):
-            return c.poison
-        return c.bool_
-    if k == T_DISTINCT:
-        var elem = _list(c, info, 0)
-        if elem < 0 or not _eq_elems(c, info, elem, "elements"):
-            return c.poison
-        return c.bool_
-    if k == T_INDEX_OF:
-        var elem = _list(c, info, 0)
-        if elem < 0:
-            return c.poison
-        var t = c.join(elem, info.args[1])
-        if t < 0:
-            return _fail(
-                c,
-                "index_of looks for a "
-                + c.text(elem)
-                + " in "
-                + c.text(info.args[0])
-                + ", but argument 2 is "
-                + c.text(info.args[1]),
-                1,
-            )
-        if not _eq_elems(c, info, t, "elements"):
-            return c.poison
-        return c.int_
-    if k == T_KEYS or k == T_VALUES:
-        var kk = c.tkind(t0)
-        if kk != .MAP and kk != .ANY:
-            return _fail(
-                c, info.name + " takes a map, but argument 1 is " + c.text(t0), 0
-            )
-        if kk == .MAP:
-            return c.spec.types.list_of(c.arg(t0, 0 if k == T_KEYS else 1))
-        return c.spec.types.list_of(t0)
-    if k == T_RANGE:
-        if not _integer(c, info, 0) or not _integer(c, info, 1):
-            return c.poison
-        return c.spec.types.list_of(c.int_)
-    if k == T_SOME:
-        return c.spec.types.option_of(t0)
-    if k == T_OPT_PRED:
-        if _option(c, info, 0) < 0:
-            return c.poison
-        return c.bool_
-    if k == T_UNWRAP:
-        var elem = _option(c, info, 0)
-        return c.poison if elem < 0 else elem
-    if k == T_VALID_UTF8:
-        if not _bytes(c, info, 0):
-            return c.poison
-        return c.bool_
-    if k == T_CODEPOINTS:
-        if not (c.is_stringish(t0) or c.is_any(t0)):
-            return _fail(
-                c, "codepoints takes a string, but " + _ord(0) + " is " + c.text(t0), 0
-            )
-        return c.spec.types.list_of(c.int_)
-    if k == T_FRESH:
-        if not _model(c, info, 0):
-            return c.poison
-        return c.bool_
-    if k == T_TWO_MODELS:
-        if not _model(c, info, 0) or not _model(c, info, 1):
-            return c.poison
-        return c.bool_
-    if k == T_BIT_LENGTH:
-        if not _integer(c, info, 0):
-            return c.poison
-        return c.int_
-    if k == T_FROM_CODEPOINTS:
-        var elem = _list(c, info, 0)
-        if elem < 0:
-            return c.poison
-        if not (c.is_integer(elem) or c.is_any(elem)):
-            return _fail(
-                c,
-                "from_codepoints takes a list of integers, but argument 1 is "
-                + c.text(t0),
-                0,
-            )
-        return c.string_
-    # eq
-    var t = _same_type(c, info, 0, 1)
-    if t < 0:
-        return c.poison
-    for j in range(len(info.kw_keys)):
-        var key = info.kw_keys[j]
-        if key != "float" and key != "order":
-            continue
-        var node = info.kw_nodes[j]
-        var choices = '"bits" | "ieee" | "nan_any"' if key == "float" else '"exact" | "ignore"'
-        if c.kind_of(node) != .STR or not _eq_mode_ok(c.text_of(node), key):
-            return _fail(c, "eq: " + key + "= must be one of " + choices, -1, key)
-    var has_float = False
-    for key in info.kw_keys:
-        if key == "float":
-            has_float = True
-    if not has_float and c.contains_float(t):
-        return _fail(
-            c,
-            "eq compares values of type "
-            + c.text(t)
-            + ", which contain floats: say how to compare them with "
-            'float="bits" (bit-identical), float="ieee" or float="nan_any"',
-        )
-    return c.bool_
+        case .LEN:
+            match c.tkind(t0):
+                case .LIST | .STRING | .LITERAL | .BYTES | .MAP | .ANY:
+                    return c.int_
+                case _:
+                    raise TypingError(
+                        t"len takes a list, string, bytes or map, but argument 1 is {c.text(t0)}", arg=0
+                    )
+        case .SORTED:
+            var elem = _list_elem(c, info, 0)
+            _ordered_elems(c, info, elem)
+            return t0 if c.tkind(t0) == .LIST else c.spec.types.list_of(elem)
+        case .IS_SORTED:
+            _ordered_elems(c, info, _list_elem(c, info, 0))
+            return c.bool_
+        case .TWO_LISTS:
+            var a = _list_elem(c, info, 0)
+            var b = _list_elem(c, info, 1)
+            var elem = c.join(a, b)
+            if elem < 0:
+                raise TypingError(
+                    t"{info.name} takes two lists of one element type, but got {c.text(t0)} and "
+                    t"{c.text(info.args[1].type)}",
+                    arg=1,
+                )
+            _eq_elems(c, info, elem)
+            return c.bool_
+        case .DISTINCT:
+            _eq_elems(c, info, _list_elem(c, info, 0))
+            return c.bool_
+        case .INDEX_OF:
+            var elem = _list_elem(c, info, 0)
+            var x = info.args[1].type
+            var t = c.join(elem, x)
+            if t < 0:
+                raise TypingError(
+                    t"index_of looks for a {c.text(elem)} in {c.text(t0)}, but argument 2 is {c.text(x)}", arg=1
+                )
+            _eq_elems(c, info, t)
+            return c.int_
+        case .KEYS | .VALUES:
+            match c.tkind(t0):
+                case .MAP:
+                    return c.spec.types.list_of(c.arg(t0, 0 if sig.rule == .KEYS else 1))
+                case .ANY:
+                    return c.spec.types.list_of(t0)
+                case _:
+                    raise TypingError(t"{info.name} takes a map, but argument 1 is {c.text(t0)}", arg=0)
+        case .RANGE:
+            _integer(c, info, 0)
+            _integer(c, info, 1)
+            return c.spec.types.list_of(c.int_)
+        case .SOME:
+            return c.spec.types.option_of(t0)
+        case .OPT_PRED:
+            _ = _option_elem(c, info, 0)
+            return c.bool_
+        case .UNWRAP:
+            return _option_elem(c, info, 0)
+        case .VALID_UTF8:
+            _bytes(c, info, 0)
+            return c.bool_
+        case .CODEPOINTS:
+            if not (c.is_stringish(t0) or c.is_any(t0)):
+                raise TypingError(t"codepoints takes a string, but {_argument(0)} is {c.text(t0)}", arg=0)
+            return c.spec.types.list_of(c.int_)
+        case .FRESH:
+            _model(c, info, 0)
+            return c.bool_
+        case .TWO_MODELS:
+            _model(c, info, 0)
+            _model(c, info, 1)
+            return c.bool_
+        case .EQ:
+            return _eq(c, info)
+        case .BIT_LENGTH:
+            _integer(c, info, 0)
+            return c.int_
+        case .FROM_CODEPOINTS:
+            var elem = _list_elem(c, info, 0)
+            if not (c.is_integer(elem) or c.is_any(elem)):
+                raise TypingError(
+                    t"from_codepoints takes a list of integers, but argument 1 is {c.text(t0)}", arg=0
+                )
+            return c.string_

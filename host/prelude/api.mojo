@@ -5,7 +5,7 @@
 """
 
 from check import types as ty
-from check.psig import make_sig
+from check.psig import prelude_sig
 from numeric.formats import FloatFormat, format_by_id
 from prelude.collections import (
     EqMode,
@@ -134,7 +134,7 @@ def call(id: Int, args: CallArgs, types: ty.Types) raises -> Value:
         raise fail(who, "asks the host about identity; the evaluator answers it")
     if args.keywords and id != EQ:
         raise fail(who, t"takes no keyword arguments, got {args.keywords[0].name}")
-    var arity = make_sig(who).lo
+    var arity = prelude_sig(who).arity
     if len(args.args) != arity:
         raise fail(who, t"takes {arity} argument{'' if arity == 1 else 's'}, got {len(args.args)}")
 
