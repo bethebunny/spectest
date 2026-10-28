@@ -27,20 +27,21 @@ from wire.value import Value
 
 from .options import RunOptions
 
+
 def _is_dict(o: PyObjectPtr) -> Bool:
     return Bool(PyType_GetFlags(ob_type(o)) & Py_TPFLAGS_DICT_SUBCLASS)
 
 
 def _text(o: PyObjectPtr, what: String) raises -> String:
     if not (PyType_GetFlags(ob_type(o)) & Py_TPFLAGS_UNICODE_SUBCLASS):
-        raise Error(String("TypeError: ", what, " must be a str"))
+        raise Error(t"TypeError: {what} must be a str")
     return string_of(o)
 
 
 def _int(o: PyObjectPtr, what: String) raises -> Int:
     var v = from_python(o)
-    if v.kind != .INT or not v.small_int():
-        raise Error(String("TypeError: ", what, " must be an int"))
+    if v.kind != .INT or v.small_int() is None:
+        raise Error(t"TypeError: {what} must be an int")
     return v.small_int().value()
 
 
@@ -52,6 +53,18 @@ def _items(d: PyObjectPtr) -> List[Tuple[PyObjectPtr, PyObjectPtr]]:
     while PyDict_Next(d, pos, key, value):
         items.append((key, value))
     return items^
+
+
+def _example(o: PyObjectPtr) raises -> Value:
+    """An explicit example: a map from parameter name to value."""
+    if not _is_dict(o):
+        raise Error("TypeError: an example must be a dict")
+    var keys: List[Value] = []
+    var values: List[Value] = []
+    for param, arg in _items(o):
+        keys.append(Value.string(_text(param, "a parameter name")))
+        values.append(from_python(arg))
+    return Value.map(keys^, values^)
 
 
 def parse_options(o: PyObjectPtr) raises -> RunOptions:
@@ -77,29 +90,18 @@ def parse_options(o: PyObjectPtr) raises -> RunOptions:
                 opts.steps = _int(value, name)
             case "max_handles":
                 opts.max_handles = _int(value, name)
-            case "store":
-                if not is_none:
-                    opts.store = _text(value, name)
-            case "instantiation":
-                if not is_none:
-                    if not _is_dict(value):
-                        raise Error("TypeError: instantiation must be a dict")
-                    for param, arg in _items(value):
-                        opts.instantiation[_text(param, "a type parameter name")] = _text(arg, "a type argument")
-            case "examples":
-                if not is_none:
-                    if not (PyType_GetFlags(ob_type(value)) & Py_TPFLAGS_LIST_SUBCLASS):
-                        raise Error("TypeError: examples must be a list")
-                    for i in range(PyList_Size(value)):
-                        var example = PyList_GetItem(value, i)
-                        if not _is_dict(example):
-                            raise Error("TypeError: an example must be a dict")
-                        var keys: List[Value] = []
-                        var values: List[Value] = []
-                        for param, arg in _items(example):
-                            keys.append(Value.string(_text(param, "a parameter name")))
-                            values.append(from_python(arg))
-                        opts.examples.append(Value.map(keys^, values^))
+            case "store" if not is_none:
+                opts.store = _text(value, name)
+            case "instantiation" if not is_none:
+                if not _is_dict(value):
+                    raise Error("TypeError: instantiation must be a dict")
+                for param, arg in _items(value):
+                    opts.instantiation[_text(param, "a type parameter name")] = _text(arg, "a type argument")
+            case "examples" if not is_none:
+                if not (PyType_GetFlags(ob_type(value)) & Py_TPFLAGS_LIST_SUBCLASS):
+                    raise Error("TypeError: examples must be a list")
+                for i in range(PyList_Size(value)):
+                    opts.examples.append(_example(PyList_GetItem(value, i)))
             case _:
                 pass
     return opts^

@@ -83,8 +83,8 @@ struct RunHost(Builder, EvalHost):
     def instantiation_text(self) -> List[Tuple[String, String]]:
         return [(e.key.copy(), self.loaded[].spec.types.text(e.value)) for e in self.instantiation.items()]
 
-    def track(mut self, v: Value, deep: Bool = True):
-        """Remembers the handles in `v`."""
+    def track(mut self, v: Value, *, deep: Bool = True):
+        """Remembers the handles in `v`, or only `v` itself when not `deep`."""
         if v.kind == .HANDLE:
             self.seen.append(v.handle_id())
         elif deep:
@@ -127,7 +127,7 @@ struct RunHost(Builder, EvalHost):
             raise Error(t"building {b.target} raised {out.error_text()}")
         if out.kind != .HANDLE:
             raise Error(t"building {b.target} returned {format_value(out)}, not an object")
-        self.track(out, False)
+        self.track(out, deep=False)
         return out^
 
     # EvalHost
@@ -210,7 +210,7 @@ struct RunHost(Builder, EvalHost):
             raise Error(t"constant {c.name}: {raw.error_text()}")
         var got = decode(raw, c.type, self.loaded[].spec.types)
         self.constants[`const`] = got.copy()
-        self.track(got, False)
+        self.track(got, deep=False)
         return got^
 
     def fresh(mut self, obj: Value) raises -> Bool:

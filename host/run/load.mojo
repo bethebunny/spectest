@@ -5,11 +5,10 @@ from std.pathlib import Path
 from check.checker import check_source_with
 from check.files import Files
 from check.spec import Spec
+from gen.sizes import Sizes
 from numeric.digits import hex_digits
 from partitions.check import PartitionSets, compile_partitions
 from sets import SetContext
-
-from gen.sizes import Sizes
 
 
 def fnv(text: String, seed: UInt64 = 0xCBF29CE484222325) -> UInt64:
@@ -57,7 +56,8 @@ def load_with(source: String, path: String, files: Files) raises -> Loaded:
     var spec = check_source_with(source, path, files)
     var ctx = SetContext()
     var sets = compile_partitions(ctx, spec)
-    var text = spec.ast.source.copy()
+    ref text = spec.ast.source
+    # Two offset bases make the hash 128 bits.
     var hash = String(hex_digits(fnv(text), width=16), hex_digits(fnv(text, 0x84222325CBF29CE4), width=16))
     return Loaded(path, hash^, spec^, ctx^, sets^)
 
