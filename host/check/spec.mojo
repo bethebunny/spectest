@@ -13,53 +13,76 @@ from syntax.ast import Ast, NodeKind, Op
 from check.types import ANY_TYPE, Types
 
 
-# What a NAME, ATTR or CALL node refers to. `index` and `owner` by kind:
-comptime R_PARAM: UInt8 = 1
-"""A parameter: index = its position in the enclosing callable's params."""
-comptime R_RESULT: UInt8 = 2
-"""The return value (in a constructor, the new handle)."""
-comptime R_SELF: UInt8 = 3
-"""The receiver of a method, or the model's handle inside its own invariants."""
-comptime R_LOCAL: UInt8 = 4
-"""A `let` or comprehension variable: index = node id of the LET or COMPREHENSION."""
-comptime R_FIELD: UInt8 = 5
-"""A bare zero-argument observer inside a model's own clauses: index = observer
-position, owner = model position."""
-comptime R_PRELUDE: UInt8 = 6
-"""A system prelude function: index = its id in prelude.names."""
-comptime R_DEF: UInt8 = 7
-"""A single-expression definition: index = position in Spec.defs."""
-comptime R_TYPE_CONST: UInt8 = 8
-"""`i32.max`, `f64.nan`: index = the scalar type, name = the attribute."""
-comptime R_SET_CTOR: UInt8 = 9
-"""`f64.range(a, b)`, `u8.pattern("...")`: index = the scalar type, name = "range" or
-"pattern"."""
-comptime R_SPEC_FN: UInt8 = 10
-"""A call of a declared library function, made as a planned call: index = position in
-Spec.fns."""
-comptime R_OBSERVER: UInt8 = 11
-"""`h.width`, `df.cell(i, n)`: index = observer position, owner = model position."""
-comptime R_RECORD_FIELD: UInt8 = 12
-"""`r.f` on a record: index = field position, owner = the record type."""
-comptime R_OLD: UInt8 = 13
-"""`old(e)`."""
-comptime R_CLASS: UInt8 = 14
-"""A reference to an earlier partition class: index = node id of the CLASS."""
-comptime R_ENUM_MEMBER: UInt8 = 15
-"""`Color.Red` or a bare member: index = member position, owner = the enum type."""
-comptime R_CONST: UInt8 = 16
-"""A declared library constant: index = position in Spec.consts."""
-comptime R_QERR_PART: UInt8 = 17
-"""`e.steps` or `e.nans` on a qerr: name = the part."""
-comptime R_EXTERN: UInt8 = 18
-"""A call of a qualified callable the spec doesn't declare, in an observer's reading
-expression (`= builtins.list(self)`): name = the qualified callable. The call has the
-observer's declared type."""
+comptime _RESOLUTION_NAMES: Array[StaticString, 18] = [
+    "param", "result", "self", "local", "field", "prelude", "def", "type_const", "set_ctor",
+    "spec_fn", "observer", "record_field", "old", "class", "enum_member", "const", "qerr_part",
+    "extern",
+]
+
+
+__enum ResolutionKind(Equatable, ImplicitlyCopyable, Intable, Writable):
+    """What a NAME, ATTR or CALL node refers to. Writes as its lowercase name.
+
+    By kind, what it is, and its Resolution's `index`, `owner` and `name`:
+      - PARAM: a parameter; index its position in the enclosing callable's params
+      - RESULT: the return value, or in a constructor the new handle
+      - SELF: the receiver of a method, or the model's handle inside its own invariants
+      - LOCAL: a `let` or comprehension variable; index the LET or COMPREHENSION node
+      - FIELD: a bare zero-argument observer inside a model's own clauses; index the
+        observer's position, owner the model's
+      - PRELUDE: a system prelude function; index its id in prelude.names
+      - DEF: a single-expression definition; index its position in Spec.defs
+      - TYPE_CONST: `i32.max`, `f64.nan`; index the scalar type, name the attribute
+      - SET_CTOR: `f64.range(a, b)`, `u8.pattern("...")`; index the scalar type, name
+        "range" or "pattern"
+      - SPEC_FN: a call of a declared library function, made as a planned call; index
+        its position in Spec.fns
+      - OBSERVER: `h.width`, `df.cell(i, n)`; index the observer's position, owner the
+        model's
+      - RECORD_FIELD: `r.f` on a record; index the field's position, owner the record type
+      - OLD: `old(e)`
+      - CLASS: an earlier partition class; index the CLASS node
+      - ENUM_MEMBER: `Color.Red` or a bare member; index the member's position, owner the
+        enum type
+      - CONST: a declared library constant; index its position in Spec.consts
+      - QERR_PART: `e.steps` or `e.nans` on a qerr; name the part
+      - EXTERN: a call of a qualified callable the spec doesn't declare, in an observer's
+        reading expression (`= builtins.list(self)`), which has the observer's declared
+        type; name the callable
+    """
+
+    case PARAM
+    case RESULT
+    case SELF
+    case LOCAL
+    case FIELD
+    case PRELUDE
+    case DEF
+    case TYPE_CONST
+    case SET_CTOR
+    case SPEC_FN
+    case OBSERVER
+    case RECORD_FIELD
+    case OLD
+    case CLASS
+    case ENUM_MEMBER
+    case CONST
+    case QERR_PART
+    case EXTERN
+
+    def __eq__(self, other: Self) -> Bool:
+        return self._get_enum_discriminant() == other._get_enum_discriminant()
+
+    def __int__(self) -> Int:
+        return Int(self._get_enum_discriminant())
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(materialize[_RESOLUTION_NAMES]()[Int(self)])
 
 
 @fieldwise_init
 struct Resolution(Copyable, Movable):
-    var kind: UInt8
+    var kind: ResolutionKind
     var index: Int
     var owner: Int
     var name: String
@@ -85,9 +108,9 @@ struct Clause(Copyable, Movable):
     var expr: Int
     """Node id of the condition (the `when` of raises and may_raise), or 0."""
     var error: String
-    """raises and may_raise: the qualified exception class."""
+    """The qualified exception class of raises and may_raise."""
     var names: List[String]
-    """modifies: the parameter names; unspecified and impl_defined: the freedom."""
+    """The parameter names of modifies, or the freedom of unspecified and impl_defined."""
     var owner_fn: Int
     """Position in Spec.fns, or -1 for a model's or interface's own clause."""
     var owner_model: Int
@@ -175,6 +198,10 @@ struct Model(Copyable, Movable):
     var clauses: List[Int]
     """Positions in Spec.clauses: invariants and freedoms."""
 
+    def fields(self) -> List[Int]:
+        """The positions of its observers that take no arguments."""
+        return [i for i, o in enumerate(self.observers) if not o.params]
+
 
 @fieldwise_init
 struct Def(Copyable, Movable):
@@ -237,19 +264,19 @@ struct Spec(Movable):
         return self.resolutions.get(node)
 
     def fn_named(self, name: StringSlice) -> Optional[Int]:
-        for i in range(len(self.fns)):
-            if self.fns[i].name == name:
+        for i, f in enumerate(self.fns):
+            if f.name == name:
                 return i
         return None
 
     def model_named(self, name: StringSlice) -> Optional[Int]:
-        for i in range(len(self.models)):
-            if self.models[i].name == name:
+        for i, m in enumerate(self.models):
+            if m.name == name:
                 return i
         return None
 
     def clause_named(self, id: StringSlice) -> Optional[Int]:
-        for i in range(len(self.clauses)):
-            if self.clauses[i].id == id:
+        for i, clause in enumerate(self.clauses):
+            if clause.id == id:
                 return i
         return None

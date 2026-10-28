@@ -12,7 +12,7 @@ from syntax.ast import Diagnostic
 
 from check import types as ty
 from check.psig import PreludeSig, make_sig
-from check.spec import Resolution, Spec
+from check.spec import Resolution, ResolutionKind, Spec
 
 
 comptime NO_TYPE = -1
@@ -540,7 +540,7 @@ struct Checker:
 
     # -- resolutions -----------------------------------------------------------
 
-    def resolve(mut self, node: Int, kind: UInt8, index: Int, owner: Int, name: String):
+    def resolve(mut self, node: Int, kind: ResolutionKind, index: Int, owner: Int, name: String):
         self.spec.resolutions[node] = Resolution(kind, index, owner, name)
 
     def set_type(mut self, node: Int, t: Int):

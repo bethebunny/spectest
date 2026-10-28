@@ -1,6 +1,6 @@
 """The system prelude's functions, by name and id.
 
-The checker resolves a prelude call to its id (Resolution kind R_PRELUDE) and types
+The checker resolves a prelude call to its id (ResolutionKind.PRELUDE) and types
 it; the prelude package evaluates it by id. Ids are positions in `NAMES` and never
 change meaning: a new function goes at the end.
 

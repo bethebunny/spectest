@@ -13,27 +13,7 @@ from syntax import ast
 from check import types as ty
 from check.psig import CallInfo
 from check.sigs import type_prelude
-from check.spec import (
-    Param,
-    R_CLASS,
-    R_CONST,
-    R_DEF,
-    R_ENUM_MEMBER,
-    R_EXTERN,
-    R_FIELD,
-    R_LOCAL,
-    R_OBSERVER,
-    R_OLD,
-    R_PARAM,
-    R_PRELUDE,
-    R_QERR_PART,
-    R_RECORD_FIELD,
-    R_RESULT,
-    R_SELF,
-    R_SET_CTOR,
-    R_SPEC_FN,
-    R_TYPE_CONST,
-)
+from check.spec import Param, ResolutionKind
 from check.state import (
     Checker,
     NO_TYPE,
@@ -149,7 +129,7 @@ def assignable(mut c: Checker, actual: Int, target: Int, node: Int) -> Bool:
             return True
         if node > 0:
             var r = c.spec.resolutions.get(node)
-            if r and r.value().kind == R_CONST:
+            if r and r.value().kind == .CONST:
                 var nm = c.spec.consts[r.value().index].name
                 for w in names:
                     if w == nm:
@@ -263,7 +243,7 @@ def lookup(mut c: Checker, e: Int) -> Int:
         if c.ctx.in_old and c.ctx.allow_old and li < c.ctx.old_scope:
             c.error(e, _old_local_message(c, name, c.ctx.loc_binders[li]))
             return NO_TYPE
-        c.resolve(e, R_LOCAL, c.ctx.loc_binders[li], -1, name)
+        c.resolve(e, .LOCAL, c.ctx.loc_binders[li], -1, name)
         return c.ctx.loc_types[li]
     var hi = c.ctx.hidden_index(name)
     if hi >= 0:
@@ -271,7 +251,7 @@ def lookup(mut c: Checker, e: Int) -> Int:
         return NO_TYPE
     var ci = c.ctx.class_index(name)
     if ci >= 0:
-        c.resolve(e, R_CLASS, c.ctx.class_nodes[ci], -1, name)
+        c.resolve(e, .CLASS, c.ctx.class_nodes[ci], -1, name)
         return c.ctx.class_types[ci]
     var pi = c.ctx.param_index(name)
     if pi >= 0:
@@ -289,7 +269,7 @@ def lookup(mut c: Checker, e: Int) -> Int:
                 String("a class of partition ", c.ctx.only_param, " may only refer to ", c.ctx.only_param, ", not to ", name),
             )
             return NO_TYPE
-        c.resolve(e, R_PARAM, pi, -1, name)
+        c.resolve(e, .PARAM, pi, -1, name)
         return c.ctx.param_types[pi]
     if name == "result":
         if c.ctx.in_old:
@@ -298,13 +278,13 @@ def lookup(mut c: Checker, e: Int) -> Int:
         if not c.ctx.has_result:
             c.error(e, c.ctx.no_result.copy())
             return NO_TYPE
-        c.resolve(e, R_RESULT, 0, -1, "result")
+        c.resolve(e, .RESULT, 0, -1, "result")
         return c.ctx.result
     if name == "self":
         if c.ctx.self_t < 0:
             c.error(e, c.ctx.no_self.copy())
             return NO_TYPE
-        c.resolve(e, R_SELF, 0, c.ctx.self_model, "self")
+        c.resolve(e, .SELF, 0, c.ctx.self_model, "self")
         return c.ctx.self_t
     if c.ctx.fields_of >= 0:
         var m = c.ctx.fields_of
@@ -319,7 +299,7 @@ def lookup(mut c: Checker, e: Int) -> Int:
                 c.error(e, t"{name} takes arguments: {name}({names})")
                 return NO_TYPE
             var otype = obs.type
-            c.resolve(e, R_FIELD, oi, m, name)
+            c.resolve(e, .FIELD, oi, m, name)
             return otype
     var found = -1
     var member = -1
@@ -333,7 +313,7 @@ def lookup(mut c: Checker, e: Int) -> Int:
                     found = en
                     member = j
     if count == 1:
-        c.resolve(e, R_ENUM_MEMBER, member, found, name)
+        c.resolve(e, .ENUM_MEMBER, member, found, name)
         return found
     if count > 1:
         var list = String()
@@ -572,7 +552,7 @@ def qerr_comparison(mut c: Checker, e: Int, lt: Int, rt: Int) -> Bool:
 
 def _choice_has(mut c: Checker, choice: Int, node: Int) -> Bool:
     var r = c.spec.resolutions.get(node)
-    if r and r.value().kind == R_CONST:
+    if r and r.value().kind == .CONST:
         var nm = c.spec.consts[r.value().index].name
         for w in c.spec.types.infos[choice].names:
             if w == nm:
@@ -942,7 +922,7 @@ def fail_call(mut c: Checker, e: Int, node: Int, message: Some[Writable]) -> Int
     return c.poison
 
 
-def set_call_res(mut c: Checker, e: Int, kind: UInt8, index: Int, owner: Int, name: String):
+def set_call_res(mut c: Checker, e: Int, kind: ResolutionKind, index: Int, owner: Int, name: String):
     c.resolve(e, kind, index, owner, name)
     c.resolve(c.child(e, 0), kind, index, owner, name)
 
@@ -1043,7 +1023,7 @@ def call_extern(mut c: Checker, e: Int, chain: String) -> Int:
     reading expression: it takes the observer's declared type."""
     var info = CallInfo(chain)
     infer_args(c, e, info)
-    set_call_res(c, e, R_EXTERN, 0, -1, chain)
+    set_call_res(c, e, .EXTERN, 0, -1, chain)
     c.set_type(c.child(e, 0), c.spec.types.fn_(info.args, List[String](), c.ctx.extern_result))
     return c.ctx.extern_result
 
@@ -1066,7 +1046,7 @@ def call_old(mut c: Checker, e: Int) -> Int:
     infer_args(c, e, info)
     c.ctx.in_old = saved_in
     c.ctx.old_scope = saved_scope
-    set_call_res(c, e, R_OLD, 0, -1, "old")
+    set_call_res(c, e, .OLD, 0, -1, "old")
     var t = info.args[0] if len(info.args) == 1 else c.poison
     c.set_type(f, c.spec.types.fn_([t], List[String](), t))
     return t
@@ -1253,7 +1233,7 @@ def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
     var info = CallInfo(name)
     infer_args(c, e, info)
     var fn_owner = c.spec.fns[pos].owner
-    set_call_res(c, e, R_SPEC_FN, pos, fn_owner, name)
+    set_call_res(c, e, .SPEC_FN, pos, fn_owner, name)
     c.set_type(f, _fn_type(c, c.spec.fns[pos].params.copy(), c.spec.fns[pos].result))
     if not c.ctx.allow_spec_fn:
         var shadow = String()
@@ -1289,7 +1269,7 @@ def call_def(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
     var f = c.child(e, 0)
     var info = CallInfo(name)
     infer_args(c, e, info)
-    set_call_res(c, e, R_DEF, pos, -1, name)
+    set_call_res(c, e, .DEF, pos, -1, name)
     if c.cur_def >= 0:
         c.def_edges[c.cur_def].append(pos)
     c.set_type(f, _fn_type(c, c.spec.defs[pos].params.copy(), c.spec.defs[pos].result))
@@ -1314,7 +1294,7 @@ def call_prelude(mut c: Checker, e: Int, name: String, pid: Int) -> Int:
     var sig = c.prelude_sigs[pid].copy()
     var info = CallInfo(name)
     infer_args(c, e, info)
-    set_call_res(c, e, R_PRELUDE, pid, -1, name)
+    set_call_res(c, e, .PRELUDE, pid, -1, name)
     for tn in c.children(c.child(e, 1)):
         info.targs.append(resolve_type(c, tn))
     var ok = True
@@ -1367,7 +1347,7 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
         return fail_call(c, e, f, msg)
     if not c.has_set_constructor(st, attr):
         return fail_call(c, e, f, t"{stext} has no {attr}(...) set")
-    set_call_res(c, e, R_SET_CTOR, st, -1, attr)
+    set_call_res(c, e, .SET_CTOR, st, -1, attr)
     var ok = c.ctx.kind == K_PARTITION_SET
     if not ok:
         c.error(
@@ -1434,7 +1414,7 @@ def call_observer(
         )
     var info = CallInfo(name)
     infer_args(c, e, info)
-    var kind = R_FIELD if is_field else R_OBSERVER
+    var kind = ResolutionKind.FIELD if is_field else ResolutionKind.OBSERVER
     set_call_res(c, e, kind, oi, model, name)
     var params = c.spec.models[model].observers[oi].params.copy()
     var declared = c.spec.models[model].observers[oi].type
@@ -1485,7 +1465,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
         var ci = c.const_index.get(chain)
         if ci:
             ensure_const(c, ci.value())
-            c.resolve(e, R_CONST, ci.value(), -1, chain)
+            c.resolve(e, .CONST, ci.value(), -1, chain)
             return c.spec.consts[ci.value()].type
         if c.kind_of(base) == .NAME:
             var bname = c.text_of(base)
@@ -1506,7 +1486,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
                 var names = c.spec.types.infos[en.value()].names.copy()
                 for j in range(len(names)):
                     if names[j] == attr:
-                        c.resolve(e, R_ENUM_MEMBER, j, en.value(), attr)
+                        c.resolve(e, .ENUM_MEMBER, j, en.value(), attr)
                         return en.value()
                 c.error(e, t"enum {bname} has no member {attr}")
                 return c.poison
@@ -1529,19 +1509,19 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
                     names += c.spec.models[mp].observers[oi].params[j].name
                 c.error(e, t"{attr} takes arguments: {attr}({names})")
                 return c.poison
-            c.resolve(e, R_OBSERVER, oi, mp, attr)
+            c.resolve(e, .OBSERVER, oi, mp, attr)
             return c.observer_type(vt, mp, oi)
     if k == .RECORD:
         var names = c.spec.types.infos[vt].names.copy()
         for j in range(len(names)):
             if names[j] == attr:
-                c.resolve(e, R_RECORD_FIELD, j, vt, attr)
+                c.resolve(e, .RECORD_FIELD, j, vt, attr)
                 return c.arg(vt, j)
         c.error(e, t"record {c.text(vt)} has no field {attr}")
         return c.poison
     if k == .QERR:
         if attr == "steps" or attr == "nans":
-            c.resolve(e, R_QERR_PART, 0, -1, attr)
+            c.resolve(e, .QERR_PART, 0, -1, attr)
             return c.int_
         c.error(e, t"qerr has no part {attr}: its parts are steps and nans")
         return c.poison
@@ -1571,7 +1551,7 @@ def type_const(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             String(stext, " has no constant ", attr, ((" (available: " + names + ")") if len(consts) > 0 else "")),
         )
         return c.poison
-    c.resolve(e, R_TYPE_CONST, st, -1, attr)
+    c.resolve(e, .TYPE_CONST, st, -1, attr)
     if c.tkind(t) == .SET and c.ctx.kind != K_PARTITION_SET:
         var hint = String()
         if c.tkind(st) == .FLOAT:

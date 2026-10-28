@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
 from check import types as ty
-from check.spec import R_LOCAL, R_PARAM, R_SET_CTOR, R_SPEC_FN, R_TYPE_CONST, Spec
+from check.spec import ResolutionKind, Spec
 from check_testkit import (
     clause_expr,
     count_errors,
@@ -194,9 +194,9 @@ def test_let_scoping() raises:
             inner.append(n)
     # let x = [x]: the value's x is the parameter, the body's x the local.
     assert_equal(len(inner), 2)
-    assert_equal(spec.resolution(inner[0]).value().kind, R_PARAM)
+    assert_equal(spec.resolution(inner[0]).value().kind, ResolutionKind.PARAM)
     assert_equal(type_text(spec, inner[1]), "list<int>")
-    assert_equal(spec.resolution(inner[1]).value().kind, R_LOCAL)
+    assert_equal(spec.resolution(inner[1]).value().kind, ResolutionKind.LOCAL)
     assert_equal(spec.resolution(inner[1]).value().index, let)
     fails("fn f()\n  ensures (let y = 1 in y == 1) and y == 1\n", "unknown name y")
 
@@ -224,7 +224,7 @@ def test_comprehension_variable_is_local() raises:
         if spec.ast.nodes[n].text == "x":
             xs.append(n)
     assert_equal(len(xs), 1)
-    assert_equal(spec.resolution(xs[0]).value().kind, R_LOCAL)
+    assert_equal(spec.resolution(xs[0]).value().kind, ResolutionKind.LOCAL)
     assert_equal(spec.resolution(xs[0]).value().index, comp)
     assert_equal(type_text(spec, xs[0]), "int")
 
@@ -543,15 +543,15 @@ def test_aggregate_resolutions_and_types() raises:
     assert_equal(type_text(spec, spec.ast.child(top, 0)), "set<f16>")
     assert_equal(type_text(spec, top), "qerr")
     var finite = spec.ast.child(spec.ast.child(top, 0), 0)
-    assert_equal(spec.resolution(finite).value().kind, R_TYPE_CONST)
+    assert_equal(spec.resolution(finite).value().kind, ResolutionKind.TYPE_CONST)
     assert_equal(spec.resolution(finite).value().name, "finite")
     var body = spec.ast.child(top, 1)
     var call = spec.ast.child(spec.ast.child(body, 2), 0)
-    assert_equal(spec.resolution(call).value().kind, R_SPEC_FN)
+    assert_equal(spec.resolution(call).value().kind, ResolutionKind.SPEC_FN)
     assert_equal(spec.resolution(call).value().index, spec.fn_named("f").value())
     var vs = named(spec, call, ast.NodeKind.NAME, "v")
     assert_equal(type_text(spec, vs[0]), "f16")
-    assert_equal(spec.resolution(vs[0]).value().kind, R_LOCAL)
+    assert_equal(spec.resolution(vs[0]).value().kind, ResolutionKind.LOCAL)
     assert_equal(spec.resolution(vs[0]).value().index, top)
 
 
@@ -563,7 +563,7 @@ def test_aggregate_set_constructor_resolution() raises:
     var top = spec.ast.child(clause_expr(spec, "f.worst"), 0)
     var it = spec.ast.child(top, 0)
     assert_equal(type_text(spec, it), "set<f32>")
-    assert_equal(spec.resolution(it).value().kind, R_SET_CTOR)
+    assert_equal(spec.resolution(it).value().kind, ResolutionKind.SET_CTOR)
     assert_equal(spec.resolution(it).value().name, "range")
 
 
@@ -637,7 +637,7 @@ def test_aggregate_spec_functions_are_planned_calls() raises:
     var names = List[String]()
     for n in nodes_of(spec, clause_expr(spec, "f.a"), ast.NodeKind.CALL):
         var r = spec.resolution(n)
-        if r and r.value().kind == R_SPEC_FN:
+        if r and r.value().kind == .SPEC_FN:
             names.append(r.value().name.copy())
     assert_equal(len(names), 2)
     assert_equal(names[0], "g")

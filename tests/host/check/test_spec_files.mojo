@@ -4,15 +4,7 @@ from std.ffi import external_call
 from std.time import perf_counter_ns
 
 from check.checker import check, check_source
-from check.spec import (
-    R_CONST,
-    R_DEF,
-    R_EXTERN,
-    R_OBSERVER,
-    R_QERR_PART,
-    R_SPEC_FN,
-    Spec,
-)
+from check.spec import ResolutionKind, Spec
 from check_testkit import (
     clause_expr,
     fails,
@@ -99,7 +91,7 @@ def test_planned_calls_in_clauses() raises:
     var found = 0
     for c in nodes_of(spec, has, ast.NodeKind.CALL):
         var r = spec.resolution(c)
-        if r and r.value().kind == R_SPEC_FN:
+        if r and r.value().kind == .SPEC_FN:
             assert_equal(r.value().index, contains)
             assert_equal(type_text(spec, c), "bool")
             found += 1
@@ -109,7 +101,7 @@ def test_planned_calls_in_clauses() raises:
     var is_or = False
     for c in recursive:
         var r = spec.resolution(c)
-        if r and r.value().kind == R_SPEC_FN and r.value().index == or_:
+        if r and r.value().kind == .SPEC_FN and r.value().index == or_:
             is_or = True
             assert_equal(type_text(spec, c), "bitpattern.IntSet")
     assert_true(is_or)
@@ -118,7 +110,7 @@ def test_planned_calls_in_clauses() raises:
     var len_calls = 0
     for c in nodes_of(spec, counted, ast.NodeKind.CALL):
         var r = spec.resolution(c)
-        if r and r.value().kind == R_SPEC_FN:
+        if r and r.value().kind == .SPEC_FN:
             len_calls += 1
     assert_equal(len_calls, 1)
 
@@ -129,7 +121,7 @@ def test_requires_calls_definitions() raises:
     var defs = 0
     for c in nodes_of(spec, req, ast.NodeKind.CALL):
         var r = spec.resolution(c)
-        if r and r.value().kind == R_DEF:
+        if r and r.value().kind == .DEF:
             defs += 1
             assert_equal(type_text(spec, c), "int")
     assert_equal(defs, 2)
@@ -160,11 +152,11 @@ def test_constants_and_choice_types() raises:
     var chains = 0
     for n in nodes_of(spec, width, ast.NodeKind.ATTR):
         var r = spec.resolution(n)
-        if r and r.value().kind == R_CONST:
+        if r and r.value().kind == .CONST:
             chains += 1
             assert_equal(type_text(spec, n), "bitpattern.Codec")
         elif r:
-            assert_equal(r.value().kind, R_OBSERVER)
+            assert_equal(r.value().kind, ResolutionKind.OBSERVER)
             assert_equal(type_text(spec, n), "int")
     assert_equal(chains, 2)
 
@@ -181,7 +173,7 @@ def test_builds_and_observer_expressions() raises:
     var members = s.observers[1].copy()
     assert_equal(members.name, "members")
     var call = members.expr
-    assert_equal(spec.resolution(call).value().kind, R_EXTERN)
+    assert_equal(spec.resolution(call).value().kind, ResolutionKind.EXTERN)
     assert_equal(spec.resolution(call).value().name, "builtins.list")
     assert_equal(type_text(spec, call), "list<int>")
     assert_equal(type_text(spec, s.observers[2].expr), "int")
@@ -198,7 +190,7 @@ def test_new_operators_and_parts() raises:
     var parts = 0
     for n in nodes_of(spec, close, ast.NodeKind.ATTR):
         var r = spec.resolution(n)
-        if r and r.value().kind == R_QERR_PART:
+        if r and r.value().kind == .QERR_PART:
             parts += 1
             assert_equal(type_text(spec, n), "int")
     assert_equal(parts, 2)

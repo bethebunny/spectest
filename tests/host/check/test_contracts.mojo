@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from check.types import ANY_TYPE, TypeKind, Types
-from check.spec import Spec, Resolution, R_PARAM, R_QERR_PART, R_EXTERN
+from check.spec import Resolution, ResolutionKind, Spec
 from prelude.names import prelude_id, prelude_name, prelude_count
 from syntax.ast import Ast
 
@@ -39,14 +39,14 @@ def test_types_intern_by_value() raises:
 def test_spec_tables() raises:
     var spec = Spec("s", Ast("x", "s.spec"), Types())
     assert_equal(len(spec.node_types), 1)
-    spec.resolutions[0] = Resolution(R_PARAM, 2, -1, "x")
+    spec.resolutions[0] = Resolution(ResolutionKind.PARAM, 2, -1, "x")
     assert_equal(spec.resolution(0).value().index, 2)
     assert_false(spec.resolution(5))
 
 
 def test_resolution_kinds_are_distinct() raises:
-    assert_equal(Int(R_QERR_PART), 17)
-    assert_equal(Int(R_EXTERN), 18)
+    assert_equal(Int(ResolutionKind.QERR_PART), 16)
+    assert_equal(Int(ResolutionKind.EXTERN), 17)
 
 
 def test_prelude_names() raises:

@@ -5,7 +5,6 @@ in the `Run`: the node it is attributed to, and whether it is a skip of the clau
 planned call that raised in the library) rather than an error.
 """
 
-from check import spec as sp
 from check import types as ty
 from check.spec import Spec, Param
 from numeric.fixed import int_max, int_min
@@ -103,7 +102,7 @@ def is_old_call(spec: Spec, e: Int) -> Bool:
     if spec.ast.nodes[e].kind != .CALL:
         return False
     var r = spec.resolution(e)
-    return r is not None and r.value().kind == sp.R_OLD
+    return r is not None and r.value().kind == .OLD
 
 
 def value_of[
@@ -221,31 +220,31 @@ def _name_value[
         raise Error(t"{name} has no value: the checker did not resolve it")
     ref r = found.value()
     match r.kind:
-        case sp.R_PARAM:
+        case .PARAM:
             if r.index >= len(env.params):
                 raise Error(t"no value for the parameter {name}")
             return env.params[r.index].copy()
-        case sp.R_RESULT:
+        case .RESULT:
             if case .Some(result) = env.result:
                 return result.copy()
             raise Error("no value for the result")
-        case sp.R_SELF:
+        case .SELF:
             return self_of(env)
-        case sp.R_LOCAL:
+        case .LOCAL:
             var local = run.innermost(r.index)
             if local is None:
                 raise Error(t"no value for the local {name}")
             return local.take()
-        case sp.R_FIELD:
+        case .FIELD:
             return host.observe(self_of(env), r.owner, r.index, [])
-        case sp.R_ENUM_MEMBER:
+        case .ENUM_MEMBER:
             return enum_member(spec, enum_type=r.owner, index=r.index)
-        case sp.R_CLASS:
+        case .CLASS:
             var expr = spec.ast.child(r.index, 0)
             if type_kind(spec, expr) == .BOOL:
                 return value_of(spec, expr, env, run, host)
             raise Error(t"class {name} is a partition set: it has no value in a clause")
-        case sp.R_CONST:
+        case .CONST:
             return host.constant(r.index)
         case _:
             raise Error(t"{name} cannot be evaluated as a value")
@@ -265,11 +264,11 @@ def _attr_value[
         raise Error(t".{n.text} cannot be evaluated: the checker did not resolve it")
     ref r = found.value()
     match r.kind:
-        case sp.R_ENUM_MEMBER:
+        case .ENUM_MEMBER:
             return enum_member(spec, enum_type=r.owner, index=r.index)
-        case sp.R_CONST:
+        case .CONST:
             return host.constant(r.index)
-        case sp.R_TYPE_CONST:
+        case .TYPE_CONST:
             if type_kind(spec, e) == .SET:
                 raise Error(t"{spec.ast.source_text(e)} is a partition set: it has no value in a clause")
             ref scalar = spec.types.infos[r.index]
@@ -279,24 +278,24 @@ def _attr_value[
             var f = format_by_id(UInt8(scalar.bits))
             var top = f.max_finite()
             return Value.float(f, top if r.name == "max" else top | f.sign_mask())
-        case sp.R_OBSERVER:
+        case .OBSERVER:
             var obj = value_of(spec, n.children[0], env, run, host)
             if obj.kind != .HANDLE:
                 raise Error(t"observer {n.text} needs a handle, but got {show(obj)}")
             return host.observe(obj, r.owner, r.index, [])
-        case sp.R_RECORD_FIELD:
+        case .RECORD_FIELD:
             var record = value_of(spec, n.children[0], env, run, host)
             if record.kind != .RECORD:
                 raise Error(t".{n.text} needs a record, but got {show(record)}")
             if case .Some(field) = record.field(n.text):
                 return field.copy()
             raise Error(t"record {record.name()} has no field {n.text}")
-        case sp.R_QERR_PART:
+        case .QERR_PART:
             var q = value_of(spec, n.children[0], env, run, host)
             if q.kind != .QERR:
                 raise Error(t".{n.text} needs a qerr, but got {show(q)}")
             return q.item(0 if n.text == "steps" else 1)
-        case sp.R_SET_CTOR:
+        case .SET_CTOR:
             raise Error(t"{spec.ast.source_text(e)} is a partition set constructor")
         case _:
             raise Error(t".{n.text} cannot be evaluated")
@@ -491,9 +490,9 @@ def _call_value[
         raise Error("this call cannot be evaluated: the checker did not resolve it")
     ref r = found.value()
     match r.kind:
-        case sp.R_PRELUDE:
+        case .PRELUDE:
             return _prelude_value(spec, e, r.index, env, run, host)
-        case sp.R_OLD:
+        case .OLD:
             if e not in env.olds:
                 raise Error(
                     "old(...) has no snapshot of the state before the call (snapshot_olds must run before the call)"
@@ -502,22 +501,22 @@ def _call_value[
             if case .Some(failure) = old.failure:
                 raise run.reraise(failure)
             return old.value.copy()
-        case sp.R_SPEC_FN:
+        case .SPEC_FN:
             ref f = spec.fns[r.index]
             var args = coerced(spec, bind_args(spec, e, f.params, f.name, env, run, host), f.params, f.name)
             var out = host.call_fn(r.index, args)
             if out.kind == .ERROR:
                 raise run.skip(e, String(t"the call of {f.name} raised {out.error_text()}"))
             return fit(spec.types, out, spec.node_types[e])
-        case sp.R_DEF:
+        case .DEF:
             ref d = spec.defs[r.index]
             var def_env = Env(bind_args(spec, e, d.params, d.name, env, run, host))
             def_env.types = env.types.copy()
             return fit(spec.types, value_of(spec, d.body, def_env, run, host), spec.node_types[e])
-        case sp.R_OBSERVER | sp.R_FIELD:
+        case .OBSERVER | .FIELD:
             ref observer = spec.models[r.owner].observers[r.index]
             var obj: Value
-            if r.kind == sp.R_FIELD:
+            if r.kind == .FIELD:
                 obj = self_of(env)
             else:
                 var callee = n.children[0]
@@ -529,10 +528,10 @@ def _call_value[
             var what = String(t"{spec.models[r.owner].name}.{r.name}")
             var args = coerced(spec, bind_args(spec, e, observer.params, what, env, run, host), observer.params, what)
             return host.observe(obj, r.owner, r.index, args)
-        case sp.R_EXTERN:
+        case .EXTERN:
             var args = [value_of(spec, spec.ast.child(child, 0), env, run, host) for child in n.children[2:]]
             return host.call_extern(r.name, args)
-        case sp.R_SET_CTOR:
+        case .SET_CTOR:
             raise Error(t"{spec.ast.source_text(n.children[0])}(...) is a partition set")
         case _:
             raise Error(t"a call of {r.name} cannot be evaluated")

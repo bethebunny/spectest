@@ -4,7 +4,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 
 from check.checker import check_source_with
 from check.files import Files
-from check.spec import R_DEF
+from check.spec import ResolutionKind
 from check.spec import Spec
 from syntax.ast import Op
 
@@ -50,7 +50,7 @@ def test_a_spec_uses_the_definitions_of_its_prelude() raises:
     # The requires and the ensures clause resolve the call to the definition.
     var found = 0
     for kv in spec.resolutions.items():
-        if kv.value.kind == R_DEF:
+        if kv.value.kind == .DEF:
             found += 1
     assert_true(found >= 4, String(found))
     assert_equal(spec.clauses[spec.clause_named("f.big").value()].kind, Op.ENSURES)

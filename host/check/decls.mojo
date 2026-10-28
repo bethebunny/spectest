@@ -26,10 +26,6 @@ from check.spec import (
     Param,
     Partition,
     PartitionClass,
-    R_FIELD,
-    R_OBSERVER,
-    R_PRELUDE,
-    R_TYPE_CONST,
 )
 from check.state import (
     Checker,
@@ -640,7 +636,7 @@ def check_freedoms(mut c: Checker, decl_id: String, clauses: List[Int]):
             if not r:
                 continue
             var rk = r.value().kind
-            if rk != R_PRELUDE and rk != R_OBSERVER and rk != R_FIELD:
+            if rk != .PRELUDE and rk != .OBSERVER and rk != .FIELD:
                 continue
             var rname = r.value().name.copy()
             for j in range(len(names)):
@@ -1073,7 +1069,7 @@ def is_constant(mut c: Checker, e: Int) -> Bool:
         return False
     if k == .ATTR:
         var r = c.spec.resolutions.get(e)
-        return r.__bool__() and r.value().kind == R_TYPE_CONST
+        return r.__bool__() and r.value().kind == .TYPE_CONST
     return False
 
 
