@@ -889,9 +889,7 @@ struct Prop(Property, Movable):
             var m = spec.model_named(name)
             if m is None:
                 continue
-            var hs = List[Value]()
-            handles_of(spec.types, result, self.rtype, name, hs)
-            for h in hs:
+            for h in handles_of(spec.types, result, self.rtype, name):
                 for oi in range(len(spec.models[m.value()].observers)):
                     if len(spec.models[m.value()].observers[oi].params) > 0:
                         continue
@@ -923,16 +921,12 @@ struct Prop(Property, Movable):
         var hs = List[Value]()
         var where = List[String]()
         if not no_result:
-            var found = List[Value]()
-            handles_of(spec.types, result, self.rtype, name, found)
-            for h in found:
+            for h in handles_of(spec.types, result, self.rtype, name):
                 hs.append(h.copy())
                 where.append(String("result"))
         for p in range(len(func.params)):
             if func.params[p].name in self.modified:
-                var found = List[Value]()
-                handles_of(spec.types, args[p], self.ptypes[p], name, found)
-                for h in found:
+                for h in handles_of(spec.types, args[p], self.ptypes[p], name):
                     hs.append(h.copy())
                     where.append(func.params[p].name.copy())
         if len(hs) == 0:

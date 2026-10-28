@@ -6,13 +6,13 @@ that to the `#type` clause."""
 
 from check import types as ty
 from check.types import Types
-from numeric.bigint import BigInt
 from numeric.fixed import int_max, int_min, low_mask
 from numeric.floats import converted, is_nan, signbit
 from numeric.formats import FloatFormat, format_by_id
-from .util import norm_name
 from wire.format import format_value
 from wire.value import Kind, Value
+
+from .util import norm_name
 
 
 def describe(v: Value) -> String:
@@ -25,150 +25,133 @@ def describe(v: Value) -> String:
 
 
 def _mismatch(types: Types, t: Int, v: Value, path: String, extra: String = "") -> Error:
-    var at = String(" at ", path) if path else String()
     var tail = String(" (", extra, ")") if extra else String()
-    return Error("expected ", types.text(t), ", got ", describe(v), tail, at)
+    var at = String(" at ", path) if path else String()
+    return Error(t"expected {types.text(t)}, got {describe(v)}{tail}{at}")
 
 
-def _float(
-    types: Types, v: Value, t: Int, f: FloatFormat, path: String
-) raises -> Value:
+def _scalar(types: Types, v: Value, t: Int, path: String, kind: Kind) raises -> Value:
+    if v.kind != kind:
+        raise _mismatch(types, t, v, path)
+    return v.copy()
+
+
+def _float(types: Types, v: Value, t: Int, f: FloatFormat, path: String) raises -> Value:
     if v.kind != .FLOAT:
         raise _mismatch(types, t, v, path)
     var src = v.float_format()
     if src == f:
         return v.copy()
     var bits = v.float_bits()
-    if is_nan(src, bits):
-        # A NaN keeps its sign and payload when the narrower format can hold them.
-        var drop = src.fraction_bits - f.fraction_bits
-        if drop < 0:
-            return Value.float(
-                f,
-                (f.exponent_mask() | (bits & src.fraction_mask()) << UInt64(-drop))
-                | (f.sign_mask() if signbit(src, bits) else UInt64(0)),
-            )
-        var payload = bits & src.fraction_mask()
-        if payload & low_mask(drop) != 0:
-            raise _mismatch(types, t, v, path, "a NaN payload the format cannot hold")
-        var kept = payload >> UInt64(drop)
-        if kept == 0:
-            raise _mismatch(types, t, v, path, "a NaN payload the format cannot hold")
-        return Value.float(
-            f,
-            f.exponent_mask() | kept | (f.sign_mask() if signbit(src, bits) else UInt64(0)),
-        )
-    if case .Some(exact) = converted(src, f, bits):
-        return Value.float(f, exact)
-    raise _mismatch(types, t, v, path, String("not exact in ", f))
+    if not is_nan(src, bits):
+        if case .Some(exact) = converted(src, f, bits):
+            return Value.float(f, exact)
+        raise _mismatch(types, t, v, path, String("not exact in ", f))
+    # A NaN keeps its sign and payload when the narrower format can hold them.
+    var payload = bits & src.fraction_mask()
+    var sign = f.sign_mask() if signbit(src, bits) else UInt64(0)
+    var drop = src.fraction_bits - f.fraction_bits
+    if drop < 0:
+        return Value.float(f, f.exponent_mask() | payload << UInt64(-drop) | sign)
+    var kept = payload >> UInt64(drop)
+    if payload & low_mask(drop) != 0 or kept == 0:
+        raise _mismatch(types, t, v, path, "a NaN payload the format cannot hold")
+    return Value.float(f, f.exponent_mask() | kept | sign)
 
 
-def _record(
-    types: Types, v: Value, t: Int, path: String, info_names: List[String], info_args: List[Int]
-) raises -> Value:
-    var values = [Value.none() for _ in info_names]
-    var found = [False for _ in info_names]
-    for i in range(v.count()):
-        var key = v.item(2 * i)
+def _record(types: Types, v: Value, t: Int, path: String) raises -> Value:
+    """A record from `Record` or from a map with exactly the fields."""
+    ref info = types.info(t)
+    var values: List[Optional[Value]] = [None for _ in info.names]
+    for key, value in v.pairs():
         if v.kind == .MAP and key.kind != .STRING:
             raise _mismatch(types, t, v, path, "a field name is not a string")
-        var name = key.text().copy()
-        if name not in info_names:
+        ref name = key.text()
+        var at = info.names.try_index(name)
+        if at is None:
             raise _mismatch(types, t, v, path, String("no field ", name))
-        var at = info_names.index(name)
-        values[at] = _decode(v.item(2 * i + 1), info_args[at], types, path + "." + name)
-        found[at] = True
-    for j, name in enumerate(info_names):
-        if not found[j]:
+        values[at.value()] = _decode(value, info.args[at.value()], types, String(path, ".", name))
+    for name, value in zip(info.names, values):
+        if value is None:
             raise _mismatch(types, t, v, path, String("missing field ", name))
-    return Value.record(types.info(t).name.copy(), info_names, values^)
+    return Value.record(info.name.copy(), info.names, [value.value().copy() for value in values])
 
 
 def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
     ref info = types.info(t)
-    var k = info.kind
-    if k == ty.ANY or k == ty.TYPEVAR:
-        return v.copy()
-    if k == ty.UNIT:
-        return Value.none()
-    if k == ty.BOOL or k == ty.INT or k == ty.STRING or k == ty.BYTES:
-        var kind = Kind.BOOL if k == ty.BOOL else Kind.INT if k == ty.INT else Kind.STRING if k == ty.STRING else Kind.BYTES
-        if v.kind != kind:
-            raise _mismatch(types, t, v, path)
-        return v.copy()
-    if k == ty.FIXED_INT:
-        if v.kind != .INT:
-            raise _mismatch(types, t, v, path)
-        var n = v.as_bigint()
-        if n < int_min(info.bits, info.signed) or int_max(info.bits, info.signed) < n:
-            raise _mismatch(
-                types,
-                t,
-                v,
-                path,
-                String(
-                    "outside the ", types.text(t), " range ",
-                    int_min(info.bits, info.signed), "..", int_max(info.bits, info.signed),
-                ),
-            )
-        return v.copy()
-    if k == ty.FLOAT:
-        return _float(types, v, t, format_by_id(UInt8(info.bits)), path)
-    if k == ty.LIST:
-        if v.kind != .LIST and v.kind != .TUPLE:
-            raise _mismatch(types, t, v, path)
-        var items = List[Value](capacity=v.count())
-        for i in range(v.count()):
-            items.append(_decode(v.item(i), info.args[0], types, String(path, "[", i, "]")))
-        return Value.list(items^)
-    if k == ty.TUPLE:
-        if (v.kind != .TUPLE and v.kind != .LIST) or v.count() != len(info.args):
-            raise _mismatch(types, t, v, path)
-        var items = List[Value](capacity=v.count())
-        for i in range(v.count()):
-            items.append(_decode(v.item(i), info.args[i], types, String(path, ".", i)))
-        return Value.tuple(items^)
-    if k == ty.MAP:
-        if v.kind != .MAP:
-            raise _mismatch(types, t, v, path)
-        var keys = List[Value]()
-        var vals = List[Value]()
-        for i in range(v.count()):
-            keys.append(_decode(v.item(2 * i), info.args[0], types, path + "{key}"))
-            vals.append(_decode(v.item(2 * i + 1), info.args[1], types, path + "{value}"))
-        return Value.map(keys^, vals^)
-    if k == ty.OPTION:
-        if v.kind == .OPTION:
+    match info.kind:
+        case ty.ANY | ty.TYPEVAR:
+            return v.copy()
+        case ty.UNIT:
+            return Value.none()
+        case ty.BOOL:
+            return _scalar(types, v, t, path, .BOOL)
+        case ty.INT:
+            return _scalar(types, v, t, path, .INT)
+        case ty.STRING:
+            return _scalar(types, v, t, path, .STRING)
+        case ty.BYTES:
+            return _scalar(types, v, t, path, .BYTES)
+        case ty.FIXED_INT:
+            if v.kind != .INT:
+                raise _mismatch(types, t, v, path)
+            var low = int_min(info.bits, info.signed)
+            var high = int_max(info.bits, info.signed)
+            var n = v.as_bigint()
+            if n < low or high < n:
+                raise _mismatch(types, t, v, path, String("outside the ", types.text(t), " range ", low, "..", high))
+            return v.copy()
+        case ty.FLOAT:
+            return _float(types, v, t, format_by_id(UInt8(info.bits)), path)
+        case ty.LIST:
+            if v.kind != .LIST and v.kind != .TUPLE:
+                raise _mismatch(types, t, v, path)
+            return Value.list([_decode(item, info.args[0], types, String(path, "[", i, "]")) for i, item in enumerate(v.items())])
+        case ty.TUPLE:
+            if (v.kind != .TUPLE and v.kind != .LIST) or v.count() != len(info.args):
+                raise _mismatch(types, t, v, path)
+            return Value.tuple([_decode(v.item(i), arg, types, String(path, ".", i)) for i, arg in enumerate(info.args)])
+        case ty.MAP:
+            if v.kind != .MAP:
+                raise _mismatch(types, t, v, path)
+            var keys: List[Value] = []
+            var values: List[Value] = []
+            for key, value in v.pairs():
+                keys.append(_decode(key, info.args[0], types, path + "{key}"))
+                values.append(_decode(value, info.args[1], types, path + "{value}"))
+            return Value.map(keys^, values^)
+        case ty.OPTION:
+            if v.kind != .OPTION:
+                return Value.some(_decode(v, info.args[0], types, path))
             if v.count() == 0:
                 return Value.none()
             return Value.some(_decode(v.item(0), info.args[0], types, path))
-        return Value.some(_decode(v, info.args[0], types, path))
-    if k == ty.LITERAL or k == ty.ENUM:
-        if v.kind != .STRING and v.kind != .ENUM:
-            raise _mismatch(types, t, v, path)
-        var member = v.text().copy()
-        if k == ty.LITERAL:
+        case ty.LITERAL | ty.ENUM:
+            if v.kind != .STRING and v.kind != .ENUM:
+                raise _mismatch(types, t, v, path)
+            var member = v.text().copy()
+            if info.kind == ty.LITERAL:
+                if member not in info.names:
+                    raise _mismatch(types, t, v, path, "not a member of the union")
+                return Value.enum(String(), member^)
+            if v.kind == .ENUM and v.name() != "" and norm_name(v.name()) != norm_name(info.name):
+                raise _mismatch(types, t, v, path, String("an enum of ", v.name()))
             if member not in info.names:
-                raise _mismatch(types, t, v, path, "not a member of the union")
-            return Value.enum(String(), member^)
-        if v.kind == .ENUM and v.name() != "" and norm_name(v.name()) != norm_name(info.name):
-            raise _mismatch(types, t, v, path, String("an enum of ", v.name()))
-        if member not in info.names:
-            raise _mismatch(types, t, v, path, String(member, " is not a member"))
-        return Value.enum(info.name.copy(), member^)
-    if k == ty.RECORD:
-        if v.kind != .RECORD and v.kind != .MAP:
-            raise _mismatch(types, t, v, path)
-        return _record(types, v, t, path, info.names, info.args)
-    if k == ty.MODEL:
-        if v.kind != .HANDLE:
-            raise _mismatch(types, t, v, path)
-        # A qualified model names a Python class; a handle of another class is not one.
-        var cls = norm_name(v.name())
-        if "." in info.name and cls != norm_name(info.name):
-            raise _mismatch(types, t, v, path, String("a handle of class ", v.name()))
-        return v.copy()
-    raise Error(String("a result of type ", types.text(t), " cannot be read"))
+                raise _mismatch(types, t, v, path, String(member, " is not a member"))
+            return Value.enum(info.name.copy(), member^)
+        case ty.RECORD:
+            if v.kind != .RECORD and v.kind != .MAP:
+                raise _mismatch(types, t, v, path)
+            return _record(types, v, t, path)
+        case ty.MODEL:
+            if v.kind != .HANDLE:
+                raise _mismatch(types, t, v, path)
+            # A qualified model names a Python class; a handle of another class is not one.
+            if "." in info.name and norm_name(v.name()) != norm_name(info.name):
+                raise _mismatch(types, t, v, path, String("a handle of class ", v.name()))
+            return v.copy()
+        case _:
+            raise Error(t"a result of type {types.text(t)} cannot be read")
 
 
 def decode(value: Value, t: Int, types: Types) raises -> Value:

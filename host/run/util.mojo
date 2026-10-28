@@ -1,7 +1,7 @@
 """Small pure helpers of the runner: names of errors, skip causes, models inside types,
 instantiation types."""
 
-from std.builtin.sort import sort
+from std.collections import Set
 
 from check import types as ty
 from wire.value import Value
@@ -25,13 +25,15 @@ def cause_name(i: Int) -> String:
 
 
 def norm_name(name: String) -> String:
-    if name.startswith("builtins."):
-        return String(name[byte = 9 :])
-    return name.copy()
+    return String(name.removeprefix("builtins."))
 
 
 def _has_parts(kind: UInt8) -> Bool:
-    return kind == ty.LIST or kind == ty.OPTION or kind == ty.TUPLE or kind == ty.MAP or kind == ty.RECORD
+    match kind:
+        case ty.LIST | ty.OPTION | ty.TUPLE | ty.MAP | ty.RECORD:
+            return True
+        case _:
+            return False
 
 
 def type_has_model(types: ty.Types, t: Int) -> Bool:
@@ -44,42 +46,43 @@ def collect_models(types: ty.Types, t: Int, mut out: List[String]):
     if info.kind == ty.MODEL:
         if not info.signed and info.name not in out:
             out.append(info.name.copy())
-        return
-    if _has_parts(info.kind):
+    elif _has_parts(info.kind):
         for a in info.args:
             collect_models(types, a, out)
 
 
-def handles_of(types: ty.Types, v: Value, t: Int, model: String, mut out: List[Value]):
+def handles_of(types: ty.Types, v: Value, t: Int, model: String) -> List[Value]:
     """The handles of model `model` inside `v`, a value of type `t`."""
     ref info = types.info(t)
-    if info.kind == ty.MODEL:
-        if info.name == model and v.kind == .HANDLE:
+    var out: List[Value] = []
+    match info.kind, v.kind:
+        case ty.MODEL, .HANDLE if info.name == model:
             out.append(v.copy())
-        return
-    if (info.kind == ty.LIST and (v.kind == .LIST)) or (info.kind == ty.OPTION and v.kind == .OPTION):
-        for i in range(v.count()):
-            handles_of(types, v.item(i), info.args[0], model, out)
-    elif info.kind == ty.TUPLE and v.kind == .TUPLE and v.count() == len(info.args):
-        for i in range(v.count()):
-            handles_of(types, v.item(i), info.args[i], model, out)
-    elif info.kind == ty.MAP and v.kind == .MAP:
-        for i in range(v.count()):
-            handles_of(types, v.item(2 * i), info.args[0], model, out)
-            handles_of(types, v.item(2 * i + 1), info.args[1], model, out)
+        case (ty.LIST, .LIST) | (ty.OPTION, .OPTION):
+            for item in v.items():
+                out += handles_of(types, item, info.args[0], model)
+        case ty.TUPLE, .TUPLE if v.count() == len(info.args):
+            for i, arg in enumerate(info.args):
+                out += handles_of(types, v.item(i), arg, model)
+        case ty.MAP, .MAP:
+            for key, value in v.pairs():
+                out += handles_of(types, key, info.args[0], model)
+                out += handles_of(types, value, info.args[1], model)
+        case _:
+            pass
+    return out^
 
 
 def parse_type(text: String, mut types: ty.Types) raises -> Int:
     """A type as an instantiation writes it: a scalar name, or `list<T>`, `option<T>`."""
     var s = String(text.strip())
-    var scalar = types.scalar(s)
-    if scalar is not None:
-        return scalar.value()
+    if case .Some(scalar) = types.scalar(s):
+        return scalar
     if s.startswith("list<") and s.endswith(">"):
         return types.list_of(parse_type(String(s[byte = 5 : s.byte_length() - 1]), types))
     if s.startswith("option<") and s.endswith(">"):
         return types.option_of(parse_type(String(s[byte = 7 : s.byte_length() - 1]), types))
-    raise Error(String("the instantiation names a type that is not a scalar, list or option: ", text))
+    raise Error(t"the instantiation names a type that is not a scalar, list or option: {text}")
 
 
 def contains_name(items: List[String], name: String) -> Bool:
@@ -87,7 +90,6 @@ def contains_name(items: List[String], name: String) -> Bool:
 
 
 def names_text(items: List[String]) -> String:
-    var names = items.copy()
+    var names = List(Set(items))
     sort(names)
-    var distinct = [n for i, n in enumerate(names) if i == 0 or n != names[i - 1]]
-    return String("{", ", ".join(distinct), "}")
+    return String("{", ", ".join(names), "}")

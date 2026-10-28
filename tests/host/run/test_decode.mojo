@@ -232,9 +232,8 @@ def test_models_inside_types() raises:
     collect_models(types, types.tuple_of([l, box, iface]), names)
     assert_equal(len(names), 1)
     assert_equal(names[0], "pkg.Box")
-    var found = List[Value]()
     var v = Value.list([Value.some(Value.handle(1, "pkg.Box")), Value.none(), Value.some(Value.handle(2, "pkg.Box"))])
-    handles_of(types, v, l, "pkg.Box", found)
+    var found = handles_of(types, v, l, "pkg.Box")
     assert_equal(len(found), 2)
     assert_equal(Int(found[1].handle_id()), 2)
 
