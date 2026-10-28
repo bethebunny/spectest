@@ -1,27 +1,10 @@
-"""Small pure helpers of the runner: names of errors, skip causes, models inside types,
-instantiation types."""
+"""Small pure helpers of the runner: names of errors, models inside types, instantiation
+types."""
 
 from std.collections import Set
 
 from check import types as ty
 from wire.value import Value
-
-comptime N_CAUSES = 8
-
-
-def _cause_names() -> List[String]:
-    return ["requires", "raised", "raise due", "wrong type", "unrepresentable", "rejected", "planned call", "other"]
-
-
-def cause_index(cause: String) -> Int:
-    for i, name in enumerate(_cause_names()):
-        if name == cause:
-            return i
-    return N_CAUSES - 1
-
-
-def cause_name(i: Int) -> String:
-    return _cause_names()[i] if i < N_CAUSES - 1 else "other"
 
 
 def norm_name(name: String) -> String:
@@ -36,6 +19,13 @@ def _has_parts(kind: UInt8) -> Bool:
             return False
 
 
+def is_handle(types: ty.Types, t: Int) -> Bool:
+    """Whether `t` is a model passed around as a handle (`signed` marks an interface,
+    whose objects live in its steps)."""
+    ref info = types.info(t)
+    return info.kind == ty.MODEL and not info.signed
+
+
 def type_has_model(types: ty.Types, t: Int) -> Bool:
     ref info = types.info(t)
     return info.kind == ty.MODEL or (_has_parts(info.kind) and any([type_has_model(types, a) for a in info.args]))
@@ -43,8 +33,8 @@ def type_has_model(types: ty.Types, t: Int) -> Bool:
 
 def collect_models(types: ty.Types, t: Int, mut out: List[String]):
     ref info = types.info(t)
-    if info.kind == ty.MODEL:
-        if not info.signed and info.name not in out:
+    if is_handle(types, t):
+        if info.name not in out:
             out.append(info.name.copy())
     elif _has_parts(info.kind):
         for a in info.args:
@@ -55,15 +45,19 @@ def handles_of(types: ty.Types, v: Value, t: Int, model: String) -> List[Value]:
     """The handles of model `model` inside `v`, a value of type `t`."""
     ref info = types.info(t)
     var out: List[Value] = []
+    # TODO: each guarded case returns, since a guarded case on an __enum that runs off
+    # its end goes on matching the cases after it (Mojo 1.2).
     match info.kind, v.kind:
         case ty.MODEL, .HANDLE if info.name == model:
             out.append(v.copy())
+            return out^
         case (ty.LIST, .LIST) | (ty.OPTION, .OPTION):
             for item in v.items():
                 out += handles_of(types, item, info.args[0], model)
         case ty.TUPLE, .TUPLE if v.count() == len(info.args):
             for i, arg in enumerate(info.args):
                 out += handles_of(types, v.item(i), arg, model)
+            return out^
         case ty.MAP, .MAP:
             for key, value in v.pairs():
                 out += handles_of(types, key, info.args[0], model)

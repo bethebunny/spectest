@@ -5,8 +5,6 @@ from numeric.bigint import BigInt
 from numeric.formats import BF16, F16, F32, F64
 from run.decode import decode, encode
 from run.util import (
-    cause_index,
-    cause_name,
     collect_models,
     contains_name,
     handles_of,
@@ -15,6 +13,7 @@ from run.util import (
     parse_type,
     type_has_model,
 )
+from run.verdict import CAUSE_COUNT, CAUSE_NAMES, Cause
 from wire.format import format_value
 from wire.value import Value
 
@@ -215,10 +214,13 @@ def test_error_names() raises:
 
 
 def test_skip_causes() raises:
-    for i in range(8):
-        assert_equal(cause_index(cause_name(i)), i)
-    assert_equal(cause_index("something else"), 7)
-    assert_equal(cause_name(2), "raise due")
+    var causes: List[Cause] = [.REQUIRES, .RAISED, .RAISE_DUE, .WRONG_TYPE, .UNREPRESENTABLE, .PLANNED_CALL, .OTHER]
+    var names = materialize[CAUSE_NAMES]()
+    for i, cause in enumerate(causes):
+        assert_equal(cause.index(), i)
+        assert_equal(String(cause), String(names[i]))
+    assert_equal(Cause.OTHER.index(), CAUSE_COUNT - 1)
+    assert_equal(String(Cause.RAISE_DUE), "raise due")
 
 
 def test_models_inside_types() raises:
