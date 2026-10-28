@@ -263,7 +263,7 @@ struct Checker:
         self.sig_msg = String()
         self.sig_arg = -1
         self.sig_key = String()
-        for k, word in enumerate(NAMES.split(" ")):
+        for k, word in enumerate(materialize[NAMES]()):
             self.prelude_ids[String(word)] = k
             self.prelude_sigs.append(make_sig(String(word)))
         self.poison = self.spec.types.intern(ty.TypeInfo(ty.ANY, 0, False, "poison", [], []))

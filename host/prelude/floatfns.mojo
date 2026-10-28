@@ -1,20 +1,9 @@
 """The float functions: classification, neighbours, `ulp`, `qe`, rounding, `real`."""
 
+from std.math import clamp
+
+from numeric import floats
 from numeric.bigint import BigInt
-from numeric.floats import (
-    exactly,
-    floor_log2,
-    is_finite as fl_is_finite,
-    is_inf as fl_is_inf,
-    is_nan as fl_is_nan,
-    is_subnormal as fl_is_subnormal,
-    is_zero as fl_is_zero,
-    next_down as fl_next_down,
-    next_up as fl_next_up,
-    round_to,
-    signbit as fl_signbit,
-    to_real,
-)
 from numeric.formats import FloatFormat
 from numeric.real import Real
 from prelude.util import fail, float_of, real_of, real_value
@@ -27,17 +16,17 @@ def classify(who: String, v: Value) raises -> Value:
     var bits = v.float_bits()
     match who:
         case "is_nan":
-            return Value.bool(fl_is_nan(f, bits))
+            return Value.bool(floats.is_nan(f, bits))
         case "is_inf":
-            return Value.bool(fl_is_inf(f, bits))
+            return Value.bool(floats.is_inf(f, bits))
         case "is_finite":
-            return Value.bool(fl_is_finite(f, bits))
+            return Value.bool(floats.is_finite(f, bits))
         case "is_zero":
-            return Value.bool(fl_is_zero(f, bits))
+            return Value.bool(floats.is_zero(f, bits))
         case "is_subnormal":
-            return Value.bool(fl_is_subnormal(f, bits))
+            return Value.bool(floats.is_subnormal(f, bits))
         case _:
-            return Value.bool(fl_signbit(f, bits))
+            return Value.bool(floats.signbit(f, bits))
 
 
 def bits(v: Value) raises -> Value:
@@ -47,68 +36,61 @@ def bits(v: Value) raises -> Value:
 
 def next_up(v: Value) raises -> Value:
     var f = float_of(v, "next_up")
-    return Value.float(f, fl_next_up(f, v.float_bits()))
+    return Value.float(f, floats.next_up(f, v.float_bits()))
 
 
 def next_down(v: Value) raises -> Value:
     var f = float_of(v, "next_down")
-    return Value.float(f, fl_next_down(f, v.float_bits()))
-
-
-def _pow2(k: Int) -> Real:
-    return Real.dyadic(False, 1, k)
+    return Value.float(f, floats.next_down(f, v.float_bits()))
 
 
 def ulp(f: FloatFormat, x: Value) raises -> Value:
     """The spacing of the format in the binade of |x| (the top binade past the largest finite)."""
     var r = real_of(x, String("ulp<", f, ">"))
     var emin = 1 - f.bias()
-    var emax = f.bias()
     var e: Int
     if r.is_inf():
-        e = emax
+        e = f.bias()
     elif r.is_zero():
         e = emin
     else:
-        e = floor_log2(r.numerator.magnitude, r.denominator.magnitude)
-        e = min(max(e, emin), emax)
-    return real_value(_pow2(e - f.fraction_bits))
+        e = clamp(floats.floor_log2(r.numerator.magnitude, r.denominator.magnitude), emin, f.bias())
+    return real_value(Real.dyadic(False, 1, e - f.fraction_bits))
 
 
 def _ordinal(f: FloatFormat, bits: UInt64) -> Int:
-    var mag = Int(bits & ~f.sign_mask())
-    return -mag if (bits & f.sign_mask()) != 0 else mag
+    var magnitude = Int(bits & ~f.sign_mask())
+    return -magnitude if floats.signbit(f, bits) else magnitude
 
 
 def _in_format(v: Value, f: FloatFormat) raises -> Value:
     var who = String("qe<", f, ">")
     if v.kind == .FLOAT:
         if v.float_format() != f:
-            raise fail(who, t"compares {f} values, got a {float_of(v, who)}")
+            raise fail(who, t"compares {f} values, got a {v.float_format()}")
         return v.copy()
     var r = real_of(v, who)
-    var exact = exactly(f, r)
-    if exact is None:
-        raise fail(who, t"{r} is not exactly representable as {f}")
-    return Value.float(f, exact.value())
+    if case .Some(bits) = floats.exactly(f, r):
+        return Value.float(f, bits)
+    raise fail(who, t"{r} is not exactly representable as {f}")
 
 
-def qe(x_in: Value, y_in: Value, format: Optional[FloatFormat]) raises -> Value:
+def qe(x: Value, y: Value, format: Optional[FloatFormat]) raises -> Value:
     """The quantized error: the values of the format in [min, max) (signed zeros are one value)."""
-    var x = x_in.copy()
-    var y = y_in.copy()
-    if format is not None:
-        x = _in_format(x, format.value())
-        y = _in_format(y, format.value())
-    var fx = float_of(x, "qe")
-    var fy = float_of(y, "qe")
-    if fx != fy:
-        raise fail("qe", t"compares two values of one format, got {fx} and {fy}")
-    var x_nan = fl_is_nan(fx, x.float_bits())
-    var y_nan = fl_is_nan(fx, y.float_bits())
-    if x_nan or y_nan:
-        return Value.qerr(BigInt(0), BigInt(0 if (x_nan and y_nan) else 1))
-    var d = BigInt(_ordinal(fx, x.float_bits())) - BigInt(_ordinal(fx, y.float_bits()))
+    var a = x.copy()
+    var b = y.copy()
+    if case .Some(f) = format:
+        a = _in_format(x, f)
+        b = _in_format(y, f)
+    var fa = float_of(a, "qe")
+    var fb = float_of(b, "qe")
+    if fa != fb:
+        raise fail("qe", t"compares two values of one format, got {fa} and {fb}")
+    var a_nan = floats.is_nan(fa, a.float_bits())
+    var b_nan = floats.is_nan(fa, b.float_bits())
+    if a_nan or b_nan:
+        return Value.qerr(BigInt(0), BigInt(0 if a_nan and b_nan else 1))
+    var d = BigInt(_ordinal(fa, a.float_bits())) - BigInt(_ordinal(fa, b.float_bits()))
     return Value.qerr(abs(d), BigInt(0))
 
 
@@ -118,12 +100,19 @@ def qerr_part(who: String, v: Value, index: Int) raises -> Value:
     return v.item(index)
 
 
+def ieee_equal(a: Value, b: Value) raises -> Bool:
+    """IEEE 754 equality of two floats of any formats: -0 equals +0, and a NaN equals nothing."""
+    var fa = a.float_format()
+    var fb = b.float_format()
+    if floats.is_nan(fa, a.float_bits()) or floats.is_nan(fb, b.float_bits()):
+        return False
+    return floats.to_real(fa, a.float_bits()) == floats.to_real(fb, b.float_bits())
+
+
 def ieee_eq(a: Value, b: Value) raises -> Value:
-    var fa = float_of(a, "ieee_eq")
-    var fb = float_of(b, "ieee_eq")
-    if fl_is_nan(fa, a.float_bits()) or fl_is_nan(fb, b.float_bits()):
-        return Value.bool(False)
-    return Value.bool(to_real(fa, a.float_bits()) == to_real(fb, b.float_bits()))
+    _ = float_of(a, "ieee_eq")
+    _ = float_of(b, "ieee_eq")
+    return Value.bool(ieee_equal(a, b))
 
 
 def real(x: Value) raises -> Value:
@@ -132,4 +121,4 @@ def real(x: Value) raises -> Value:
 
 def round_float(f: FloatFormat, x: Value) raises -> Value:
     var r = real_of(x, String("round<", f, ">"))
-    return Value.float(f, round_to(f, r))
+    return Value.float(f, floats.round_to(f, r))

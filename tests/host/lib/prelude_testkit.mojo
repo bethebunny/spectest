@@ -7,7 +7,7 @@ from check.types import Types
 from numeric.bigint import BigInt
 from numeric.formats import FloatFormat, F16, BF16, F32, F64
 from numeric.real import Real
-from prelude.api import call, CallArgs
+from prelude.api import call, CallArgs, Keyword
 from prelude.names import prelude_id
 from prelude.util import real_value
 from wire.value import Value
@@ -64,7 +64,7 @@ def run_typed(name: String, var args: List[Value], type_arg: Int, types: Types) 
 
 def run_kw(name: String, var args: List[Value], names: List[String], var keywords: List[Value]) raises -> Value:
     var types = Types()
-    return call(id_of(name), CallArgs(args^, names.copy(), keywords^), types)
+    return call(id_of(name), CallArgs(args^, keywords=[Keyword(n, k.copy()) for n, k in zip(names, keywords)]), types)
 
 
 def error_of(name: String, var args: List[Value]) -> String:

@@ -13,7 +13,7 @@ from numeric.formats import format_by_id
 from numeric.literal import is_integer_literal, parse_number
 from partitions.compile import compiled_set
 from prelude import api
-from prelude.collections import eq as prelude_eq
+from prelude.collections import EqMode, equal
 from sets import SetContext
 from syntax import ast
 from wire.equality import same
@@ -541,42 +541,37 @@ def ev_call[
 
 def ev_prelude[
     H: EvalHost
-](spec: Spec, e: Int, pid: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
+](spec: Spec, e: Int, id: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
-    var args: List[Value] = []
-    var arg_types: List[Int] = []
-    var names: List[String] = []
-    var keywords: List[Value] = []
-    for k in range(2, len(n.children)):
-        ref arg = spec.ast.nodes[n.children[k]]
-        var v = ev(spec, arg.children[0], env, run, host)
-        if arg.text == "":
-            args.append(v^)
-            arg_types.append(spec.node_types[arg.children[0]])
+    var positional = [spec.ast.child(child, 0) for child in n.children[2:] if not spec.ast.nodes[child].text]
+    var args = api.CallArgs([])
+    for child in n.children[2:]:
+        ref arg = spec.ast.nodes[child]
+        var value = ev(spec, arg.children[0], env, run, host)
+        if arg.text:
+            args.keywords.append(api.Keyword(arg.text.copy(), value^))
         else:
-            names.append(arg.text.copy())
-            keywords.append(v^)
-    if pid == api.FRESH:
-        return Value.bool(host.fresh(args[0]))
-    if pid == api.SAME_OBJECT:
-        return Value.bool(host.same_object(args[0], args[1]))
-    if pid == api.SHARES_MEMORY:
-        return Value.bool(host.shares_memory(args[0], args[1]))
-    if pid == api.EQ and len(args) == 2:
-        var t = arg_types[0]
-        if spec.types.kind(t) == ty.MODEL or (
-            spec.types.kind(t) == ty.LIST and spec.types.kind(spec.types.info(t).args[0]) == ty.MODEL
-        ):
-            var float_mode = Optional[Value]()
-            var order = Optional[Value]()
-            if "float" in names:
-                float_mode = keywords[names.index("float")].copy()
-            if "order" in names:
-                order = keywords[names.index("order")].copy()
-            return Value.bool(model_eq(spec, args[0], args[1], t, float_mode, order, host))
-    var type_args = [type_arg(spec, tn, env) for tn in spec.ast.nodes[n.children[1]].children]
-    var out = api.call(pid, api.CallArgs(args^, names^, keywords^, type_args^, arg_types^), spec.types)
-    return fit(spec.types, out, spec.node_types[e])
+            args.args.append(value^)
+    match id:
+        case api.FRESH:
+            return Value.bool(host.fresh(args.args[0]))
+        case api.SAME_OBJECT:
+            return Value.bool(host.same_object(args.args[0], args.args[1]))
+        case api.SHARES_MEMORY:
+            return Value.bool(host.shares_memory(args.args[0], args.args[1]))
+        case api.EQ if len(args.args) == 2 and _holds_handles(spec.types, spec.node_types[positional[0]]):
+            var t = spec.node_types[positional[0]]
+            return Value.bool(model_eq(spec, args.args[0], args.args[1], t, api.eq_mode(args.keywords), host))
+        case _:
+            pass
+    args.type_args = [type_arg(spec, child, env) for child in spec.ast.nodes[n.children[1]].children]
+    return fit(spec.types, api.call(id, args, spec.types), spec.node_types[e])
+
+
+def _holds_handles(types: ty.Types, t: Int) -> Bool:
+    """A model, or a list of models: `eq` compares them through their observers."""
+    var k = types.kind(t)
+    return k == ty.MODEL or (k == ty.LIST and types.kind(types.info(t).args[0]) == ty.MODEL)
 
 
 def model_eq[
@@ -586,8 +581,7 @@ def model_eq[
     a: Value,
     b: Value,
     t: Int,
-    float_mode: Optional[Value],
-    order: Optional[Value],
+    mode: EqMode,
     mut host: H,
 ) raises -> Bool:
     """`eq` of two values holding model handles: handles compare through their
@@ -596,22 +590,20 @@ def model_eq[
     if k == ty.LIST:
         if a.count() != b.count():
             return False
-        for i in range(a.count()):
-            if not model_eq(spec, a.item(i), b.item(i), spec.types.info(t).args[0], float_mode, order, host):
+        for x, y in zip(a.items(), b.items()):
+            if not model_eq(spec, x, y, spec.types.info(t).args[0], mode, host):
                 return False
         return True
     if k != ty.MODEL:
-        return prelude_eq(a, b, float_mode, order).as_bool()
+        return equal(a, b, mode)
     var model = spec.model_named(spec.types.info(t).name)
     if model is None:
         raise Error(t"eq: no model {spec.types.info(t).name}")
-    var mp = model.value()
-    for o in range(len(spec.models[mp].observers)):
-        ref obs = spec.models[mp].observers[o]
-        if len(obs.params) > 0:
+    for o, observer in enumerate(spec.models[model.value()].observers):
+        if observer.params:
             continue
-        var va = host.observe(a, mp, o, [])
-        var vb = host.observe(b, mp, o, [])
-        if not model_eq(spec, va, vb, obs.type, float_mode, order, host):
+        var va = host.observe(a, model.value(), o, [])
+        var vb = host.observe(b, model.value(), o, [])
+        if not model_eq(spec, va, vb, observer.type, mode, host):
             return False
     return True
