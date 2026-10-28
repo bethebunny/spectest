@@ -74,11 +74,11 @@ def declare(mut c: Checker, name: String, node: Int) -> Bool:
 def tvars_of(
     mut c: Checker, tparams: Int, mut names: List[String], mut bounds: List[String]
 ):
-    for tp in c.kids_of(tparams):
+    for tp in c.children(tparams):
         var name = c.text_of(tp)
         var bound = String()
-        if c.nkids(tp) > 0:
-            bound = c.text_of(c.kid(tp, 0))
+        if c.children(tp):
+            bound = c.text_of(c.child(tp, 0))
             if bound != "Eq" and bound != "Ord":
                 c.error(tp, t"unknown bound {bound}: a type parameter's bound is Eq or Ord")
                 bound = String()
@@ -154,7 +154,7 @@ def collect(mut c: Checker):
         elif k == .ENUM:
             var name = c.text_of(d)
             var members = List[String]()
-            for m in c.kids_of(d):
+            for m in c.children(d):
                 var mn = c.text_of(m)
                 var seen = False
                 for x in members:
@@ -183,18 +183,18 @@ def collect(mut c: Checker):
             if declare(c, name, d):
                 var tn = List[String]()
                 var tb = List[String]()
-                tvars_of(c, c.kid(d, 0), tn, tb)
+                tvars_of(c, c.child(d, 0), tn, tb)
                 var pos = _new_fn(c, name.copy(), name.copy(), name.copy(), ast.NodeKind.FN, d, -1, tn, tb)
                 c.fn_index[name] = pos
             else:
                 var tn = List[String]()
                 var tb = List[String]()
-                tvars_of(c, c.kid(d, 0), tn, tb)
+                tvars_of(c, c.child(d, 0), tn, tb)
         elif k == .DEF:
             var name = c.text_of(d)
             var tn = List[String]()
             var tb = List[String]()
-            tvars_of(c, c.kid(d, 0), tn, tb)
+            tvars_of(c, c.child(d, 0), tn, tb)
             if name in c.prelude_ids:
                 c.error(d, t"{name} is a prelude function and cannot be redefined")
                 c.duplicate[d] = True
@@ -207,7 +207,7 @@ def collect(mut c: Checker):
                 c.duplicate[d] = True
             elif declare(c, name, d):
                 c.spec.defs.append(
-                    Def(name.copy(), d, tn^, tb^, List[Param](), 0, c.kid(d, 3))
+                    Def(name.copy(), d, tn^, tb^, List[Param](), 0, c.child(d, 3))
                 )
                 c.def_index[name] = len(c.spec.defs) - 1
                 c.decl_pos[d] = len(c.spec.defs) - 1
@@ -232,7 +232,7 @@ def _collect_model(mut c: Checker, d: Int):
     var is_iface = c.kind_of(d) == .INTERFACE
     var tn = List[String]()
     var tb = List[String]()
-    tvars_of(c, c.kid(d, 0), tn, tb)
+    tvars_of(c, c.child(d, 0), tn, tb)
     if not declare(c, name, d):
         return
     var t = c.spec.types.model(name.copy(), c.spec.types.typevars(tn, tb), is_iface)
@@ -255,7 +255,7 @@ def _collect_model(mut c: Checker, d: Int):
     c.model_index[name] = pos
     c.decl_pos[d] = pos
     if is_iface:
-        var kids = c.kids_of(d)
+        var kids = c.children(d)
         for i in range(1, len(kids)):
             var m = kids[i]
             var mk = c.kind_of(m)
@@ -290,12 +290,12 @@ def build_params(
     self_reported: Bool = False,
 ) -> List[Param]:
     var out = List[Param]()
-    var kids = c.kids_of(params)
+    var kids = c.children(params)
     for i in range(len(kids)):
         var p = kids[i]
         var name = c.text_of(p)
-        var tnode = c.kid(p, 0)
-        var default = c.kid(p, 1)
+        var tnode = c.child(p, 0)
+        var default = c.child(p, 1)
         if tnode == 0 and name == "self":
             if i != 0 or not allow_self:
                 if i != 0 or not self_reported:
@@ -341,7 +341,7 @@ def _declare_model(mut c: Checker, d: Int):
     var self_t = c.spec.models[pos].type
     set_tvars(c, c.spec.models[pos].tparams.copy(), c.spec.models[pos].bounds.copy())
     var members = List[String]()
-    var kids = c.kids_of(d)
+    var kids = c.children(d)
     for i in range(1, len(kids)):
         var m = kids[i]
         var mk = c.kind_of(m)
@@ -350,23 +350,23 @@ def _declare_model(mut c: Checker, d: Int):
             _member_dup(c, members, oname, m, name)
             members.append(oname.copy())
             var params = List[Param]()
-            if c.kid(m, 0) != 0:
-                params = build_params(c, c.kid(m, 0), -1, False, pos)
-            var t = resolve_type(c, c.kid(m, 1), pos)
+            if c.child(m, 0) != 0:
+                params = build_params(c, c.child(m, 0), -1, False, pos)
+            var t = resolve_type(c, c.child(m, 1), pos)
             c.spec.models[pos].observers.append(
-                Observer(oname^, params^, t, c.kid(m, 2), m)
+                Observer(oname^, params^, t, c.child(m, 2), m)
             )
         elif mk == .BUILD:
-            var params = build_params(c, c.kid(m, 0), -1, False, pos)
+            var params = build_params(c, c.child(m, 0), -1, False, pos)
             c.spec.models[pos].builds.append(Build(c.text_of(m), params^, m))
         elif mk == .CTOR:
             var fpos = c.decl_pos[m]
             var mname = c.text_of(m)
             _member_dup(c, members, mname, m, name)
             members.append(mname^)
-            var _bp = build_params(c, c.kid(m, 1), -1, False, pos)
+            var _bp = build_params(c, c.child(m, 1), -1, False, pos)
             c.spec.fns[fpos].params = _bp^
-            var ret = c.kid(m, 2)
+            var ret = c.child(m, 2)
             var rt = self_t
             if ret != 0:
                 var declared = resolve_type(c, ret, pos)
@@ -380,10 +380,10 @@ def _declare_model(mut c: Checker, d: Int):
             var mname = c.text_of(m)
             _member_dup(c, members, mname, m, name)
             members.append(mname^)
-            var _bp = build_params(c, c.kid(m, 1), self_t, True, pos)
+            var _bp = build_params(c, c.child(m, 1), self_t, True, pos)
             c.spec.fns[fpos].params = _bp^
             c.spec.fns[fpos].receiver = True
-            var ret = c.kid(m, 2)
+            var ret = c.child(m, 2)
             c.spec.fns[fpos].result = c.unit if ret == 0 else resolve_type(c, ret, pos)
     c.ctx = Ctx()
 
@@ -392,12 +392,12 @@ def _declare_fn(mut c: Checker, d: Int):
     var pos = c.decl_pos[d]
     var name = c.spec.fns[pos].name.copy()
     set_tvars(c, c.spec.fns[pos].tparams.copy(), c.spec.fns[pos].bounds.copy())
-    var params_node = c.kid(d, 1)
-    var pkids = c.kids_of(params_node)
+    var params_node = c.child(d, 1)
+    var pkids = c.children(params_node)
     var self_t = -1
     var allow_self = False
     var self_reported = False
-    if len(pkids) > 0 and c.text_of(pkids[0]) == "self" and c.kid(pkids[0], 0) == 0:
+    if len(pkids) > 0 and c.text_of(pkids[0]) == "self" and c.child(pkids[0], 0) == 0:
         var dot = name.rfind(".")
         self_reported = True
         if dot < 0:
@@ -421,7 +421,7 @@ def _declare_fn(mut c: Checker, d: Int):
                 c.spec.fns[pos].receiver = True
     var _bp = build_params(c, params_node, self_t, allow_self, c.spec.fns[pos].owner, self_reported)
     c.spec.fns[pos].params = _bp^
-    var ret = c.kid(d, 2)
+    var ret = c.child(d, 2)
     c.spec.fns[pos].result = c.unit if ret == 0 else resolve_type(c, ret)
     c.ctx = Ctx()
 
@@ -429,9 +429,9 @@ def _declare_fn(mut c: Checker, d: Int):
 def _declare_def(mut c: Checker, d: Int):
     var pos = c.decl_pos[d]
     set_tvars(c, c.spec.defs[pos].tparams.copy(), c.spec.defs[pos].bounds.copy())
-    var _bp = build_params(c, c.kid(d, 1), -1, False, -1)
+    var _bp = build_params(c, c.child(d, 1), -1, False, -1)
     c.spec.defs[pos].params = _bp^
-    c.spec.defs[pos].result = resolve_type(c, c.kid(d, 2))
+    c.spec.defs[pos].result = resolve_type(c, c.child(d, 2))
     c.ctx = Ctx()
 
 
@@ -536,7 +536,7 @@ def _add_clause(
     var expr = 0
     var error = String()
     var names = List[String]()
-    var kids = c.kids_of(node)
+    var kids = c.children(node)
     if op == .RAISES or op == .MAY_RAISE:
         error = qualify_error(c.text_of(kids[0]))
         expr = kids[1]
@@ -695,7 +695,7 @@ def check_model(mut c: Checker, d: Int):
             member_names.append(rest^)
             member_kinds.append("method" if c.spec.fns[f].receiver else "function")
     var clauses = List[Int]()
-    for m in c.kids_of(d):
+    for m in c.children(d):
         if c.kind_of(m) == .CLAUSE:
             clauses.append(m)
     var ids = assign_ids(c, name, clauses, -1, pos, member_names, member_kinds)
@@ -814,7 +814,7 @@ def check_callable(mut c: Checker, fpos: Int, what: String):
             has_state = True
     var body = List[Int]()
     var parts = List[Int]()
-    var kids = c.kids_of(node)
+    var kids = c.children(node)
     var first = 3
     for i in range(first, len(kids)):
         if c.kind_of(kids[i]) == .CLAUSE:
@@ -914,7 +914,7 @@ def _check_partition(
     mut seen_nodes: List[Int],
 ):
     var pname = c.text_of(part)
-    var classes_nodes = c.kids_of(part)
+    var classes_nodes = c.children(part)
     for i in range(len(seen)):
         if seen[i] == pname:
             c.error(part, t"{pname} is already partitioned at line {c.line_of(seen_nodes[i])}")
@@ -927,7 +927,7 @@ def _check_partition(
         else:
             c.error(part, t"partition {pname}: {decl_id} has no parameter {pname}")
         for cls in classes_nodes:
-            poison_subtree(c, c.kid(cls, 0))
+            poison_subtree(c, c.child(cls, 0))
         return
     var ptype = base.param_types[pi]
     var fixed = c.spec.types.is_fixed_width(ptype)
@@ -937,7 +937,7 @@ def _check_partition(
     var ctypes = List[Int]()
     for cls in classes_nodes:
         var cname = c.text_of(cls)
-        var expr = c.kid(cls, 0)
+        var expr = c.child(cls, 0)
         var dup = False
         for x in cnames:
             if x == cname:
@@ -1018,8 +1018,8 @@ def aggregate_shape(mut c: Checker, e: Int) -> Shape:
             out.problem = shapes
         return out^
     if c.kind_of(e) == .BINARY:
-        var left = c.kid(e, 0)
-        var right = c.kid(e, 1)
+        var left = c.child(e, 0)
+        var right = c.child(e, 1)
         var side = 0
         if c.kind_of(left) == .COMPREHENSION:
             side = left
@@ -1058,7 +1058,7 @@ def is_constant(mut c: Checker, e: Int) -> Bool:
     if k == .NUM:
         return True
     if k == .UNARY and c.op_of(e) == .NEG:
-        return is_constant(c, c.kid(e, 0))
+        return is_constant(c, c.child(e, 0))
     if k == .BINARY:
         var op = c.op_of(e)
         if (
@@ -1069,7 +1069,7 @@ def is_constant(mut c: Checker, e: Int) -> Bool:
             or op == .FLOORDIV
             or op == .MOD
         ):
-            return is_constant(c, c.kid(e, 0)) and is_constant(c, c.kid(e, 1))
+            return is_constant(c, c.child(e, 0)) and is_constant(c, c.child(e, 1))
         return False
     if k == .ATTR:
         var r = c.spec.resolutions.get(e)

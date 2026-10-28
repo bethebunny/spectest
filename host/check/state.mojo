@@ -289,14 +289,15 @@ struct Checker:
     def text_of(self, n: Int) -> String:
         return self.spec.ast.nodes[n].text.copy()
 
-    def kid(self, n: Int, k: Int) -> Int:
+    def child(self, n: Int, k: Int) -> Int:
         return self.spec.ast.nodes[n].children[k]
 
-    def nkids(self, n: Int) -> Int:
-        return len(self.spec.ast.nodes[n].children)
-
-    def kids_of(self, n: Int) -> List[Int]:
+    def children(self, n: Int) -> List[Int]:
         return self.spec.ast.nodes[n].children.copy()
+
+    def call_args(self, call: Int) -> List[Int]:
+        """The ARG nodes of a CALL."""
+        return List(self.spec.ast.nodes[call].children[2:])
 
     def line_of(self, n: Int) -> Int:
         return self.spec.ast.nodes[n].span.line
@@ -538,7 +539,7 @@ struct Checker:
             except:
                 return None
         if k == .UNARY and self.op_of(n) == .NEG:
-            var inner = self.literal_value(self.kid(n, 0))
+            var inner = self.literal_value(self.child(n, 0))
             if inner is not None:
                 return -inner.value()
         return None

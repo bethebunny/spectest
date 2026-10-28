@@ -74,7 +74,7 @@ def binds_value(c: Checker, name: String) -> Bool:
 def _root_name(c: Checker, e: Int) -> String:
     var n = e
     while c.kind_of(n) == .ATTR:
-        n = c.kid(n, 0)
+        n = c.child(n, 0)
     if c.kind_of(n) == .NAME:
         return c.text_of(n)
     return String()
@@ -85,7 +85,7 @@ def dotted(c: Checker, e: Int) -> String:
     if c.kind_of(e) == .NAME:
         return c.text_of(e)
     if c.kind_of(e) == .ATTR:
-        var inner = dotted(c, c.kid(e, 0))
+        var inner = dotted(c, c.child(e, 0))
         if inner == "":
             return String()
         return inner + "." + c.text_of(e)
@@ -158,8 +158,8 @@ def assignable(mut c: Checker, actual: Int, target: Int, node: Int) -> Bool:
     if kt == ty.STRING:
         return c.is_stringish(actual)
     if kt == ty.LIST and ka == ty.LIST:
-        if node > 0 and c.kind_of(node) == .LIST and c.nkids(node) > 0:
-            for x in c.kids_of(node):
+        if node > 0 and c.kind_of(node) == .LIST and c.children(node):
+            for x in c.children(node):
                 if not assignable(c, c.spec.node_types[x], c.arg(target, 0), x):
                     return False
             return True
@@ -176,8 +176,8 @@ def assignable(mut c: Checker, actual: Int, target: Int, node: Int) -> Bool:
         if len(ts) != len(xs):
             return False
         var subs = List[Int]()
-        if node > 0 and c.kind_of(node) == .TUPLE and c.nkids(node) == len(ts):
-            subs = c.kids_of(node)
+        if node > 0 and c.kind_of(node) == .TUPLE and len(c.children(node)) == len(ts):
+            subs = c.children(node)
         for i in range(len(ts)):
             if not assignable(c, xs[i], ts[i], subs[i] if len(subs) > 0 else 0):
                 return False
@@ -424,7 +424,7 @@ def unknown_name(mut c: Checker, e: Int, name: String):
 
 
 def infer_unary(mut c: Checker, e: Int) -> Int:
-    var operand = c.kid(e, 0)
+    var operand = c.child(e, 0)
     var t = infer(c, operand)
     if c.op_of(e) == .NOT:
         want_bool(c, operand, t, "the operand of not")
@@ -444,8 +444,8 @@ def infer_unary(mut c: Checker, e: Int) -> Int:
 
 def infer_binary(mut c: Checker, e: Int, expected: Int) -> Int:
     var op = c.op_of(e)
-    var left = c.kid(e, 0)
-    var right = c.kid(e, 1)
+    var left = c.child(e, 0)
+    var right = c.child(e, 1)
     var side = NO_TYPE
     if expected >= 0 and c.tkind(expected) == ty.SET:
         side = expected
@@ -479,7 +479,7 @@ def integer_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         return c.poison
     if (c.is_integer(lt) or c.is_any(lt)) and (c.is_integer(rt) or c.is_any(rt)):
         if c.op_of(e) == .POW:
-            var exponent = c.literal_value(c.kid(e, 1))
+            var exponent = c.literal_value(c.child(e, 1))
             if exponent and exponent.value() < Real(0):
                 c.error(
                     e,
@@ -586,8 +586,8 @@ def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     if qerr_comparison(c, e, lt, rt):
         return c.bool_
     var op = String(c.op_of(e))
-    var left = c.kid(e, 0)
-    var right = c.kid(e, 1)
+    var left = c.child(e, 0)
+    var right = c.child(e, 1)
     var lc = c.tkind(lt) == ty.CHOICE
     var rc = c.tkind(rt) == ty.CHOICE
     if lc or rc:
@@ -742,10 +742,10 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
 
 
 def infer_if(mut c: Checker, e: Int, expected: Int) -> Int:
-    var cond = c.kid(e, 0)
+    var cond = c.child(e, 0)
     want_bool(c, cond, infer(c, cond), "the condition of if")
-    var tt = infer(c, c.kid(e, 1), expected)
-    var et = infer(c, c.kid(e, 2), expected)
+    var tt = infer(c, c.child(e, 1), expected)
+    var et = infer(c, c.child(e, 2), expected)
     if c.is_poison(tt) or c.is_poison(et):
         return c.poison
     var j = c.join(tt, et)
@@ -775,9 +775,9 @@ def pop_local(mut c: Checker):
 def infer_let(mut c: Checker, e: Int, expected: Int) -> Int:
     var name = c.text_of(e)
     bind_name(c, e, name)
-    var vt = infer(c, c.kid(e, 0))
+    var vt = infer(c, c.child(e, 0))
     push_local(c, name, vt, e)
-    var t = infer(c, c.kid(e, 1), expected)
+    var t = infer(c, c.child(e, 1), expected)
     pop_local(c)
     return t
 
@@ -787,8 +787,8 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
     var kind = c.op_of(e)
     var kname = String(kind)
     bind_name(c, e, name)
-    var iterable = c.kid(e, 0)
-    var body = c.kid(e, 1)
+    var iterable = c.child(e, 0)
+    var body = c.child(e, 1)
     var elem: Int
     if is_set_syntax(c, iterable):
         elem = set_iterable(c, e)
@@ -845,7 +845,7 @@ def is_set_syntax(mut c: Checker, e: Int) -> Bool:
     if k == .BINARY:
         var op = c.op_of(e)
         if op == .BITOR or op == .BITAND or op == .SUB:
-            return is_set_syntax(c, c.kid(e, 0)) or is_set_syntax(c, c.kid(e, 1))
+            return is_set_syntax(c, c.child(e, 0)) or is_set_syntax(c, c.child(e, 1))
         return False
     return set_scalar(c, e) >= 0
 
@@ -855,10 +855,10 @@ def set_scalar(mut c: Checker, e: Int) -> Int:
     var attr = e
     var is_call = c.kind_of(e) == .CALL
     if is_call:
-        attr = c.kid(e, 0)
-    if c.kind_of(attr) != .ATTR or c.kind_of(c.kid(attr, 0)) != .NAME:
+        attr = c.child(e, 0)
+    if c.kind_of(attr) != .ATTR or c.kind_of(c.child(attr, 0)) != .NAME:
         return NO_TYPE
-    var name = c.text_of(c.kid(attr, 0))
+    var name = c.text_of(c.child(attr, 0))
     if binds_value(c, name) or c.ctx.hidden_index(name) >= 0:
         return NO_TYPE
     var st = c.scalar(name)
@@ -875,7 +875,7 @@ def _find_set_scalar(mut c: Checker, n: Int) -> Int:
     var s = set_scalar(c, n)
     if s >= 0:
         return s
-    for k in c.kids_of(n):
+    for k in c.children(n):
         var r = _find_set_scalar(c, k)
         if r >= 0:
             return r
@@ -884,7 +884,7 @@ def _find_set_scalar(mut c: Checker, n: Int) -> Int:
 
 def set_iterable(mut c: Checker, e: Int) -> Int:
     """Check a set ranged over by a comprehension; the type of its members."""
-    var it = c.kid(e, 0)
+    var it = c.child(e, 0)
     var kname = String(c.op_of(e))
     if c.ctx.aggregate_top != e:
         c.error(
@@ -917,10 +917,10 @@ def set_iterable(mut c: Checker, e: Int) -> Int:
 
 
 def infer_args(mut c: Checker, e: Int, mut info: CallInfo):
-    var kids = c.kids_of(e)
+    var kids = c.children(e)
     for i in range(2, len(kids)):
         var arg = kids[i]
-        var expr = c.kid(arg, 0)
+        var expr = c.child(arg, 0)
         var t = infer(c, expr)
         var key = c.text_of(arg)
         if key == "":
@@ -935,7 +935,7 @@ def infer_args(mut c: Checker, e: Int, mut info: CallInfo):
 def fail_call(mut c: Checker, e: Int, node: Int, message: Some[Writable]) -> Int:
     var info = CallInfo(String())
     infer_args(c, e, info)
-    poison_subtree(c, c.kid(e, 0))
+    poison_subtree(c, c.child(e, 0))
     var text = String(message)
     if text != "":
         c.error(node, text)
@@ -944,11 +944,11 @@ def fail_call(mut c: Checker, e: Int, node: Int, message: Some[Writable]) -> Int
 
 def set_call_res(mut c: Checker, e: Int, kind: UInt8, index: Int, owner: Int, name: String):
     c.resolve(e, kind, index, owner, name)
-    c.resolve(c.kid(e, 0), kind, index, owner, name)
+    c.resolve(c.child(e, 0), kind, index, owner, name)
 
 
 def infer_call(mut c: Checker, e: Int) -> Int:
-    var f = c.kid(e, 0)
+    var f = c.child(e, 0)
     var fk = c.kind_of(f)
     if fk == .NAME:
         var name = c.text_of(f)
@@ -986,7 +986,7 @@ def infer_call(mut c: Checker, e: Int) -> Int:
             hint = " (did you mean " + joined + "?)"
         return fail_call(c, e, f, t"unknown function {name}{hint}")
     if fk == .ATTR:
-        var base = c.kid(f, 0)
+        var base = c.child(f, 0)
         var attr = c.text_of(f)
         var chain = chain_candidate(c, f)
         if chain != "":
@@ -1044,18 +1044,15 @@ def call_extern(mut c: Checker, e: Int, chain: String) -> Int:
     var info = CallInfo(chain)
     infer_args(c, e, info)
     set_call_res(c, e, R_EXTERN, 0, -1, chain)
-    c.set_type(c.kid(e, 0), c.spec.types.fn_(info.args, List[String](), c.ctx.extern_result))
+    c.set_type(c.child(e, 0), c.spec.types.fn_(info.args, List[String](), c.ctx.extern_result))
     return c.ctx.extern_result
 
 
 def call_old(mut c: Checker, e: Int) -> Int:
-    var f = c.kid(e, 0)
-    var nargs = c.nkids(e) - 2
-    var has_kw = False
-    for i in range(2, c.nkids(e)):
-        if c.text_of(c.kid(e, i)) != "":
-            has_kw = True
-    if nargs != 1 or has_kw or c.nkids(c.kid(e, 1)) > 0:
+    var f = c.child(e, 0)
+    var args = c.call_args(e)
+    var has_kw = any([c.text_of(a) != "" for a in args])
+    if len(args) != 1 or has_kw or c.children(c.child(e, 1)):
         c.error(e, "old takes one expression: old(e)")
     elif c.ctx.in_old:
         c.error(e, "old(...) cannot be nested")
@@ -1207,7 +1204,7 @@ def check_declared_call(
 ) -> Int:
     """Types a call of a declared function or definition: arguments bound to
     parameters, type variables solved from the arguments, bounds checked."""
-    if c.nkids(c.kid(e, 1)) > 0:
+    if c.children(c.child(e, 1)):
         c.error(e, t"{name} takes no explicit type arguments")
     var ptypes = List[Int]()
     for p in params:
@@ -1252,7 +1249,7 @@ def check_declared_call(
 
 
 def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
-    var f = c.kid(e, 0)
+    var f = c.child(e, 0)
     var info = CallInfo(name)
     infer_args(c, e, info)
     var fn_owner = c.spec.fns[pos].owner
@@ -1289,7 +1286,7 @@ def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
 
 
 def call_def(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
-    var f = c.kid(e, 0)
+    var f = c.child(e, 0)
     var info = CallInfo(name)
     infer_args(c, e, info)
     set_call_res(c, e, R_DEF, pos, -1, name)
@@ -1313,12 +1310,12 @@ def _plural(n: Int) -> String:
 
 
 def call_prelude(mut c: Checker, e: Int, name: String, pid: Int) -> Int:
-    var f = c.kid(e, 0)
+    var f = c.child(e, 0)
     var sig = c.prelude_sigs[pid].copy()
     var info = CallInfo(name)
     infer_args(c, e, info)
     set_call_res(c, e, R_PRELUDE, pid, -1, name)
-    for tn in c.kids_of(c.kid(e, 1)):
+    for tn in c.children(c.child(e, 1)):
         info.targs.append(resolve_type(c, tn))
     var ok = True
     var ntargs = len(info.targs)
@@ -1359,7 +1356,7 @@ def call_prelude(mut c: Checker, e: Int, name: String, pid: Int) -> Int:
 
 
 def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
-    var f = c.kid(e, 0)
+    var f = c.child(e, 0)
     var stext = c.text(st)
     if attr != "range" and attr != "pattern":
         var msg: String
@@ -1378,7 +1375,7 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             t"{stext}.{attr}(...) is a partition set: it only appears in a partition class of a "
             t"{stext} parameter",
         )
-    var kids = c.kids_of(e)
+    var kids = c.children(e)
     var nargs = len(kids) - 2
     var has_kw = False
     for i in range(2, len(kids)):
@@ -1394,7 +1391,7 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             )
             ok = False
         for i in range(2, len(kids)):
-            var a = c.kid(kids[i], 0)
+            var a = c.child(kids[i], 0)
             if c.kind_of(a) == .NONE:
                 var ot = c.spec.types.option_of(ty.ANY_TYPE)
                 c.set_type(a, ot)
@@ -1406,7 +1403,7 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
                 c.error(a, t"a bound of {stext}.range must be a number or none, not {c.text(t)}")
                 ok = False
     else:
-        if nargs != 1 or has_kw or c.kind_of(c.kid(kids[2], 0)) != .STR:
+        if nargs != 1 or has_kw or c.kind_of(c.child(kids[2], 0)) != .STR:
             c.error(
                 e,
                 stext
@@ -1416,7 +1413,7 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             )
             ok = False
         for i in range(2, len(kids)):
-            arg_types.append(infer(c, c.kid(kids[i], 0)))
+            arg_types.append(infer(c, c.child(kids[i], 0)))
     var set_t = c.spec.types.set_of(st)
     c.set_type(f, c.spec.types.fn_(arg_types, List[String](), set_t))
     return set_t if ok else c.poison
@@ -1425,7 +1422,7 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
 def call_observer(
     mut c: Checker, e: Int, mt: Int, model: Int, name: String, is_field: Bool
 ) -> Int:
-    var f = c.kid(e, 0)
+    var f = c.child(e, 0)
     var mname = c.spec.models[model].name
     var oi = c.observer_pos(model, name)
     if oi < 0:
@@ -1481,7 +1478,7 @@ def call_observer(
 
 
 def infer_attr(mut c: Checker, e: Int) -> Int:
-    var base = c.kid(e, 0)
+    var base = c.child(e, 0)
     var attr = c.text_of(e)
     var chain = chain_candidate(c, e)
     if chain != "":
@@ -1588,7 +1585,7 @@ def type_const(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
 
 
 def infer_tuple_index(mut c: Checker, e: Int) -> Int:
-    var vt = infer(c, c.kid(e, 0))
+    var vt = infer(c, c.child(e, 0))
     var digits = c.text_of(e)
     var index = 1 << 40
     try:
@@ -1607,8 +1604,8 @@ def infer_tuple_index(mut c: Checker, e: Int) -> Int:
 
 
 def infer_index(mut c: Checker, e: Int) -> Int:
-    var value = c.kid(e, 0)
-    var index = c.kid(e, 1)
+    var value = c.child(e, 0)
+    var index = c.child(e, 1)
     var vt = infer(c, value)
     var it = infer(c, index)
     var k = c.tkind(vt)
@@ -1635,9 +1632,9 @@ def infer_index(mut c: Checker, e: Int) -> Int:
 
 
 def infer_slice(mut c: Checker, e: Int) -> Int:
-    var vt = infer(c, c.kid(e, 0))
-    want_int(c, c.kid(e, 1), infer(c, c.kid(e, 1)), "a slice bound")
-    want_int(c, c.kid(e, 2), infer(c, c.kid(e, 2)), "a slice bound")
+    var vt = infer(c, c.child(e, 0))
+    want_int(c, c.child(e, 1), infer(c, c.child(e, 1)), "a slice bound")
+    want_int(c, c.child(e, 2), infer(c, c.child(e, 2)), "a slice bound")
     var k = c.tkind(vt)
     if k == ty.LIST or k == ty.BYTES:
         return vt
@@ -1652,7 +1649,7 @@ def infer_slice(mut c: Checker, e: Int) -> Int:
 def infer_list(mut c: Checker, e: Int) -> Int:
     var elem = ty.ANY_TYPE
     var ok = True
-    for x in c.kids_of(e):
+    for x in c.children(e):
         var xt = infer(c, x)
         if c.is_poison(xt):
             ok = False
@@ -1672,14 +1669,14 @@ def infer_list(mut c: Checker, e: Int) -> Int:
 
 def infer_tuple(mut c: Checker, e: Int) -> Int:
     var elems = List[Int]()
-    for x in c.kids_of(e):
+    for x in c.children(e):
         elems.append(infer(c, x))
     return c.spec.types.tuple_of(elems)
 
 
 def infer_set(mut c: Checker, e: Int, expected: Int) -> Int:
     if c.ctx.kind != K_PARTITION_SET or expected < 0 or c.tkind(expected) != ty.SET:
-        for x in c.kids_of(e):
+        for x in c.children(e):
             _ = infer(c, x)
         c.error(
             e,
@@ -1690,7 +1687,7 @@ def infer_set(mut c: Checker, e: Int, expected: Int) -> Int:
     var elem = c.arg(expected, 0)
     var ek = c.tkind(elem)
     var ok = True
-    for x in c.kids_of(e):
+    for x in c.children(e):
         var t = infer(c, x)
         if c.is_any(t):
             continue

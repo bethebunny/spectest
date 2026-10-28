@@ -10,7 +10,7 @@ from check.state import Checker, Ctx, NO_TYPE, type_hint
 
 
 def _no_args(mut c: Checker, node: Int, t: Int) -> Int:
-    if c.nkids(node) > 0:
+    if c.children(node):
         c.error(node, t"{c.text_of(node)} takes no type arguments")
     return t
 
@@ -22,7 +22,7 @@ def ensure_const(mut c: Checker, idx: Int):
     var node = c.spec.consts[idx].node
     var saved = c.ctx.copy()
     c.ctx = Ctx()
-    var t = resolve_type(c, c.kid(node, 0))
+    var t = resolve_type(c, c.child(node, 0))
     c.ctx = saved^
     c.spec.consts[idx].type = t
 
@@ -33,14 +33,14 @@ def resolve_type(mut c: Checker, node: Int, self_model: Int = -1) -> Int:
         return _choice(c, node)
     if k == .TUPLE_TYPE:
         var elems = List[Int]()
-        for kid in c.kids_of(node):
+        for kid in c.children(node):
             elems.append(resolve_type(c, kid, self_model))
         return c.spec.types.tuple_of(elems)
     return _named(c, node, self_model)
 
 
 def _choice(mut c: Checker, node: Int) -> Int:
-    var kids = c.kids_of(node)
+    var kids = c.children(node)
     var strs = 0
     for kid in kids:
         if c.kind_of(kid) == .STR:
@@ -101,7 +101,7 @@ def _choice(mut c: Checker, node: Int) -> Int:
 def _named(mut c: Checker, node: Int, self_model: Int) -> Int:
     var name = c.text_of(node)
     var args = List[Int]()
-    for kid in c.kids_of(node):
+    for kid in c.children(node):
         args.append(resolve_type(c, kid, self_model))
     var tv = c.ctx.tv_index(name)
     if tv >= 0:
@@ -193,7 +193,7 @@ def alias_type(mut c: Checker, name: String, at: Int) -> Int:
     var decl = c.alias_nodes.get(name).value()
     var saved = c.ctx.copy()
     c.ctx = Ctx()
-    var t = resolve_type(c, c.kid(decl, 0))
+    var t = resolve_type(c, c.child(decl, 0))
     c.ctx = saved^
     _ = c.active.pop()
     c.spec.aliases[name] = t
@@ -214,19 +214,19 @@ def record_type(mut c: Checker, name: String, at: Int) -> Int:
     c.ctx = Ctx()
     var fields = List[String]()
     var types = List[Int]()
-    for p in c.kids_of(decl):
+    for p in c.children(decl):
         var fname = c.text_of(p)
         for f in fields:
             if f == fname:
                 c.error(p, t"record {name} has two fields named {fname}")
-        if c.kid(p, 1) != 0:
-            c.error(c.kid(p, 1), "record fields cannot have defaults")
+        if c.child(p, 1) != 0:
+            c.error(c.child(p, 1), "record fields cannot have defaults")
         fields.append(fname^)
-        if c.kid(p, 0) == 0:
+        if c.child(p, 0) == 0:
             c.error(p, "a record field needs a type")
             types.append(0)
         else:
-            types.append(resolve_type(c, c.kid(p, 0)))
+            types.append(resolve_type(c, c.child(p, 0)))
     c.ctx = saved^
     _ = c.active.pop()
     var t = c.spec.types.record(name.copy(), fields, types)
