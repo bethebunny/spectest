@@ -2,16 +2,16 @@
 explain and class_holds."""
 
 from check import types as ty
-from check.spec import Spec, R_OLD
+from check.spec import Fn, Partition, Spec
 from partitions.compile import compile_set_aliased
 from sets import BitSet, SetContext
-from syntax import ast
+from syntax.ast import Op
 from wire.value import Value
 
 from .coerce import bits_of_value, fit
-from .core import ev, tkind
-from .env import Env, Old, Run
-from .explain import Explainer, add_known, outcome_of, walk
+from .core import is_old_call, type_kind, value_of
+from .env import Env, Failure, Old, Run
+from .explain import Explanation, add_known, outcome_of, walk
 from .host import EvalHost
 from .numbers import show
 from .text import located
@@ -19,46 +19,63 @@ from .text import located
 
 comptime EXPLAIN_LIMIT = 16
 
-comptime J_TRUE = 0
-comptime J_FALSE = 1
-comptime J_ERROR = 2
-comptime J_SKIP = 3
+
+__enum Verdict(Equatable, ImplicitlyCopyable):
+    """Whether a clause holds: true, false, or neither for an error or a skip."""
+
+    case TRUE
+    case FALSE
+    case ERROR
+    case SKIP
+
+    def __eq__(self, other: Self) -> Bool:
+        return self._get_enum_discriminant() == other._get_enum_discriminant()
 
 
-struct Judgment(Copyable, Movable):
-    """The outcome of judging a clause: true, false, an error or a skip."""
+struct Judgment(Copyable):
+    """The outcome of judging a clause."""
 
-    var kind: Int
+    var verdict: Verdict
     var message: String
     """An error's message or a skip's cause, without the location."""
     var node: Int
     """The node the error or skip is attributed to, or 0."""
 
-    def __init__(out self, kind: Int, var message: String = String(), node: Int = 0):
-        self.kind = kind
+    def __init__(out self, verdict: Verdict, var message: String = "", node: Int = 0):
+        self.verdict = verdict
         self.message = message^
         self.node = node
 
+    def __init__(out self, failure: Failure):
+        self = Self(Verdict.SKIP if failure.skipped else Verdict.ERROR, failure.message.copy(), failure.node)
+
     def is_true(self) -> Bool:
-        return self.kind == J_TRUE
+        return self.verdict == .TRUE
 
     def is_false(self) -> Bool:
-        return self.kind == J_FALSE
+        return self.verdict == .FALSE
 
     def is_error(self) -> Bool:
-        return self.kind == J_ERROR
+        return self.verdict == .ERROR
 
     def is_skip(self) -> Bool:
-        return self.kind == J_SKIP
+        return self.verdict == .SKIP
+
+    def located_message(self, spec: Spec) -> String:
+        """The message, with the location and source of its node when it has one."""
+        return located(spec, self.node, self.message) if self.node > 0 else self.message.copy()
 
     def describe(self, spec: Spec) -> String:
-        """`true`, `false`, or `error: message (at ...)`."""
-        if self.kind == J_TRUE:
-            return "true"
-        if self.kind == J_FALSE:
-            return "false"
-        var prefix = "error: " if self.kind == J_ERROR else "skip: "
-        return String(prefix, located(spec, self.node, self.message) if self.node > 0 else self.message)
+        """`true`, `false`, `error: message (at ...)` or `skip: cause (at ...)`."""
+        match self.verdict:
+            case .TRUE:
+                return "true"
+            case .FALSE:
+                return "false"
+            case .ERROR:
+                return String("error: ", self.located_message(spec))
+            case .SKIP:
+                return String("skip: ", self.located_message(spec))
 
 
 def evaluate[
@@ -68,11 +85,11 @@ def evaluate[
     and source text of the expression that failed."""
     var run = Run()
     try:
-        return ev(spec, node, env, run, host)
+        return value_of(spec, node, env, run, host)
     except err:
-        if run.err_node < 0:
-            raise err^
-        raise Error(located(spec, run.err_node, run.err_message))
+        if case .Some(failure) = run.failure:
+            raise Error(located(spec, failure.node, failure.message))
+        raise err^
 
 
 def judge[
@@ -81,63 +98,44 @@ def judge[
     """Does the clause hold? A `raises` or `may_raise` clause judges its `when` condition."""
     ref c = spec.clauses[clause]
     if c.expr == 0:
-        if c.kind == .RAISES or c.kind == .MAY_RAISE:
-            return Judgment(J_TRUE)
-        return Judgment(
-            J_ERROR, String(t"{c.id}: a {c.kind} clause has no condition to evaluate"), c.node
-        )
+        if c.kind in [Op.RAISES, Op.MAY_RAISE]:
+            return Judgment(Verdict.TRUE)
+        return Judgment(Verdict.ERROR, String(t"{c.id}: a {c.kind} clause has no condition to evaluate"), c.node)
     var run = Run()
     try:
-        var v = ev(spec, c.expr, env, run, host)
+        var v = value_of(spec, c.expr, env, run, host)
         if v.kind != .BOOL:
-            return Judgment(J_ERROR, String(t"the clause must evaluate to a bool, but it is {show(v)}"), c.expr)
-        return Judgment(J_TRUE if v.as_bool() else J_FALSE)
+            return Judgment(Verdict.ERROR, String(t"the clause must evaluate to a bool, but it is {show(v)}"), c.expr)
+        return Judgment(Verdict.TRUE if v.as_bool() else Verdict.FALSE)
     except err:
-        var node = run.err_node if run.err_node >= 0 else c.expr
-        var message = run.err_message.copy() if run.err_node >= 0 else String(err)
-        return Judgment(J_SKIP if run.skipped else J_ERROR, message^, node)
+        return Judgment(run.failure_or(err, c.expr))
 
 
-def collect_olds(spec: Spec, root: Int, mut out: List[Int]):
-    """The `old(...)` calls below `root`, in source order."""
-    var stack: List[Int] = [root]
-    while len(stack) > 0:
-        var n = stack.pop()
-        ref node = spec.ast.nodes[n]
-        if node.kind == .CALL:
-            var r = spec.resolutions.get(n)
-            if r is not None and r.value().kind == R_OLD:
-                out.append(n)
-                continue
-        for kid in reversed(node.children):
-            stack.append(kid)
+def old_calls(spec: Spec, root: Int) -> List[Int]:
+    """The `old(...)` calls at or below `root`, in source order."""
+    return [node for node in spec.ast.subtree(root) if is_old_call(spec, node)]
 
 
 def snapshot_olds[
     H: EvalHost
 ](spec: Spec, clauses: List[Int], mut env: Env, mut host: H):
     """Records in `env` the value of each `old(e)` of the clauses; a failure is recorded too."""
-    var calls: List[Int] = []
-    for ci in clauses:
-        if spec.clauses[ci].expr != 0:
-            collect_olds(spec, spec.clauses[ci].expr, calls)
-    for call in calls:
-        if call in env.olds:
+    for clause in clauses:
+        var expr = spec.clauses[clause].expr
+        if expr == 0:
             continue
-        ref kids = spec.ast.nodes[call].children
-        var arg = spec.ast.nodes[kids[2]].children[0] if len(kids) > 2 else 0
-        var run = Run()
-        try:
-            var old = Old(ev(spec, arg, env, run, host), String(), 0, False)
+        for call in old_calls(spec, expr):
+            if call in env.olds:
+                continue
+            ref children = spec.ast.nodes[call].children
+            var arg = spec.ast.child(children[2], 0) if len(children) > 2 else 0
+            var run = Run()
+            var old: Old
+            try:
+                old = Old(value_of(spec, arg, env, run, host), None)
+            except err:
+                old = Old(Value.none(), run.failure_or(err, call))
             env.olds[call] = old^
-        except err:
-            var failed_here = run.err_node >= 0
-            env.olds[call] = Old(
-                Value.none(),
-                run.err_message.copy() if failed_here else String(err),
-                run.err_node if failed_here else call,
-                run.skipped,
-            )
 
 
 def observe_with[
@@ -152,7 +150,7 @@ def observe_with[
 ) raises -> Value:
     """The value of an observer's reading expression with `self` bound to `obj`."""
     ref o = spec.models[model].observers[observer]
-    var name = String(spec.models[model].name, ".", o.name)
+    var name = String(t"{spec.models[model].name}.{o.name}")
     if o.expr == 0:
         raise Error(t"{name} has no reading expression: it reads the attribute of the same name")
     if len(args) != len(o.params):
@@ -172,16 +170,16 @@ def explain[
     limit: Int = EXPLAIN_LIMIT,
 ) -> List[Tuple[String, String]]:
     """(source text, value text) pairs of the subexpressions that explain a clause. Never raises."""
-    var ex = Explainer(limit)
+    var explanation = Explanation(limit)
     ref c = spec.clauses[clause]
     if c.expr != 0:
         var run = Run()
         var value = outcome_of(spec, c.expr, env, run, host)
         if value.is_any_bool():
-            walk(ex, spec, c.expr, value, env, run, host)
-        if not value.is_any_bool() or len(ex.pairs) == 0:
-            add_known(ex, spec, c.expr, value)
-    return ex^.into_pairs()
+            walk(explanation, spec, c.expr, value, env, run, host)
+        if not value.is_any_bool() or not explanation.pairs:
+            add_known(explanation, spec, c.expr, value)
+    return explanation^.into_pairs()
 
 
 def class_holds[
@@ -191,26 +189,29 @@ def class_holds[
     `class_node` (a CLASS node)?"""
     for func in spec.fns:
         for part in func.partitions:
-            for c in range(len(part.classes)):
-                if part.classes[c].node != class_node:
-                    continue
-                var t = func.params[part.param].type
-                var expr = part.classes[c].expr
-                if tkind(spec, expr) != ty.SET:
-                    var params = [Value.none() for _ in func.params]
-                    params[part.param] = value.copy()
-                    var held = evaluate(spec, expr, Env(params^), host)
-                    if held.kind != .BOOL:
-                        raise Error(t"a predicate class must be a bool, but it is {show(held)}")
-                    return held.as_bool()
-                var ctx = SetContext()
-                var earlier: Dict[String, BitSet] = {}
-                var chosen = ctx.empty(1)
-                for j in range(c + 1):
-                    var s = compile_set_aliased(
-                        ctx, spec.ast, spec.types, t, part.classes[j].expr, earlier, spec.aliases
-                    )
-                    earlier[part.classes[j].name] = s
-                    chosen = s
-                return ctx.contains(chosen, bits_of_value(spec.types, t, value))
+            for c, cls in enumerate(part.classes):
+                if cls.node == class_node:
+                    return _class_holds(spec, func, part, c, value, host)
     raise Error(t"node {class_node} is not a partition class")
+
+
+def _class_holds[
+    H: EvalHost
+](spec: Spec, func: Fn, part: Partition, c: Int, value: Value, mut host: H) raises -> Bool:
+    var expr = part.classes[c].expr
+    if type_kind(spec, expr) != ty.SET:
+        var params = List[Value](length=len(func.params), fill=Value.none())
+        params[part.param] = value.copy()
+        var held = evaluate(spec, expr, Env(params^), host)
+        if held.kind != .BOOL:
+            raise Error(t"a predicate class must be a bool, but it is {show(held)}")
+        return held.as_bool()
+    # A class's set may name the classes before it.
+    var t = func.params[part.param].type
+    var ctx = SetContext()
+    var earlier: Dict[String, BitSet] = {}
+    var chosen = ctx.empty(1)
+    for cls in part.classes[: c + 1]:
+        chosen = compile_set_aliased(ctx, spec.ast, spec.types, t, cls.expr, earlier, spec.aliases)
+        earlier[cls.name] = chosen
+    return ctx.contains(chosen, bits_of_value(spec.types, t, value))

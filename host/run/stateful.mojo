@@ -16,7 +16,7 @@ from bridge.client import DriverClient
 from check import types as ty
 from eval.api import explain, judge
 from eval.env import Env
-from eval.text import located, source_text
+from eval.text import source_text
 from gen.models import is_default, is_not_drawn
 from mcheck.choices import Choices
 from mcheck.property import FAILED, PASSED, SKIPPED, Outcome, Property
@@ -486,7 +486,7 @@ struct Machine(Property):
                 return V_FAIL
             if j.is_skip():
                 return V_SKIP
-            note = located(spec, j.node, j.message) if j.node > 0 else j.message.copy()
+            note = j.located_message(spec)
             return V_TIMEOUT if self.inv_host.take_timeout() else V_ERROR
         return V_PASS
 

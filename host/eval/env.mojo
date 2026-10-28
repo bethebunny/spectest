@@ -4,14 +4,23 @@ from wire.value import Value
 
 
 @fieldwise_init
-struct Old(Copyable, Movable):
-    """What `old(...)` saw before the call: its value, or its failure."""
+struct Failure(Copyable):
+    """Why an evaluation has no value."""
+
+    var message: String
+    var node: Int
+    """The node the failure is attributed to."""
+    var skipped: Bool
+    """Whether it skips the clause (a planned call raised in the library) rather than
+    being an error."""
+
+
+@fieldwise_init
+struct Old(Copyable):
+    """What `old(...)` saw before the call: its value, or why it has none."""
 
     var value: Value
-    var error: String
-    """The failure message, or an empty string when the evaluation succeeded."""
-    var error_node: Int
-    var skipped: Bool
+    var failure: Optional[Failure]
 
 
 struct Env(Movable):
@@ -25,32 +34,22 @@ struct Env(Movable):
     """
 
     var params: List[Value]
-    var has_result: Bool
-    var result: Value
-    var has_self: Bool
-    var self_value: Value
+    var result: Optional[Value]
+    var self_value: Optional[Value]
     var olds: Dict[Int, Old]
     var types: Dict[String, Int]
 
-    def __init__(out self):
-        self.params = []
-        self.has_result = False
-        self.result = Value.none()
-        self.has_self = False
-        self.self_value = Value.none()
+    def __init__(out self, var params: List[Value] = []):
+        self.params = params^
+        self.result = None
+        self.self_value = None
         self.olds = {}
         self.types = {}
 
-    def __init__(out self, var params: List[Value]):
-        self = Self()
-        self.params = params^
-
     def set_result(mut self, var value: Value):
-        self.has_result = True
         self.result = value^
 
     def set_self(mut self, var value: Value):
-        self.has_self = True
         self.self_value = value^
 
     def bind_type(mut self, var name: String, type: Int):
@@ -58,8 +57,9 @@ struct Env(Movable):
 
 
 @fieldwise_init
-struct Local(Copyable, Movable):
+struct Local(Copyable):
     var node: Int
+    """The LET or COMPREHENSION that binds it."""
     var value: Value
 
 
@@ -67,17 +67,12 @@ struct Run(Movable):
     """The state of one evaluation: the locals in scope, and the failure that ended it."""
 
     var locals: List[Local]
-    var err_node: Int
-    """The node a failure is attributed to, or -1 while none has been."""
-    var err_message: String
-    var skipped: Bool
-    """Whether the failure is a skip of the clause rather than an error."""
+    var failure: Optional[Failure]
+    """Set by the innermost `value_of` that raised."""
 
     def __init__(out self):
         self.locals = []
-        self.err_node = -1
-        self.err_message = String()
-        self.skipped = False
+        self.failure = None
 
     def push(mut self, node: Int, var value: Value):
         self.locals.append(Local(node, value^))
@@ -85,33 +80,28 @@ struct Run(Movable):
     def pop(mut self):
         _ = self.locals.pop()
 
-    def truncate(mut self, n: Int):
-        while len(self.locals) > n:
-            self.pop()
-
     def set_top(mut self, var value: Value):
         self.locals[len(self.locals) - 1].value = value^
 
     def innermost(self, node: Int) -> Optional[Value]:
         """The value bound by the innermost binder `node`."""
-        for i in reversed(range(len(self.locals))):
-            if self.locals[i].node == node:
-                return self.locals[i].value.copy()
+        for local in reversed(self.locals):
+            if local.node == node:
+                return local.value.copy()
         return None
 
-    def fail(mut self, node: Int, var message: String) -> Error:
-        if self.err_node < 0:
-            self.err_node = node
-            self.err_message = message.copy()
-        return Error(message^)
+    def failure_or(self, err: Error, node: Int) -> Failure:
+        """The failure recorded, or else `err` attributed to `node`."""
+        if case .Some(failure) = self.failure:
+            return failure.copy()
+        return Failure(String(err), node, skipped=False)
 
     def skip(mut self, node: Int, var cause: String) -> Error:
-        self.skipped = True
-        return self.fail(node, cause^)
+        """The error that skips the clause, recorded at `node`."""
+        self.failure = Failure(cause.copy(), node, skipped=True)
+        return Error(cause^)
 
-    def reraise(mut self, node: Int, var message: String, skipped: Bool) -> Error:
-        """Raise a failure recorded earlier, keeping the node it came from."""
-        self.err_node = node
-        self.err_message = message.copy()
-        self.skipped = skipped
-        return Error(message^)
+    def reraise(mut self, failure: Failure) -> Error:
+        """A failure recorded earlier, raised again from the node it came from."""
+        self.failure = failure.copy()
+        return Error(failure.message)

@@ -12,7 +12,7 @@ from check import types as ty
 from check.spec import Spec
 from eval.api import evaluate
 from eval.coerce import value_from_bits
-from eval.core import ev, tkind
+from eval.core import type_kind, value_of
 from eval.env import Env, Run
 from eval.numbers import (
     add_term,
@@ -141,15 +141,15 @@ def run_aggregate(
         var total = 0
         var sampled = False
         var members: List[Value]
-        if tkind(spec, iterable) == ty.SET:
+        if type_kind(spec, iterable) == ty.SET:
             members = _members(
                 spec, ctx, iterable, options.exhaustive_limit, options.aggregate_samples, seed, total, sampled
             )
         else:
             var run = Run()
-            members = elements(ev(spec, iterable, env, run, host), String(kind, "(...)"))
+            members = elements(value_of(spec, iterable, env, run, host), String(kind, "(...)"))
             total = len(members)
-        var acc = qerr_zero() if tkind(spec, top) == ty.QERR else Value.int(0)
+        var acc = qerr_zero() if type_kind(spec, top) == ty.QERR else Value.int(0)
         var best = Optional[Value]()
         var failures = 0
         var evaluated = 0
@@ -161,13 +161,13 @@ def run_aggregate(
             run.push(top, member.copy())
             var term: Value
             try:
-                term = ev(spec, body, env, run, host)
+                term = value_of(spec, body, env, run, host)
             except err:
-                if run.skipped:
+                var failure = run.failure_or(err, body)
+                if failure.skipped:
                     skipped += 1
                     continue
-                var node = run.err_node if run.err_node >= 0 else body
-                raise Error(located(spec, node, run.err_message if run.err_node >= 0 else String(err)))
+                raise Error(located(spec, failure.node, failure.message))
             evaluated += 1
             if kind == .ALL:
                 if term.kind != .BOOL:

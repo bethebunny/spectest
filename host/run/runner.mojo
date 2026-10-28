@@ -14,15 +14,15 @@ from check.spec import Spec
 from eval.api import (
     Judgment,
     class_holds,
-    collect_olds,
     evaluate,
     explain,
     judge,
+    old_calls,
     snapshot_olds,
 )
 from eval.coerce import bits_of_value, coerce_arg
 from eval.env import Env
-from eval.text import located, source_text
+from eval.text import source_text
 from gen.classes import draw_in_classes
 from gen.domain import product_size, values_at
 from gen.models import (
@@ -279,10 +279,7 @@ struct Prop(Property, Movable):
                 self.requires.append(c)
             elif k == .ENSURES or k == .RELATES:
                 self.infos.append(PropInfo(K_COND, c, cl.id.copy(), source_text(spec, cl.node), String(k), -1))
-                var olds = List[Int]()
-                if cl.expr != 0:
-                    collect_olds(spec, cl.expr, olds)
-                if len(olds) > 0:
+                if cl.expr != 0 and old_calls(spec, cl.expr):
                     self.old_clauses.append(c)
             elif k == .RAISES:
                 self.infos.append(PropInfo(K_RAISES, c, cl.id.copy(), source_text(spec, cl.node), "raises", -1))
@@ -597,7 +594,7 @@ struct Prop(Property, Movable):
                 return Outcome.invalid()
             if not j.is_true():
                 return self._spec_error_all(
-                    String(spec.clauses[c].id, ": ", located(spec, j.node, j.message) if j.node > 0 else j.message),
+                    String(spec.clauses[c].id, ": ", j.located_message(spec)),
                     counting,
                     args,
                 )
@@ -654,7 +651,7 @@ struct Prop(Property, Movable):
                 cond_msg.append(String())
             else:
                 conds.append(-1)
-                cond_msg.append(located(spec, j.node, j.message) if j.node > 0 else j.message.copy())
+                cond_msg.append(j.located_message(spec))
         # The call.
         var reply = self.host.call(self.f, args)
         if reply.kind == .ERROR and reply.name() == TIMEOUT:
@@ -807,7 +804,7 @@ struct Prop(Property, Movable):
         elif due_ids:
             self._skip(i, "raise due")
         else:
-            self._error(i, located(self.loaded[].spec, j.node, j.message) if j.node > 0 else j.message.copy())
+            self._error(i, j.located_message(self.loaded[].spec))
 
     def _raises_clause(
         mut self,

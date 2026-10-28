@@ -10,7 +10,7 @@ from numeric.formats import F32, F64, FloatFormat
 from wire.format import format_value
 from wire.value import Value
 
-from eval.api import J_ERROR, J_FALSE, J_SKIP, J_TRUE, Judgment, evaluate, judge
+from eval.api import Judgment, evaluate, judge
 from eval.env import Env
 from eval.host import EvalHost
 

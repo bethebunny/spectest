@@ -12,12 +12,12 @@ trait EvalHost:
         """An observer of a model (positions in Spec.models and Model.observers)."""
         ...
 
-    def call_fn(mut self, `fn`: Int, args: List[Value]) raises -> Value:
-        """A planned call of Spec.fns[fn]. A library error comes back as an ERROR value."""
+    def call_fn(mut self, function: Int, args: List[Value]) raises -> Value:
+        """A planned call of Spec.fns[function]. A library error comes back as an ERROR value."""
         ...
 
-    def constant(mut self, `const`: Int) raises -> Value:
-        """A declared constant, Spec.consts[const]."""
+    def constant(mut self, index: Int) raises -> Value:
+        """A declared constant, Spec.consts[index]."""
         ...
 
     def fresh(mut self, obj: Value) raises -> Bool:

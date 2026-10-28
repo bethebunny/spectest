@@ -1,7 +1,8 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from eval.api import observe_with, snapshot_olds
+from eval.api import observe_with, old_calls, snapshot_olds
 from eval.core import scalar_type_id
+from eval.env import Failure, Old
 from numeric.formats import F16
 from eval_testkit import *
 from wire.value import Value
@@ -254,6 +255,15 @@ def test_old_of_a_planned_call_that_raises_skips() raises:
     snapshot_olds(spec, [clause_pos(spec, "g.r")], env, host)
     var sk = judge_clause(spec, "g.r", env, host)
     assert_true(sk.is_skip(), sk.describe(spec))
+
+
+def test_an_old_failure_without_a_message_is_still_met_on_use() raises:
+    var spec = spec_of("model C\n  observe n: i64\nfn bump(c: C)\n  modifies c\n  ensures up: let k = old(c.n) in true\n")
+    var host = Mock()
+    var env = Env(one(Value.handle(1, "C")))
+    var call = old_calls(spec, spec.clauses[clause_pos(spec, "bump.up")].expr)[0]
+    env.olds[call] = Old(Value.none(), Failure("", call, skipped=False))
+    assert_true(judge_clause(spec, "bump.up", env, host).is_error())
 
 
 def test_definitions() raises:

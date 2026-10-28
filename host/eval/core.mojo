@@ -1,6 +1,6 @@
 """The expression evaluator: checked expressions on `Value`s.
 
-`ev` evaluates one node against an `Env`. A failure raises an `Error` and is recorded
+`value_of` evaluates one node against an `Env`. A failure raises an `Error` and is recorded
 in the `Run`: the node it is attributed to, and whether it is a skip of the clause (a
 planned call that raised in the library) rather than an error.
 """
@@ -14,13 +14,14 @@ from numeric.literal import is_integer_literal, parse_number
 from partitions.compile import compiled_set
 from prelude import api
 from prelude.collections import EqMode, equal
+from prelude.util import real_value
 from sets import SetContext
-from syntax import ast
+from syntax.ast import Op
 from wire.equality import same
-from wire.value import Value
+from wire.value import Kind, Value
 
 from .coerce import bits_of_value, coerce_arg, fit, value_from_bits
-from .env import Env, Run
+from .env import Env, Failure, Run
 from .host import EvalHost
 from .numbers import (
     add_term,
@@ -47,54 +48,35 @@ comptime SET_LIMIT = 1 << 16
 """The most members of a partition set a comprehension visits."""
 
 
-def tkind(spec: Spec, node: Int) -> UInt8:
+def type_kind(spec: Spec, node: Int) -> UInt8:
     return spec.types.infos[spec.node_types[node]].kind
 
 
-def scalar_name(info: ty.TypeInfo) -> String:
-    """The name a scalar type is written with, or an empty string."""
-    if info.kind == ty.BOOL:
-        return "bool"
-    if info.kind == ty.INT:
-        return "int"
-    if info.kind == ty.REAL:
-        return "real"
-    if info.kind == ty.STRING:
-        return "string"
-    if info.kind == ty.BYTES:
-        return "bytes"
-    if info.kind == ty.FIXED_INT:
-        return String("i" if info.signed else "u", info.bits)
-    if info.kind == ty.FLOAT:
-        return ["f16", "bf16", "f32", "f64"][info.bits - 1]
-    return ""
-
-
-def scalar_type_id(types: ty.Types, name: String) -> Int:
-    """The id of the interned scalar type `name` denotes, or -1."""
-    for t in range(len(types.infos)):
-        if scalar_name(types.infos[t]) == name:
+def scalar_type_id(types: ty.Types, name: String) -> Optional[Int]:
+    """The interned scalar type `name` denotes (`bool`, `i32`, `f64`, ...), if any."""
+    for t, info in enumerate(types.infos):
+        var scalar = info.kind in [ty.BOOL, ty.INT, ty.REAL, ty.STRING, ty.BYTES, ty.FIXED_INT, ty.FLOAT]
+        if scalar and types.text(t) == name:
             return t
-    return -1
+    return None
 
 
 def type_arg(spec: Spec, node: Int, env: Env) raises -> Int:
-    var name = spec.ast.nodes[node].text.copy()
-    if name in env.types:
-        return env.types[name]
-    var scalar = scalar_type_id(spec.types, name)
-    if scalar >= 0:
-        return scalar
-    var alias = spec.aliases.get(name)
-    if alias is None:
-        raise Error(t"cannot resolve the type argument {name}")
-    return alias.value()
+    """The type a type argument names: a bound type parameter, a scalar or an alias."""
+    ref name = spec.ast.nodes[node].text
+    if case .Some(t) = env.types.get(name):
+        return t
+    if case .Some(t) = scalar_type_id(spec.types, name):
+        return t
+    if case .Some(t) = spec.aliases.get(name):
+        return t
+    raise Error(t"cannot resolve the type argument {name}")
 
 
 def self_of(env: Env) raises -> Value:
-    if env.has_self:
-        return env.self_value.copy()
-    if len(env.params) > 0:
+    if case .Some(value) = env.self_value:
+        return value.copy()
+    if env.params:
         return env.params[0].copy()
     raise Error("no value for self")
 
@@ -106,155 +88,159 @@ def want_bool(v: Value, what: String) raises -> Bool:
 
 
 def is_sequence(v: Value) -> Bool:
-    return v.kind == .LIST or v.kind == .STRING or v.kind == .BYTES or v.kind == .ENUM
+    return v.kind in [Kind.LIST, Kind.STRING, Kind.BYTES, Kind.ENUM]
 
 
-def ev[
+def is_old_call(spec: Spec, e: Int) -> Bool:
+    if spec.ast.nodes[e].kind != .CALL:
+        return False
+    var r = spec.resolution(e)
+    return r is not None and r.value().kind == sp.R_OLD
+
+
+def value_of[
     H: EvalHost
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     """The value of the expression at node `e`."""
     try:
-        return ev_inner(spec, e, env, run, host)
+        return _value(spec, e, env, run, host)
     except err:
-        if run.err_node < 0:
-            run.err_node = e
-            run.err_message = String(err)
+        if run.failure is None:
+            run.failure = Failure(String(err), e, skipped=False)
         raise err^
 
 
-def _int_literal(text: String) -> Optional[Int]:
-    if len(text.as_bytes()) == 0 or len(text.as_bytes()) > 18:
+def _small_literal(text: String) -> Optional[Int]:
+    """A decimal literal of at most 18 digits, which an Int holds."""
+    if text.byte_length() > 18 or not text.is_ascii_digit():
         return None
-    var n = 0
-    for b in text.as_bytes():
-        var digit = Int(b) - ord("0")
-        if digit < 0 or digit > 9:
-            return None
-        n = n * 10 + digit
-    return n
+    try:
+        return Int(text)
+    except:
+        return None
 
 
-def ev_inner[
+def _value[
     H: EvalHost
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
-    var k = n.kind
-    if k == .NAME:
-        return ev_name(spec, e, env, run, host)
-    if k == .BINARY:
-        return ev_binary(spec, e, env, run, host)
-    if k == .CALL:
-        return ev_call(spec, e, env, run, host)
-    if k == .ATTR:
-        return ev_attr(spec, e, env, run, host)
-    if k == .NUM:
-        var small = _int_literal(n.text)
-        if small is not None:
-            return Value.int(small.value())
-        var r = parse_number(n.text)
-        if is_integer_literal(n.text):
-            return Value.int(r.numerator.copy())
-        return Value.real(r.numerator.copy(), r.denominator.copy())
-    if k == .STR:
-        return Value.string(n.text.copy())
-    if k == .BOOL:
-        return Value.bool(n.op == .TRUE)
-    if k == .NONE:
-        return Value.none()
-    if k == .UNARY:
-        var operand = ev(spec, n.children[0], env, run, host)
-        if n.op == .NOT:
-            return Value.bool(not want_bool(operand, "the operand of not"))
-        return fit(spec.types, negate(operand), spec.node_types[e])
-    if k == .IF:
-        var branch = n.children[1] if want_bool(ev(spec, n.children[0], env, run, host), "the condition of if") else n.children[2]
-        return fit(spec.types, ev(spec, branch, env, run, host), spec.node_types[e])
-    if k == .LET:
-        run.push(e, ev(spec, n.children[0], env, run, host))
-        var body = ev(spec, n.children[1], env, run, host)
-        run.pop()
-        return body^
-    if k == .COMPREHENSION:
-        return ev_comprehension(spec, e, env, run, host)
-    if k == .INDEX:
-        var v = ev(spec, n.children[0], env, run, host)
-        var i = ev(spec, n.children[1], env, run, host)
-        if v.kind == .MAP:
-            return map_lookup(v, i)
-        if not is_sequence(v):
-            raise Error(t"cannot index {show(v)}")
-        return index_value(v, i)
-    if k == .SLICE:
-        var v = ev(spec, n.children[0], env, run, host)
-        var lo = ev(spec, n.children[1], env, run, host)
-        var hi = ev(spec, n.children[2], env, run, host)
-        if not is_sequence(v):
-            raise Error(t"cannot slice {show(v)}")
-        return slice_value(v, lo, hi)
-    if k == .TUPLE_INDEX:
-        var v = ev(spec, n.children[0], env, run, host)
-        if v.kind != .TUPLE and v.kind != .LIST:
-            raise Error(t".{n.text} needs a tuple, but the value is {show(v)}")
-        var index = Int(n.text)
-        if index < 0 or index >= v.count():
-            raise Error(t".{n.text} is out of range for a tuple of {v.count()} elements")
-        return v.item(index)
-    if k == .LIST or k == .TUPLE:
-        var items = [ev(spec, kid, env, run, host) for kid in n.children]
-        if k == .TUPLE:
-            return Value.tuple(items^)
-        return fit(spec.types, Value.list(items^), spec.node_types[e])
-    if k == .SET:
-        raise Error("{...} is a partition set: it has no value in a clause")
-    raise Error(t"cannot evaluate a {k} node")
+    match n.kind:
+        case .NAME:
+            return _name_value(spec, e, env, run, host)
+        case .BINARY:
+            return _binary_value(spec, e, env, run, host)
+        case .CALL:
+            return _call_value(spec, e, env, run, host)
+        case .ATTR:
+            return _attr_value(spec, e, env, run, host)
+        case .NUM:
+            if case .Some(small) = _small_literal(n.text):
+                return Value.int(small)
+            var r = parse_number(n.text)
+            return Value.int(r.numerator.copy()) if is_integer_literal(n.text) else real_value(r)
+        case .STR:
+            return Value.string(n.text.copy())
+        case .BOOL:
+            return Value.bool(n.op == .TRUE)
+        case .NONE:
+            return Value.none()
+        case .UNARY:
+            var operand = value_of(spec, n.children[0], env, run, host)
+            if n.op == .NOT:
+                return Value.bool(not want_bool(operand, "the operand of not"))
+            return fit(spec.types, negate(operand), spec.node_types[e])
+        case .IF:
+            var condition = want_bool(value_of(spec, n.children[0], env, run, host), "the condition of if")
+            var branch = n.children[1] if condition else n.children[2]
+            return fit(spec.types, value_of(spec, branch, env, run, host), spec.node_types[e])
+        case .LET:
+            run.push(e, value_of(spec, n.children[0], env, run, host))
+            var body = value_of(spec, n.children[1], env, run, host)
+            run.pop()
+            return body^
+        case .COMPREHENSION:
+            return _comprehension_value(spec, e, env, run, host)
+        case .INDEX:
+            var v = value_of(spec, n.children[0], env, run, host)
+            var i = value_of(spec, n.children[1], env, run, host)
+            if v.kind == .MAP:
+                return map_lookup(v, i)
+            if not is_sequence(v):
+                raise Error(t"cannot index {show(v)}")
+            return index_value(v, i)
+        case .SLICE:
+            var v = value_of(spec, n.children[0], env, run, host)
+            var lo = value_of(spec, n.children[1], env, run, host)
+            var hi = value_of(spec, n.children[2], env, run, host)
+            if not is_sequence(v):
+                raise Error(t"cannot slice {show(v)}")
+            return slice_value(v, lo, hi)
+        case .TUPLE_INDEX:
+            var v = value_of(spec, n.children[0], env, run, host)
+            if v.kind not in [Kind.TUPLE, Kind.LIST]:
+                raise Error(t".{n.text} needs a tuple, but the value is {show(v)}")
+            var index = Int(n.text)
+            if not 0 <= index < v.count():
+                raise Error(t".{n.text} is out of range for a tuple of {v.count()} elements")
+            return v.item(index)
+        case .LIST:
+            var items = [value_of(spec, child, env, run, host) for child in n.children]
+            return fit(spec.types, Value.list(items^), spec.node_types[e])
+        case .TUPLE:
+            return Value.tuple([value_of(spec, child, env, run, host) for child in n.children])
+        case .SET:
+            raise Error("{...} is a partition set: it has no value in a clause")
+        case _:
+            raise Error(t"cannot evaluate a {n.kind} node")
 
 
 def map_lookup(m: Value, key: Value) raises -> Value:
-    for i in range(m.count()):
-        if values_equal(key, m.item(2 * i)):
-            return m.item(2 * i + 1)
+    for entry_key, value in m.pairs():
+        if values_equal(key, entry_key):
+            return value.copy()
     raise Error(t"key {show(key)} is not in the map")
 
 
 # Names
 
 
-def ev_name[
+def _name_value[
     H: EvalHost
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
-    var found = spec.resolutions.get(e)
     ref name = spec.ast.nodes[e].text
+    var found = spec.resolution(e)
     if found is None:
         raise Error(t"{name} has no value: the checker did not resolve it")
-    var r = found.value().copy()
-    var kind = r.kind
-    if kind == sp.R_PARAM:
-        if r.index >= len(env.params):
-            raise Error(t"no value for the parameter {name}")
-        return env.params[r.index].copy()
-    if kind == sp.R_RESULT:
-        if not env.has_result:
+    ref r = found.value()
+    match r.kind:
+        case sp.R_PARAM:
+            if r.index >= len(env.params):
+                raise Error(t"no value for the parameter {name}")
+            return env.params[r.index].copy()
+        case sp.R_RESULT:
+            if case .Some(result) = env.result:
+                return result.copy()
             raise Error("no value for the result")
-        return env.result.copy()
-    if kind == sp.R_SELF:
-        return self_of(env)
-    if kind == sp.R_LOCAL:
-        var local = run.innermost(r.index)
-        if local is None:
-            raise Error(t"no value for the local {name}")
-        return local.take()
-    if kind == sp.R_FIELD:
-        return host.observe(self_of(env), r.owner, r.index, [])
-    if kind == sp.R_ENUM_MEMBER:
-        return enum_member(spec, r.owner, r.index)
-    if kind == sp.R_CLASS:
-        var expr = spec.ast.nodes[r.index].children[0]
-        if tkind(spec, expr) == ty.BOOL:
-            return ev(spec, expr, env, run, host)
-        raise Error(t"class {name} is a partition set: it has no value in a clause")
-    if kind == sp.R_CONST:
-        return host.constant(r.index)
-    raise Error(t"{name} cannot be evaluated as a value")
+        case sp.R_SELF:
+            return self_of(env)
+        case sp.R_LOCAL:
+            var local = run.innermost(r.index)
+            if local is None:
+                raise Error(t"no value for the local {name}")
+            return local.take()
+        case sp.R_FIELD:
+            return host.observe(self_of(env), r.owner, r.index, [])
+        case sp.R_ENUM_MEMBER:
+            return enum_member(spec, r.owner, r.index)
+        case sp.R_CLASS:
+            var expr = spec.ast.child(r.index, 0)
+            if type_kind(spec, expr) == ty.BOOL:
+                return value_of(spec, expr, env, run, host)
+            raise Error(t"class {name} is a partition set: it has no value in a clause")
+        case sp.R_CONST:
+            return host.constant(r.index)
+        case _:
+            raise Error(t"{name} cannot be evaluated as a value")
 
 
 def enum_member(spec: Spec, enum_type: Int, index: Int) -> Value:
@@ -262,94 +248,97 @@ def enum_member(spec: Spec, enum_type: Int, index: Int) -> Value:
     return Value.enum(info.name.copy(), info.names[index].copy())
 
 
-def ev_attr[
+def _attr_value[
     H: EvalHost
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
-    var found = spec.resolutions.get(e)
+    var found = spec.resolution(e)
     if found is None:
         raise Error(t".{n.text} cannot be evaluated: the checker did not resolve it")
-    var r = found.value().copy()
-    var kind = r.kind
-    if kind == sp.R_ENUM_MEMBER:
-        return enum_member(spec, r.owner, r.index)
-    if kind == sp.R_CONST:
-        return host.constant(r.index)
-    if kind == sp.R_TYPE_CONST:
-        if tkind(spec, e) == ty.SET:
-            raise Error(t"{spec.ast.source_text(e)} is a partition set: it has no value in a clause")
-        ref scalar = spec.types.infos[r.index]
-        if scalar.kind == ty.FIXED_INT:
-            return Value.int(int_min(scalar.bits, scalar.signed) if r.name == "min" else int_max(scalar.bits, scalar.signed))
-        var f = format_by_id(UInt8(scalar.bits))
-        var top = f.max_finite()
-        return Value.float(f, top if r.name == "max" else top | f.sign_mask())
-    if kind == sp.R_OBSERVER:
-        var obj = ev(spec, n.children[0], env, run, host)
-        if obj.kind != .HANDLE:
-            raise Error(t"observer {n.text} needs a handle, but got {show(obj)}")
-        return host.observe(obj, r.owner, r.index, [])
-    if kind == sp.R_RECORD_FIELD:
-        var rec = ev(spec, n.children[0], env, run, host)
-        if rec.kind != .RECORD:
-            raise Error(t".{n.text} needs a record, but got {show(rec)}")
-        if case .Some(field) = rec.field(n.text):
-            return field.copy()
-        raise Error(t"record {rec.name()} has no field {n.text}")
-    if kind == sp.R_QERR_PART:
-        var q = ev(spec, n.children[0], env, run, host)
-        if q.kind != .QERR:
-            raise Error(t".{n.text} needs a qerr, but got {show(q)}")
-        return q.item(0 if n.text == "steps" else 1)
-    if kind == sp.R_SET_CTOR:
-        raise Error(t"{spec.ast.source_text(e)} is a partition set constructor")
-    raise Error(t".{n.text} cannot be evaluated")
+    ref r = found.value()
+    match r.kind:
+        case sp.R_ENUM_MEMBER:
+            return enum_member(spec, r.owner, r.index)
+        case sp.R_CONST:
+            return host.constant(r.index)
+        case sp.R_TYPE_CONST:
+            if type_kind(spec, e) == ty.SET:
+                raise Error(t"{spec.ast.source_text(e)} is a partition set: it has no value in a clause")
+            ref scalar = spec.types.infos[r.index]
+            if scalar.kind == ty.FIXED_INT:
+                var low = r.name == "min"
+                return Value.int(int_min(scalar.bits, scalar.signed) if low else int_max(scalar.bits, scalar.signed))
+            var f = format_by_id(UInt8(scalar.bits))
+            var top = f.max_finite()
+            return Value.float(f, top if r.name == "max" else top | f.sign_mask())
+        case sp.R_OBSERVER:
+            var obj = value_of(spec, n.children[0], env, run, host)
+            if obj.kind != .HANDLE:
+                raise Error(t"observer {n.text} needs a handle, but got {show(obj)}")
+            return host.observe(obj, r.owner, r.index, [])
+        case sp.R_RECORD_FIELD:
+            var record = value_of(spec, n.children[0], env, run, host)
+            if record.kind != .RECORD:
+                raise Error(t".{n.text} needs a record, but got {show(record)}")
+            if case .Some(field) = record.field(n.text):
+                return field.copy()
+            raise Error(t"record {record.name()} has no field {n.text}")
+        case sp.R_QERR_PART:
+            var q = value_of(spec, n.children[0], env, run, host)
+            if q.kind != .QERR:
+                raise Error(t".{n.text} needs a qerr, but got {show(q)}")
+            return q.item(0 if n.text == "steps" else 1)
+        case sp.R_SET_CTOR:
+            raise Error(t"{spec.ast.source_text(e)} is a partition set constructor")
+        case _:
+            raise Error(t".{n.text} cannot be evaluated")
 
 
 # Operators
 
 
-def ev_binary[
+def _binary_value[
     H: EvalHost
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
     var op = n.op
-    if op == .IMPLIES or op == .AND or op == .OR:
-        var name = "implies" if op == .IMPLIES else ("and" if op == .AND else "or")
-        var left = want_bool(ev(spec, n.children[0], env, run, host), String("the left operand of ", name))
-        if left if op == .OR else not left:
+    if op in [Op.IMPLIES, Op.AND, Op.OR]:
+        var left = want_bool(value_of(spec, n.children[0], env, run, host), String(t"the left operand of {op}"))
+        # `true or`, `false and` and `false implies` are decided without the right operand.
+        if left == (op == .OR):
             return Value.bool(op != .AND)
-        return Value.bool(want_bool(ev(spec, n.children[1], env, run, host), String("the right operand of ", name)))
-    if tkind(spec, e) == ty.SET:
+        return Value.bool(want_bool(value_of(spec, n.children[1], env, run, host), String(t"the right operand of {op}")))
+    if type_kind(spec, e) == ty.SET:
         raise Error(t"{op} combines partition sets: it has no value in a clause")
-    if op == .IN and tkind(spec, n.children[1]) == ty.SET:
-        return Value.bool(set_contains(spec, n.children[1], ev(spec, n.children[0], env, run, host)))
-    var a = ev(spec, n.children[0], env, run, host)
-    var b = ev(spec, n.children[1], env, run, host)
+    if op == .IN and type_kind(spec, n.children[1]) == ty.SET:
+        return Value.bool(set_contains(spec, n.children[1], value_of(spec, n.children[0], env, run, host)))
+    var a = value_of(spec, n.children[0], env, run, host)
+    var b = value_of(spec, n.children[1], env, run, host)
     var has_qerr = a.kind == .QERR or b.kind == .QERR
-    if op == .EQ or op == .NE:
-        var equal: Bool
-        if has_qerr:
-            equal = qerr_compare(ast.Op.EQ, a, b)
-        elif tkind(spec, n.children[0]) == ty.CHOICE or tkind(spec, n.children[1]) == ty.CHOICE:
-            equal = same(a, b)
-        else:
-            equal = values_equal(a, b)
-        return Value.bool(equal if op == .EQ else not equal)
-    if op == .LT or op == .LE or op == .GT or op == .GE:
-        return Value.bool(qerr_compare(op, a, b) if has_qerr else holds_order(op, compare_values(a, b)))
-    if op == .IN:
-        return Value.bool(contains(b, a))
-    if op == .ADD:
-        if has_qerr:
-            if a.kind == .QERR and b.kind == .QERR:
-                return qerr_add(a, b)
-            raise Error(t"+ adds two qerr values, not {show(a)} and {show(b)}")
-        var joined = concat(a, b)
-        if joined is not None:
-            return joined.take()
-    elif has_qerr:
-        raise Error(t"{op} is not defined on qerr values")
+    match op:
+        case .EQ | .NE:
+            var is_equal: Bool
+            if has_qerr:
+                is_equal = qerr_compare(Op.EQ, a, b)
+            elif type_kind(spec, n.children[0]) == ty.CHOICE or type_kind(spec, n.children[1]) == ty.CHOICE:
+                is_equal = same(a, b)
+            else:
+                is_equal = values_equal(a, b)
+            return Value.bool(is_equal if op == .EQ else not is_equal)
+        case .LT | .LE | .GT | .GE:
+            return Value.bool(qerr_compare(op, a, b) if has_qerr else holds_order(op, compare_values(a, b)))
+        case .IN:
+            return Value.bool(contains(b, a))
+        case .ADD:
+            if has_qerr:
+                if a.kind == .QERR and b.kind == .QERR:
+                    return qerr_add(a, b)
+                raise Error(t"+ adds two qerr values, not {show(a)} and {show(b)}")
+            if case .Some(joined) = concat(a, b):
+                return joined.copy()
+        case _:
+            if has_qerr:
+                raise Error(t"{op} is not defined on qerr values")
     return fit(spec.types, arith(op, a, b), spec.node_types[e])
 
 
@@ -369,63 +358,64 @@ def set_contains(spec: Spec, set_node: Int, x: Value) raises -> Bool:
     return ctx.contains(s, bits_of_value(spec.types, elem, x))
 
 
-def ev_comprehension[
+def _body_at[
+    H: EvalHost
+](spec: Spec, body: Int, item: Value, env: Env, mut run: Run, mut host: H) raises -> Value:
+    """The body of a comprehension with its variable bound to `item`."""
+    run.set_top(item.copy())
+    return value_of(spec, body, env, run, host)
+
+
+def _comprehension_value[
     H: EvalHost
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
     var kind = n.op
     var iterable = n.children[0]
     var body = n.children[1]
-    var what = String("the body of ", kind, "(...)")
-    var items = set_members(spec, iterable) if tkind(spec, iterable) == ty.SET else elements(
-        ev(spec, iterable, env, run, host), String(kind, "(...)")
-    )
+    var what = String(t"the body of {kind}(...)")
+    var items: List[Value]
+    if type_kind(spec, iterable) == ty.SET:
+        items = set_members(spec, iterable)
+    else:
+        items = elements(value_of(spec, iterable, env, run, host), String(t"{kind}(...)"))
     run.push(e, Value.none())
     var result: Value
-    if kind == .ALL or kind == .EXISTS:
-        var want = kind == .EXISTS
-        var hit = False
-        for item in items:
-            run.set_top(item.copy())
-            if want_bool(ev(spec, body, env, run, host), what) == want:
-                hit = True
-                break
-        result = Value.bool(hit if want else not hit)
-    elif kind == .COUNT:
-        var count = 0
-        for item in items:
-            run.set_top(item.copy())
-            if want_bool(ev(spec, body, env, run, host), what):
-                count += 1
-        result = Value.int(count)
-    elif kind == .FILTER:
-        var kept: List[Value] = []
-        for item in items:
-            run.set_top(item.copy())
-            if want_bool(ev(spec, body, env, run, host), what):
-                kept.append(item.copy())
-        result = Value.list(kept^)
-    elif kind == .MAP:
-        var mapped: List[Value] = []
-        for item in items:
-            run.set_top(item.copy())
-            mapped.append(ev(spec, body, env, run, host))
-        result = Value.list(mapped^)
-    elif kind == .SUM:
-        var total = qerr_zero() if tkind(spec, e) == ty.QERR else Value.int(0)
-        for item in items:
-            run.set_top(item.copy())
-            total = add_term(total, ev(spec, body, env, run, host))
-        result = total^
-    else:
-        var best = Optional[Value]()
-        for item in items:
-            run.set_top(item.copy())
-            var term = term_of(ev(spec, body, env, run, host))
-            best = larger(best.value(), term) if best is not None else term^
-        if best is None:
-            raise Error("max(...) of no elements has no value")
-        result = best.take()
+    match kind:
+        case .ALL | .EXISTS:
+            # all stops at the first false body, exists at the first true one.
+            var want = kind == .EXISTS
+            var found = False
+            for item in items:
+                if want_bool(_body_at(spec, body, item, env, run, host), what) == want:
+                    found = True
+                    break
+            result = Value.bool(found == want)
+        case .COUNT:
+            var count = 0
+            for item in items:
+                if want_bool(_body_at(spec, body, item, env, run, host), what):
+                    count += 1
+            result = Value.int(count)
+        case .FILTER:
+            result = Value.list(
+                [item.copy() for item in items if want_bool(_body_at(spec, body, item, env, run, host), what)]
+            )
+        case .MAP:
+            result = Value.list([_body_at(spec, body, item, env, run, host) for item in items])
+        case .SUM:
+            var total = qerr_zero() if type_kind(spec, e) == ty.QERR else Value.int(0)
+            for item in items:
+                total = add_term(total, _body_at(spec, body, item, env, run, host))
+            result = total^
+        case _:
+            var best: Optional[Value] = None
+            for item in items:
+                var term = term_of(_body_at(spec, body, item, env, run, host))
+                best = larger(best.value(), term) if best is not None else term^
+            if best is None:
+                raise Error("max(...) of no elements has no value")
+            result = best.take()
     run.pop()
     return fit(spec.types, result, spec.node_types[e])
 
@@ -445,109 +435,109 @@ def bind_args[
     mut host: H,
 ) raises -> List[Value]:
     """The arguments of the call at `e` in the order of `params`, defaults filled in."""
-    ref kids = spec.ast.nodes[e].children
     var names = [param.name.copy() for param in params]
-    var vals = [Value.none() for _ in params]
-    var have = [False for _ in params]
+    var bound = List[Optional[Value]](length=len(params), fill=None)
     var next_position = 0
-    for k in range(2, len(kids)):
-        ref arg = spec.ast.nodes[kids[k]]
-        var v = ev(spec, arg.children[0], env, run, host)
-        var at = next_position
-        if arg.text == "":
+    for child in spec.ast.nodes[e].children[2:]:
+        ref arg = spec.ast.nodes[child]
+        var value = value_of(spec, arg.children[0], env, run, host)
+        var at: Int
+        if not arg.text:
             if next_position >= len(params):
                 raise Error(t"{what} takes {len(params)} argument(s), but more are given")
+            at = next_position
             next_position += 1
-        elif arg.text in names:
-            at = names.index(arg.text)
         else:
-            raise Error(t"{what} has no parameter named {arg.text}")
-        vals[at] = v^
-        have[at] = True
-    for i in range(len(params)):
-        if have[i]:
-            continue
-        if params[i].default == 0:
-            raise Error(t"{what} needs argument {params[i].name}")
-        vals[i] = ev(spec, params[i].default, Env(), run, host)
-    return vals^
+            var named = names.try_index(arg.text)
+            if named is None:
+                raise Error(t"{what} has no parameter named {arg.text}")
+            at = named.value()
+        bound[at] = value^
+    var args: List[Value] = []
+    for param, value in zip(params, bound):
+        if value is not None:
+            args.append(value.value().copy())
+        elif param.default == 0:
+            raise Error(t"{what} needs argument {param.name}")
+        else:
+            args.append(value_of(spec, param.default, Env(), run, host))
+    return args^
 
 
-def coerce_args(
-    spec: Spec, mut args: List[Value], params: List[Param], what: String
-) raises:
-    for i in range(len(params)):
-        args[i] = coerce_arg(spec.types, args[i], params[i].type, String(t"argument {params[i].name} of {what}"))
+def coerced(spec: Spec, args: List[Value], params: List[Param], what: String) raises -> List[Value]:
+    """The arguments of a call made exact for the types of their parameters."""
+    return [
+        coerce_arg(spec.types, arg, param.type, String(t"argument {param.name} of {what}"))
+        for arg, param in zip(args, params)
+    ]
 
 
-def ev_call[
+def _call_value[
     H: EvalHost
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
-    var found = spec.resolutions.get(e)
+    var found = spec.resolution(e)
     if found is None:
-        found = spec.resolutions.get(n.children[0])
+        found = spec.resolution(n.children[0])
     if found is None:
         raise Error("this call cannot be evaluated: the checker did not resolve it")
-    var r = found.value().copy()
-    var kind = r.kind
-    if kind == sp.R_PRELUDE:
-        return ev_prelude(spec, e, r.index, env, run, host)
-    if kind == sp.R_OLD:
-        if e not in env.olds:
-            raise Error(
-                "old(...) has no snapshot of the state before the call (snapshot_olds must run before the call)"
-            )
-        ref old = env.olds[e]
-        if old.error != "":
-            raise run.reraise(old.error_node, old.error.copy(), old.skipped)
-        return old.value.copy()
-    if kind == sp.R_SPEC_FN:
-        ref f = spec.fns[r.index]
-        var args = bind_args(spec, e, f.params, f.name, env, run, host)
-        coerce_args(spec, args, f.params, f.name)
-        var out = host.call_fn(r.index, args^)
-        if out.kind == .ERROR:
-            raise run.skip(e, String(t"the call of {f.name} raised {out.error_text()}"))
-        return fit(spec.types, out, spec.node_types[e])
-    if kind == sp.R_DEF:
-        ref d = spec.defs[r.index]
-        var denv = Env(bind_args(spec, e, d.params, d.name, env, run, host))
-        denv.types = env.types.copy()
-        return fit(spec.types, ev(spec, d.body, denv, run, host), spec.node_types[e])
-    if kind == sp.R_OBSERVER or kind == sp.R_FIELD:
-        ref obs = spec.models[r.owner].observers[r.index]
-        var obj: Value
-        if kind == sp.R_FIELD:
-            obj = self_of(env)
-        else:
-            var callee = n.children[0]
-            if spec.ast.nodes[callee].kind != .ATTR:
-                raise Error(t"observer call {r.name} has no handle")
-            obj = ev(spec, spec.ast.nodes[callee].children[0], env, run, host)
-        if obj.kind != .HANDLE:
-            raise Error(t"observer {r.name} needs a handle, but got {show(obj)}")
-        var what = String(spec.models[r.owner].name, ".", r.name)
-        var args = bind_args(spec, e, obs.params, what, env, run, host)
-        coerce_args(spec, args, obs.params, what)
-        return host.observe(obj, r.owner, r.index, args^)
-    if kind == sp.R_EXTERN:
-        var args = [ev(spec, spec.ast.nodes[n.children[k]].children[0], env, run, host) for k in range(2, len(n.children))]
-        return host.call_extern(r.name, args^)
-    if kind == sp.R_SET_CTOR:
-        raise Error(t"{spec.ast.source_text(n.children[0])}(...) is a partition set")
-    raise Error(t"a call of {r.name} cannot be evaluated")
+    ref r = found.value()
+    match r.kind:
+        case sp.R_PRELUDE:
+            return _prelude_value(spec, e, r.index, env, run, host)
+        case sp.R_OLD:
+            if e not in env.olds:
+                raise Error(
+                    "old(...) has no snapshot of the state before the call (snapshot_olds must run before the call)"
+                )
+            ref old = env.olds[e]
+            if case .Some(failure) = old.failure:
+                raise run.reraise(failure)
+            return old.value.copy()
+        case sp.R_SPEC_FN:
+            ref f = spec.fns[r.index]
+            var args = coerced(spec, bind_args(spec, e, f.params, f.name, env, run, host), f.params, f.name)
+            var out = host.call_fn(r.index, args)
+            if out.kind == .ERROR:
+                raise run.skip(e, String(t"the call of {f.name} raised {out.error_text()}"))
+            return fit(spec.types, out, spec.node_types[e])
+        case sp.R_DEF:
+            ref d = spec.defs[r.index]
+            var def_env = Env(bind_args(spec, e, d.params, d.name, env, run, host))
+            def_env.types = env.types.copy()
+            return fit(spec.types, value_of(spec, d.body, def_env, run, host), spec.node_types[e])
+        case sp.R_OBSERVER | sp.R_FIELD:
+            ref observer = spec.models[r.owner].observers[r.index]
+            var obj: Value
+            if r.kind == sp.R_FIELD:
+                obj = self_of(env)
+            else:
+                var callee = n.children[0]
+                if spec.ast.nodes[callee].kind != .ATTR:
+                    raise Error(t"observer call {r.name} has no handle")
+                obj = value_of(spec, spec.ast.child(callee, 0), env, run, host)
+            if obj.kind != .HANDLE:
+                raise Error(t"observer {r.name} needs a handle, but got {show(obj)}")
+            var what = String(t"{spec.models[r.owner].name}.{r.name}")
+            var args = coerced(spec, bind_args(spec, e, observer.params, what, env, run, host), observer.params, what)
+            return host.observe(obj, r.owner, r.index, args)
+        case sp.R_EXTERN:
+            var args = [value_of(spec, spec.ast.child(child, 0), env, run, host) for child in n.children[2:]]
+            return host.call_extern(r.name, args)
+        case sp.R_SET_CTOR:
+            raise Error(t"{spec.ast.source_text(n.children[0])}(...) is a partition set")
+        case _:
+            raise Error(t"a call of {r.name} cannot be evaluated")
 
 
-def ev_prelude[
+def _prelude_value[
     H: EvalHost
 ](spec: Spec, e: Int, id: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
-    var positional = [spec.ast.child(child, 0) for child in n.children[2:] if not spec.ast.nodes[child].text]
     var args = api.CallArgs([])
     for child in n.children[2:]:
         ref arg = spec.ast.nodes[child]
-        var value = ev(spec, arg.children[0], env, run, host)
+        var value = value_of(spec, arg.children[0], env, run, host)
         if arg.text:
             args.keywords.append(api.Keyword(arg.text.copy(), value^))
         else:
@@ -559,17 +549,23 @@ def ev_prelude[
             return Value.bool(host.same_object(args.args[0], args.args[1]))
         case api.SHARES_MEMORY:
             return Value.bool(host.shares_memory(args.args[0], args.args[1]))
-        case api.EQ if len(args.args) == 2 and _holds_handles(spec.types, spec.node_types[positional[0]]):
-            var t = spec.node_types[positional[0]]
-            return Value.bool(model_eq(spec, args.args[0], args.args[1], t, api.eq_mode(args.keywords), host))
+        case api.EQ if len(args.args) == 2:
+            var t = spec.node_types[_positional(spec, e)[0]]
+            if _holds_handles(spec.types, t):
+                return Value.bool(model_eq(spec, args.args[0], args.args[1], t, api.eq_mode(args.keywords), host))
         case _:
             pass
     args.type_args = [type_arg(spec, child, env) for child in spec.ast.nodes[n.children[1]].children]
     return fit(spec.types, api.call(id, args, spec.types), spec.node_types[e])
 
 
+def _positional(spec: Spec, call: Int) -> List[Int]:
+    """The expressions of a call's positional arguments."""
+    return [spec.ast.child(arg, 0) for arg in spec.ast.nodes[call].children[2:] if not spec.ast.nodes[arg].text]
+
+
 def _holds_handles(types: ty.Types, t: Int) -> Bool:
-    """A model, or a list of models: `eq` compares them through their observers."""
+    """A model, or a list of models: `eq` compares such values through their observers."""
     var k = types.kind(t)
     return k == ty.MODEL or (k == ty.LIST and types.kind(types.info(t).args[0]) == ty.MODEL)
 
@@ -596,14 +592,15 @@ def model_eq[
         return True
     if k != ty.MODEL:
         return equal(a, b, mode)
-    var model = spec.model_named(spec.types.info(t).name)
-    if model is None:
+    var found = spec.model_named(spec.types.info(t).name)
+    if found is None:
         raise Error(t"eq: no model {spec.types.info(t).name}")
-    for o, observer in enumerate(spec.models[model.value()].observers):
+    var model = found.value()
+    for o, observer in enumerate(spec.models[model].observers):
         if observer.params:
             continue
-        var va = host.observe(a, model.value(), o, [])
-        var vb = host.observe(b, model.value(), o, [])
+        var va = host.observe(a, model, o, [])
+        var vb = host.observe(b, model, o, [])
         if not model_eq(spec, va, vb, observer.type, mode, host):
             return False
     return True
