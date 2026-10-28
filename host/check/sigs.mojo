@@ -204,7 +204,7 @@ def _eq_mode_ok(value: String, key: String) -> Bool:
 
 def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingError -> Int:
     """The result type of a prelude call."""
-    var t0 = info.args[0].type if info.args else c.poison
+    var first = info.args[0].type if info.args else c.poison
     match sig.rule:
         case .FLOAT_PRED:
             _float(c, info, 0)
@@ -214,7 +214,7 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             return c.int_
         case .SAME_FLOAT:
             _float(c, info, 0)
-            return t0
+            return first
         case .ULP:
             _ = _float_type_arg(c, info)
             _real_like(c, info, 0)
@@ -222,20 +222,20 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
         case .QE:
             return _qe(c, info)
         case .QERR_PART:
-            var k = c.tkind(t0)
+            var k = c.tkind(first)
             if k != .QERR and k != .ANY:
                 raise TypingError(
-                    t"{info.name} takes a qerr (the value of qe(a, b)), but argument 1 is {c.text(t0)}", arg=0
+                    t"{info.name} takes a qerr (the value of qe(a, b)), but argument 1 is {c.text(first)}", arg=0
                 )
             return c.int_
         case .CR:
-            var k = c.tkind(t0)
+            var k = c.tkind(first)
             if k == .FLOAT or k == .ANY:
-                return t0
-            var hint = String(t"; for a real use mp.{info.name[byte=3:]}") if c.is_numeric(t0) else String()
+                return first
+            var hint = String(t"; for a real use mp.{info.name[byte=3:]}") if c.is_numeric(first) else String()
             raise TypingError(
                 t"{info.name} rounds in the format of its argument, so it takes a float, but argument 1 is "
-                t"{c.text(t0)}{hint}",
+                t"{c.text(first)}{hint}",
                 arg=0,
             )
         case .SAME:
@@ -266,17 +266,17 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             _bytes(c, info, 0)
             return c.int_
         case .LEN:
-            match c.tkind(t0):
+            match c.tkind(first):
                 case .LIST | .STRING | .LITERAL | .BYTES | .MAP | .ANY:
                     return c.int_
                 case _:
                     raise TypingError(
-                        t"len takes a list, string, bytes or map, but argument 1 is {c.text(t0)}", arg=0
+                        t"len takes a list, string, bytes or map, but argument 1 is {c.text(first)}", arg=0
                     )
         case .SORTED:
             var elem = _list_elem(c, info, 0)
             _ordered_elems(c, info, elem)
-            return t0 if c.tkind(t0) == .LIST else c.spec.types.list_of(elem)
+            return first if c.tkind(first) == .LIST else c.spec.types.list_of(elem)
         case .IS_SORTED:
             _ordered_elems(c, info, _list_elem(c, info, 0))
             return c.bool_
@@ -286,7 +286,7 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             var elem = c.join(a, b)
             if elem < 0:
                 raise TypingError(
-                    t"{info.name} takes two lists of one element type, but got {c.text(t0)} and "
+                    t"{info.name} takes two lists of one element type, but got {c.text(first)} and "
                     t"{c.text(info.args[1].type)}",
                     arg=1,
                 )
@@ -301,24 +301,24 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             var t = c.join(elem, x)
             if t < 0:
                 raise TypingError(
-                    t"index_of looks for a {c.text(elem)} in {c.text(t0)}, but argument 2 is {c.text(x)}", arg=1
+                    t"index_of looks for a {c.text(elem)} in {c.text(first)}, but argument 2 is {c.text(x)}", arg=1
                 )
             _eq_elems(c, info, t)
             return c.int_
         case .KEYS | .VALUES:
-            match c.tkind(t0):
+            match c.tkind(first):
                 case .MAP:
-                    return c.spec.types.list_of(c.arg(t0, 0 if sig.rule == .KEYS else 1))
+                    return c.spec.types.list_of(c.arg(first, 0 if sig.rule == .KEYS else 1))
                 case .ANY:
-                    return c.spec.types.list_of(t0)
+                    return c.spec.types.list_of(first)
                 case _:
-                    raise TypingError(t"{info.name} takes a map, but argument 1 is {c.text(t0)}", arg=0)
+                    raise TypingError(t"{info.name} takes a map, but argument 1 is {c.text(first)}", arg=0)
         case .RANGE:
             _integer(c, info, 0)
             _integer(c, info, 1)
             return c.spec.types.list_of(c.int_)
         case .SOME:
-            return c.spec.types.option_of(t0)
+            return c.spec.types.option_of(first)
         case .OPT_PRED:
             _ = _option_elem(c, info, 0)
             return c.bool_
@@ -328,8 +328,8 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             _bytes(c, info, 0)
             return c.bool_
         case .CODEPOINTS:
-            if not (c.is_stringish(t0) or c.is_any(t0)):
-                raise TypingError(t"codepoints takes a string, but {_argument(0)} is {c.text(t0)}", arg=0)
+            if not (c.is_stringish(first) or c.is_any(first)):
+                raise TypingError(t"codepoints takes a string, but {_argument(0)} is {c.text(first)}", arg=0)
             return c.spec.types.list_of(c.int_)
         case .FRESH:
             _model(c, info, 0)
@@ -347,6 +347,6 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
             var elem = _list_elem(c, info, 0)
             if not (c.is_integer(elem) or c.is_any(elem)):
                 raise TypingError(
-                    t"from_codepoints takes a list of integers, but argument 1 is {c.text(t0)}", arg=0
+                    t"from_codepoints takes a list of integers, but argument 1 is {c.text(first)}", arg=0
                 )
             return c.string_

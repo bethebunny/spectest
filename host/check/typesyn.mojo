@@ -113,8 +113,8 @@ def _named(mut c: Checker, node: Int, self_model: Int) -> Int:
         return _no_args(c, node, record_type(c, name, node))
     if name in c.alias_nodes:
         return _no_args(c, node, alias_type(c, name, node))
-    if case .Some(mp) = c.model_index.get(name):
-        return _model(c, node, name, mp, args, self_model)
+    if case .Some(model) = c.model_index.get(name):
+        return _model(c, node, name, model, args, self_model)
     var hint = type_hint(name)
     var did_you_mean = String(t" (did you mean {hint}?)") if hint else String()
     c.error(node, t"unknown type {name}{did_you_mean}")

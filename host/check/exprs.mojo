@@ -318,8 +318,8 @@ def unknown_name(mut c: Checker, e: Int, name: String):
             hints.append(String(t"self.{name}"))
         for p in c.ctx.params:
             if c.tkind(p.type) == .MODEL and p.name != "":
-                var mp = c.model_pos_of_type(p.type)
-                if mp >= 0 and c.observer_pos(mp, name) >= 0:
+                var model = c.model_pos_of_type(p.type)
+                if model >= 0 and c.observer_pos(model, name) >= 0:
                     hints.append(String(t"{p.name}.{name}"))
         hints.extend(_namespace_hints(c, name))
         msg = String(t"unknown name {name}{_did_you_mean(hints)}")
@@ -701,17 +701,17 @@ def set_scalar(mut c: Checker, e: Int) -> Int:
     var attr = c.child(e, 0) if is_call else e
     if c.kind_of(attr) != .ATTR or c.kind_of(c.child(attr, 0)) != .NAME:
         return NO_TYPE
-    var name = c.text_of(c.child(attr, 0))
-    if binds_value(c, name) or name in c.ctx.hidden:
+    var type_name = c.text_of(c.child(attr, 0))
+    if binds_value(c, type_name) or type_name in c.ctx.hidden:
         return NO_TYPE
-    var st = c.scalar(name)
-    if st < 0:
+    var scalar = c.scalar(type_name)
+    if scalar < 0:
         return NO_TYPE
-    var an = c.text_of(attr)
+    var member = c.text_of(attr)
     if is_call:
-        return st if c.has_set_constructor(st, an) else NO_TYPE
-    var tc = c.type_constant(st, an)
-    return st if tc >= 0 and c.tkind(tc) == .SET else NO_TYPE
+        return scalar if c.has_set_constructor(scalar, member) else NO_TYPE
+    var constant = c.type_constant(scalar, member)
+    return scalar if constant >= 0 and c.tkind(constant) == .SET else NO_TYPE
 
 
 def _find_set_scalar(mut c: Checker, n: Int) -> Int:
@@ -826,19 +826,20 @@ def _call_by_attr(mut c: Checker, e: Int, f: Int) -> Int:
         if case .Some(pi) = c.prelude_ids.get(chain):
             return call_prelude(c, e, chain, pi)
         if c.kind_of(base) == .NAME:
-            var bname = c.text_of(base)
-            if bname == "mp" or bname == "cr":
+            var base_name = c.text_of(base)
+            if base_name == "mp" or base_name == "cr":
                 c.set_type(base, ANY_TYPE)
                 return fail_call(
                     c,
                     e,
                     f,
-                    t"unknown function {chain}: {bname} holds {_namespace_what(bname)}: {_namespace_members(bname)}",
+                    t"unknown function {chain}: {base_name} holds {_namespace_what(base_name)}: "
+                    t"{_namespace_members(base_name)}",
                 )
-            var st = c.scalar(bname)
-            if st >= 0:
-                c.set_type(base, st)
-                return call_set_ctor(c, e, st, attr)
+            var scalar = c.scalar(base_name)
+            if scalar >= 0:
+                c.set_type(base, scalar)
+                return call_set_ctor(c, e, scalar, attr)
         if c.ctx.extern_result >= 0 and "." in chain:
             var root = _root_name(c, f)
             if root and c.scalar(root) < 0:
@@ -850,9 +851,9 @@ def _call_by_attr(mut c: Checker, e: Int, f: Int) -> Int:
             return fail_call(c, e, f, t"unknown function {chain}")
     var vt = infer(c, base)
     if c.tkind(vt) == .MODEL:
-        var mp = c.model_pos_of_type(vt)
-        if mp >= 0:
-            return call_observer(c, e, vt, mp, attr, False)
+        var model = c.model_pos_of_type(vt)
+        if model >= 0:
+            return call_observer(c, e, vt, model, attr, False)
     if c.is_any(vt):
         return fail_call(c, e, f, "")
     return fail_call(
@@ -964,9 +965,9 @@ def bind_tvars(
             bind_tvars(c, c.arg(pattern, 0), c.arg(actual, 0), names, types, tvars)
             bind_tvars(c, c.arg(pattern, 1), c.arg(actual, 1), names, types, tvars)
         case .TUPLE | .MODEL:
-            var ps = c.spec.types.infos[pattern].args.copy()
-            var xs = c.spec.types.infos[actual].args.copy()
-            for p, x in zip(ps, xs):
+            var pattern_args = c.spec.types.infos[pattern].args.copy()
+            var actual_args = c.spec.types.infos[actual].args.copy()
+            for p, x in zip(pattern_args, actual_args):
                 bind_tvars(c, p, x, names, types, tvars)
         case _:
             pass
@@ -1099,22 +1100,22 @@ def _culprit(info: CallInfo, err: TypingError, call: Int) -> Int:
     return call
 
 
-def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
+def call_set_ctor(mut c: Checker, e: Int, scalar: Int, attr: String) -> Int:
     var f = c.child(e, 0)
-    var stext = c.text(st)
+    var scalar_name = c.text(scalar)
     if attr != "range" and attr != "pattern":
-        if c.type_constant(st, attr) >= 0:
-            return fail_call(c, e, f, t"{stext}.{attr} is a constant, not a function: write {stext}.{attr}")
-        return fail_call(c, e, f, t"{stext} has no function {attr}")
-    if not c.has_set_constructor(st, attr):
-        return fail_call(c, e, f, t"{stext} has no {attr}(...) set")
-    set_call_res(c, e, .SET_CTOR, attr, index=st)
+        if c.type_constant(scalar, attr) >= 0:
+            return fail_call(c, e, f, t"{scalar_name}.{attr} is a constant, not a function: write {scalar_name}.{attr}")
+        return fail_call(c, e, f, t"{scalar_name} has no function {attr}")
+    if not c.has_set_constructor(scalar, attr):
+        return fail_call(c, e, f, t"{scalar_name} has no {attr}(...) set")
+    set_call_res(c, e, .SET_CTOR, attr, index=scalar)
     var ok = c.ctx.in_partition_set
     if not ok:
         c.error(
             e,
-            t"{stext}.{attr}(...) is a partition set: it only appears in a partition class of a "
-            t"{stext} parameter",
+            t"{scalar_name}.{attr}(...) is a partition set: it only appears in a partition class of a "
+            t"{scalar_name} parameter",
         )
     var args = c.call_args(e)
     var has_kw = any([c.text_of(a) != "" for a in args])
@@ -1123,7 +1124,8 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
         if len(args) != 2 or has_kw:
             c.error(
                 e,
-                t"{stext}.range takes two bounds: {stext}.range(a, b), half-open, with none for an open end",
+                t"{scalar_name}.range takes two bounds: {scalar_name}.range(a, b), half-open, with none for an "
+                t"open end",
             )
             ok = False
         for a in args:
@@ -1136,14 +1138,16 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
             var t = infer(c, bound)
             arg_types.append(t)
             if not c.is_numeric(t) and not c.is_any(t):
-                c.error(bound, t"a bound of {stext}.range must be a number or none, not {c.text(t)}")
+                c.error(bound, t"a bound of {scalar_name}.range must be a number or none, not {c.text(t)}")
                 ok = False
     else:
         if len(args) != 1 or has_kw or c.kind_of(c.child(args[0], 0)) != .STR:
-            c.error(e, t'{stext}.pattern takes one string literal of bits, e.g. {stext}.pattern("0 1* 0")')
+            c.error(
+                e, t'{scalar_name}.pattern takes one string literal of bits, e.g. {scalar_name}.pattern("0 1* 0")'
+            )
             ok = False
         arg_types = [infer(c, c.child(a, 0)) for a in args]
-    var set_t = c.spec.types.set_of(st)
+    var set_t = c.spec.types.set_of(scalar)
     c.set_type(f, c.spec.types.fn_(arg_types, [], set_t))
     return set_t if ok else c.poison
 
@@ -1163,13 +1167,13 @@ def call_observer(mut c: Checker, e: Int, mt: Int, model: Int, name: String, is_
     var targs = c.spec.types.infos[mt].args.copy()
     var use_env = Bool(tparams) and len(tparams) == len(targs)
     var result = c.spec.types.substitute(declared, tparams, targs) if use_env else declared
-    var ptypes = [c.spec.types.substitute(p.type, tparams, targs) if use_env else p.type for p in params]
-    c.set_type(f, c.spec.types.fn_(ptypes, [p.name.copy() for p in params], result))
+    var param_types = [c.spec.types.substitute(p.type, tparams, targs) if use_env else p.type for p in params]
+    c.set_type(f, c.spec.types.fn_(param_types, [p.name.copy() for p in params], result))
     if not params:
         var receiver = "" if is_field else "x."
         c.error(e, t"{name} is a field of {mname} and takes no arguments: write {receiver}{name}")
         return c.poison
-    var bound = bindings(c, e, String(t"{mname}.{name}"), params, ptypes, info)
+    var bound = bindings(c, e, String(t"{mname}.{name}"), params, param_types, info)
     if bound is None:
         return c.poison
     var ok = True
@@ -1195,39 +1199,39 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
             c.resolve(e, .CONST, chain, index=ci)
             return c.spec.consts[ci].type
         if c.kind_of(base) == .NAME:
-            var bname = c.text_of(base)
-            if bname == "mp" or bname == "cr":
+            var base_name = c.text_of(base)
+            if base_name == "mp" or base_name == "cr":
                 c.set_type(base, ANY_TYPE)
                 if chain in c.prelude_ids:
                     c.error(e, t"{chain} is a function: call it as {chain}(x)")
                 else:
                     c.error(e, t"unknown function {chain}")
                 return c.poison
-            var st = c.scalar(bname)
-            if st >= 0:
-                c.set_type(base, st)
-                return type_const(c, e, st, attr)
-            if case .Some(en) = c.enum_index.get(bname):
+            var scalar = c.scalar(base_name)
+            if scalar >= 0:
+                c.set_type(base, scalar)
+                return type_const(c, e, scalar, attr)
+            if case .Some(en) = c.enum_index.get(base_name):
                 c.set_type(base, en)
                 var member = c.spec.types.infos[en].names.try_index(attr)
                 if member is None:
-                    c.error(e, t"enum {bname} has no member {attr}")
+                    c.error(e, t"enum {base_name} has no member {attr}")
                     return c.poison
                 c.resolve(e, .ENUM_MEMBER, attr, index=member.value(), owner=en)
                 return en
     var vt = infer(c, base)
     match c.tkind(vt):
         case .MODEL if c.model_pos_of_type(vt) >= 0:
-            var mp = c.model_pos_of_type(vt)
-            var oi = c.observer_pos(mp, attr)
-            if oi < 0:
-                c.error(e, _no_observer(c, mp, attr))
+            var model = c.model_pos_of_type(vt)
+            var observer = c.observer_pos(model, attr)
+            if observer < 0:
+                c.error(e, _no_observer(c, model, attr))
                 return c.poison
-            if c.spec.models[mp].observers[oi].params:
-                c.error(e, _takes_arguments(c, attr, mp, oi))
+            if c.spec.models[model].observers[observer].params:
+                c.error(e, _takes_arguments(c, attr, model, observer))
                 return c.poison
-            c.resolve(e, .OBSERVER, attr, index=oi, owner=mp)
-            return c.observer_type(vt, mp, oi)
+            c.resolve(e, .OBSERVER, attr, index=observer, owner=model)
+            return c.observer_type(vt, model, observer)
         case .RECORD:
             var field = c.spec.types.infos[vt].names.try_index(attr)
             if field is None:
@@ -1251,24 +1255,26 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
             return c.poison
 
 
-def type_const(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
-    var stext = c.text(st)
-    if c.has_set_constructor(st, attr):
-        c.error(e, t"{stext}.{attr} is called: {stext}.{attr}(...)")
+def type_const(mut c: Checker, e: Int, scalar: Int, attr: String) -> Int:
+    var scalar_name = c.text(scalar)
+    if c.has_set_constructor(scalar, attr):
+        c.error(e, t"{scalar_name}.{attr} is called: {scalar_name}.{attr}(...)")
         return c.poison
-    var t = c.type_constant(st, attr)
+    var t = c.type_constant(scalar, attr)
     if t < 0:
-        var consts = c.constants_of(st)
-        var listed = ", ".join([String(t"{stext}.{k}") for k in consts])
+        var consts = c.constants_of(scalar)
+        var listed = ", ".join([String(t"{scalar_name}.{k}") for k in consts])
         var available = String(t" (available: {listed})") if consts else String()
-        c.error(e, t"{stext} has no constant {attr}{available}")
+        c.error(e, t"{scalar_name} has no constant {attr}{available}")
         return c.poison
-    c.resolve(e, .TYPE_CONST, attr, index=st)
+    c.resolve(e, .TYPE_CONST, attr, index=scalar)
     if c.tkind(t) == .SET and not c.ctx.in_partition_set:
-        var hint = classifier_hint(attr) if c.tkind(st) == .FLOAT else String()
+        var hint = classifier_hint(attr) if c.tkind(scalar) == .FLOAT else String()
         var test = String(t"; in a clause, test the value with {hint}") if hint else String()
         c.error(
-            e, t"{stext}.{attr} is a partition set: it only appears in a partition class of a {stext} parameter{test}"
+            e,
+            t"{scalar_name}.{attr} is a partition set: it only appears in a partition class of a {scalar_name} "
+            t"parameter{test}",
         )
         return c.poison
     return t
