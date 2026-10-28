@@ -1,14 +1,10 @@
 """The evaluator's host over the driver: observers, planned calls, constants and
 identity questions, and the builder that makes values of models."""
 
-from check import types as ty
-from check.spec import Spec
-from check.types import Types
 from eval.api import judge, observe_with
 from eval.env import Env
 from eval.host import EvalHost
 from gen.models import Builder
-from syntax import ast
 from wire.format import format_value
 from wire.value import Value
 
@@ -18,13 +14,12 @@ from .decode import decode
 from .load import Loaded
 
 
-comptime NO_TARGET = -2
 comptime TIMEOUT = "spectest.CallTimeout"
 """The class of the error a driver returns for a call past its time limit."""
 
 
 def error_value(cls: String, message: String) -> Value:
-    return Value.error(cls, List[String](), message)
+    return Value.error(cls, [], message)
 
 
 struct RunHost(Builder, EvalHost):
@@ -34,18 +29,16 @@ struct RunHost(Builder, EvalHost):
 
     var loaded: Pointer[Loaded, MutUntrackedOrigin]
     var client: Pointer[DriverClient, MutUntrackedOrigin]
-    var targets: List[Int]
-    """By position in Spec.fns; NO_TARGET until resolved."""
-    var build_targets: Dict[String, Int]
-    var const_values: List[Value]
-    var const_known: List[Bool]
-    var tnames: List[String]
-    var tids: List[Int]
-    """The instantiation of the declaration being run."""
-    var memo: Dict[Value, Int]
-    """Planned calls of the current example: the function and arguments as one list
-    value, to the position of the result in `memo_result`."""
-    var memo_result: List[Value]
+    var targets: List[Optional[Int]]
+    """Of each of Spec.fns, once resolved."""
+    var named_targets: Dict[String, Int]
+    var constants: List[Optional[Value]]
+    """Of each of Spec.consts, once read."""
+    var instantiation: Dict[String, Int]
+    """Each type parameter of the declaration being run and its type."""
+    var planned: Dict[Value, Value]
+    """The planned calls of the current example, each the function and arguments as
+    one list value, and their results."""
     var known: List[UInt64]
     """Ids of the handles among the current example's arguments."""
     var seen: List[UInt64]
@@ -54,20 +47,13 @@ struct RunHost(Builder, EvalHost):
     """A reply of class TIMEOUT came back since the catch paths last took it."""
 
     def __init__(out self, mut loaded: Loaded, mut client: DriverClient):
-        self.loaded = Pointer[Loaded, MutUntrackedOrigin](
-            unsafe_from_address=Int(Pointer(to=loaded))
-        )
-        self.client = Pointer[DriverClient, MutUntrackedOrigin](
-            unsafe_from_address=Int(Pointer(to=client))
-        )
-        self.targets = List[Int](length=len(loaded.spec.fns), fill=NO_TARGET)
-        self.build_targets = {}
-        self.const_values = [Value.none() for _ in loaded.spec.consts]
-        self.const_known = [False for _ in loaded.spec.consts]
-        self.tnames = []
-        self.tids = []
-        self.memo = {}
-        self.memo_result = []
+        self.loaded = Pointer(to=loaded).unsafe_origin_cast[MutUntrackedOrigin]()
+        self.client = Pointer(to=client).unsafe_origin_cast[MutUntrackedOrigin]()
+        self.targets = [None for _ in loaded.spec.fns]
+        self.named_targets = {}
+        self.constants = [None for _ in loaded.spec.consts]
+        self.instantiation = {}
+        self.planned = {}
         self.known = []
         self.seen = []
         self.timed_out = False
@@ -87,22 +73,26 @@ struct RunHost(Builder, EvalHost):
 
     def begin_example(mut self, args: List[Value]):
         self.timed_out = False
-        if len(self.memo_result) > 0:
-            self.memo.clear()
-            self.memo_result.clear()
-        self.known.clear()
-        self.known += [a.handle_id() for a in args if a.kind == .HANDLE]
+        self.planned.clear()
+        self.known = [a.handle_id() for a in args if a.kind == .HANDLE]
+
+    def bind_types(self, mut env: Env):
+        for e in self.instantiation.items():
+            env.bind_type(e.key, e.value)
+
+    def instantiation_text(self) -> List[Tuple[String, String]]:
+        return [(e.key.copy(), self.loaded[].spec.types.text(e.value)) for e in self.instantiation.items()]
 
     def track(mut self, v: Value, deep: Bool = True):
         """Remembers the handles in `v`."""
         if v.kind == .HANDLE:
             self.seen.append(v.handle_id())
-        elif deep and Bool(v.heap):
-            for i in range(v.item_count()):
-                self.track(v.item(i))
+        elif deep:
+            for item in v.items():
+                self.track(item)
 
     def release_all(mut self):
-        if len(self.seen) == 0:
+        if not self.seen:
             return
         try:
             self.client[].release(self.seen)
@@ -113,14 +103,16 @@ struct RunHost(Builder, EvalHost):
     # Targets
 
     def fn_target(mut self, f: Int) raises -> Int:
-        if self.targets[f] == NO_TARGET:
+        if self.targets[f] is None:
             self.targets[f] = self.client[].resolve(self.loaded[].spec.fns[f].target)
-        return self.targets[f]
+        return self.targets[f].value()
 
     def named_target(mut self, name: String) raises -> Int:
-        if name not in self.build_targets:
-            self.build_targets[name] = self.client[].resolve(name)
-        return self.build_targets[name]
+        if case .Some(target) = self.named_targets.get(name):
+            return target
+        var target = self.client[].resolve(name)
+        self.named_targets[name] = target
+        return target
 
     def call(mut self, f: Int, args: List[Value]) raises -> Value:
         """Calls Spec.fns[f]; a library error comes back as an ERROR value."""
@@ -130,12 +122,11 @@ struct RunHost(Builder, EvalHost):
 
     def build(mut self, model: Int, build: Int, args: List[Value]) raises -> Value:
         ref b = self.loaded[].spec.models[model].builds[build]
-        var target = self.named_target(b.target)
-        var out = self._reply(self.client[].call(target, args))
+        var out = self._reply(self.client[].call(self.named_target(b.target), args))
         if out.kind == .ERROR:
-            raise Error(String("building ", b.target, " raised ", out.error_text()))
+            raise Error(t"building {b.target} raised {out.error_text()}")
         if out.kind != .HANDLE:
-            raise Error(String("building ", b.target, " returned ", format_value(out), ", not an object"))
+            raise Error(t"building {b.target} returned {format_value(out)}, not an object")
         self.track(out, False)
         return out^
 
@@ -144,30 +135,19 @@ struct RunHost(Builder, EvalHost):
     def observe(
         mut self, obj: Value, model: Int, observer: Int, args: List[Value]
     ) raises -> Value:
-        ref o = self.loaded[].spec.models[model].observers[observer]
+        ref spec = self.loaded[].spec
+        ref o = spec.models[model].observers[observer]
         var got: Value
         if o.expr != 0:
-            got = observe_with(self.loaded[].spec, model, observer, obj, args, self)
+            got = observe_with(spec, model, observer, obj, args, self)
         else:
-            var reply: Value
-            if len(o.params) == 0 and len(args) == 0:
-                reply = self.client[].observe(obj, o.name, None)
-            else:
-                reply = self.client[].observe(obj, o.name, Optional(args.copy()))
+            var reply = self._reply(self.client[].observe(obj, o.name, Optional(args.copy()) if o.params or args else None))
             if reply.kind == .ERROR:
-                self.timed_out = self.timed_out or reply.name() == TIMEOUT
-                raise Error(
-                    String(
-                        "observer ", self.loaded[].spec.models[model].name, ".", o.name,
-                        " raised ", reply.error_text(),
-                    )
-                )
+                raise Error(t"observer {spec.models[model].name}.{o.name} raised {reply.error_text()}")
             try:
-                got = decode(reply, o.type, self.loaded[].spec.types)
+                got = decode(reply, o.type, spec.types)
             except e:
-                raise Error(
-                    String("observer ", self.loaded[].spec.models[model].name, ".", o.name, ": ", e)
-                )
+                raise Error(t"observer {spec.models[model].name}.{o.name}: {e}")
         if got.kind == .HANDLE:
             self.seen.append(got.handle_id())
         return got^
@@ -176,69 +156,60 @@ struct RunHost(Builder, EvalHost):
         var packed: List[Value] = [Value.int(`fn`)]
         packed += args.copy()
         var key = Value.list(packed^)
-        var found = self.memo.get(key)
         var out: Value
-        if found is not None:
-            out = self.memo_result[found.value()].copy()
+        if case .Some(known) = self.planned.get(key):
+            out = known.copy()
         else:
             out = self._planned(`fn`, args)
-            self.memo[key^] = len(self.memo_result)
-            self.memo_result.append(out.copy())
+            self.planned[key^] = out.copy()
         if out.kind == .ERROR and out.name() == TIMEOUT:
             self.timed_out = True
-            raise Error(String("planned call of ", self.loaded[].spec.fns[`fn`].name, " raised ", TIMEOUT, ": ", out.text()))
+            raise Error(t"planned call of {self.loaded[].spec.fns[`fn`].name} raised {TIMEOUT}: {out.text()}")
         return out^
 
     def _planned(mut self, f: Int, args: List[Value]) raises -> Value:
-        ref func = self.loaded[].spec.fns[f]
+        ref spec = self.loaded[].spec
+        ref func = spec.fns[f]
         var env = Env(args.copy())
-        var rtype = func.result
-        var names = List[String]()
-        var ids = List[Int]()
+        var names: List[String] = []
+        var types: List[Int] = []
         for tparam in func.tparams:
-            for name, id in zip(self.tnames, self.tids):
-                if name == tparam:
-                    env.bind_type(tparam, id)
-                    names.append(tparam)
-                    ids.append(id)
-        if len(func.tparams) > 0:
-            rtype = self.loaded[].spec.types.substitute(rtype, names, ids)
+            if case .Some(t) = self.instantiation.get(tparam):
+                env.bind_type(tparam, t)
+                names.append(tparam)
+                types.append(t)
+        var result_type = spec.types.substitute(func.result, names, types) if func.tparams else func.result
         for c in func.clauses:
-            if self.loaded[].spec.clauses[c].kind != .REQUIRES:
+            ref cl = spec.clauses[c]
+            if cl.kind != .REQUIRES:
                 continue
-            var j = judge(self.loaded[].spec, c, env, self)
+            var j = judge(spec, c, env, self)
             if j.is_false():
-                return error_value(
-                    "spectest.RequiresFalse",
-                    String("planned call of ", func.name, " is outside ", self.loaded[].spec.clauses[c].id),
-                )
+                return error_value("spectest.RequiresFalse", String(t"planned call of {func.name} is outside {cl.id}"))
             if j.is_error() or j.is_skip():
-                raise Error(String(self.loaded[].spec.clauses[c].id, ": ", j.describe(self.loaded[].spec)))
+                raise Error(t"{cl.id}: {j.describe(spec)}")
         var out = self.call(f, args)
         if out.kind == .ERROR:
             return out^
         try:
-            var got = decode(out, rtype, self.loaded[].spec.types)
+            var got = decode(out, result_type, spec.types)
             self.track(got)
             return got^
         except e:
             return error_value(
                 "spectest.TypeMismatch",
-                String("planned call of ", func.name, " returned a value that is not ",
-                       self.loaded[].spec.types.text(rtype), ": ", e),
+                String(t"planned call of {func.name} returned a value that is not {spec.types.text(result_type)}: {e}"),
             )
 
     def constant(mut self, `const`: Int) raises -> Value:
-        if self.const_known[`const`]:
-            return self.const_values[`const`].copy()
+        if case .Some(known) = self.constants[`const`]:
+            return known.copy()
         ref c = self.loaded[].spec.consts[`const`]
-        var target = self.client[].resolve(c.name)
-        var raw = self.client[].get(target)
+        var raw = self.client[].get(self.client[].resolve(c.name))
         if raw.kind == .ERROR:
-            raise Error(String("constant ", c.name, ": ", raw.error_text()))
+            raise Error(t"constant {c.name}: {raw.error_text()}")
         var got = decode(raw, c.type, self.loaded[].spec.types)
-        self.const_values[`const`] = got.copy()
-        self.const_known[`const`] = True
+        self.constants[`const`] = got.copy()
         self.track(got, False)
         return got^
 
@@ -256,8 +227,7 @@ struct RunHost(Builder, EvalHost):
         raise Error("shares_memory needs two objects")
 
     def call_extern(mut self, name: String, args: List[Value]) raises -> Value:
-        var target = self.named_target(name)
-        var out = self._reply(self.client[].call(target, args))
+        var out = self._reply(self.client[].call(self.named_target(name), args))
         if out.kind == .ERROR:
-            raise Error(String(name, " raised ", out.error_text()))
+            raise Error(t"{name} raised {out.error_text()}")
         return out^

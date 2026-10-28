@@ -188,8 +188,7 @@ struct Machine(Property):
             if cl.kind == .INVARIANT:
                 self.invs.append(InvTally(c, cl.id.copy(), source_text(loaded.spec, cl.node)))
         self.inv_host = RunHost(loaded, client)
-        self.inv_host.tnames = self.props[0].host.tnames.copy()
-        self.inv_host.tids = self.props[0].host.tids.copy()
+        self.inv_host.instantiation = self.props[0].host.instantiation.copy()
         self.steps = options.steps
         self.max_handles = options.max_handles
         self.seed = Int(options.seed)
@@ -474,8 +473,7 @@ struct Machine(Property):
         for k in range(len(live)):
             var env = Env()
             env.set_self(live[k].copy())
-            for name, id in zip(self.inv_host.tnames, self.inv_host.tids):
-                env.bind_type(name, id)
+            self.inv_host.bind_types(env)
             var j = judge(spec, c, env, self.inv_host)
             if j.is_true():
                 continue
@@ -552,7 +550,7 @@ struct Machine(Property):
         for q in range(len(self.invs)):
             ref inv = self.invs[q]
             var cr = ClauseResult(inv.id.copy(), inv.text.copy(), "invariant", self.name.copy())
-            cr.instantiation = [(name.copy(), loaded.spec.types.text(t)) for name, t in zip(self.props[0].host.tnames, self.props[0].host.tids)]
+            cr.instantiation = self.props[0].host.instantiation_text()
             cr.mode = "stateful"
             cr.passed = inv.tp
             cr.failed = inv.tf

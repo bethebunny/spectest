@@ -220,8 +220,7 @@ struct Prop(Property, Movable):
                 raise Error(String(func.decl_id, " is generic: the run needs a type for ", tparam))
             var t = parse_type(arg.value(), loaded.spec.types)
             self.tenv.append(t)
-            self.host.tnames.append(tparam)
-            self.host.tids.append(t)
+            self.host.instantiation[tparam] = t
         ref types = loaded.spec.types
         var generic = len(func.tparams) > 0
         self.ptypes = [types.substitute(p.type, func.tparams, self.tenv) if generic else p.type for p in func.params]
@@ -579,8 +578,7 @@ struct Prop(Property, Movable):
                     return self._spec_error_all(String("default of ", func.params[i].name, ": ", e), counting, args)
         self.host.begin_example(args)
         var env = Env(args.copy())
-        for name, id in zip(self.host.tnames, self.host.tids):
-            env.bind_type(name, id)
+        self.host.bind_types(env)
         # requires
         for c in self.requires:
             var j = judge(spec, c, env, self.host)
@@ -943,8 +941,7 @@ struct Prop(Property, Movable):
         for q in range(len(hs)):
             var env = Env()
             env.set_self(hs[q].copy())
-            for name, id in zip(self.host.tnames, self.host.tids):
-                env.bind_type(name, id)
+            self.host.bind_types(env)
             var j = judge(spec, c, env, self.host)
             if j.is_true():
                 continue
@@ -1074,7 +1071,7 @@ struct Prop(Property, Movable):
         """The counts of clause `i`; the caller adds the counterexample and the duration."""
         ref info = self.infos[i]
         var result = ClauseResult(info.id.copy(), info.text.copy(), info.label.copy(), self.decl.copy())
-        result.instantiation = [(name.copy(), self.loaded[].spec.types.text(t)) for name, t in zip(self.host.tnames, self.host.tids)]
+        result.instantiation = self.host.instantiation_text()
         result.mode = mode
         result.passed = self.tp[i]
         result.failed = self.tf[i]
