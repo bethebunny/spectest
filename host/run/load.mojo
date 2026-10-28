@@ -7,8 +7,8 @@ from specfile.files import Files
 from spec.spec import Spec
 from gen.sizes import Sizes
 from value.digits import hex_digits
-from partitions.check import PartitionSets, compile_partitions
-from sets import SetContext
+from partition.coverage import PartitionSets, compile_partitions
+from partition.sets import SetContext
 
 
 def fnv(text: String, seed: UInt64 = 0xCBF29CE484222325) -> UInt64:

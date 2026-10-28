@@ -5,7 +5,7 @@ from std.os import abort
 from value.floats import exactly, round_to, to_real
 from value.float_formats import FloatFormat
 from value.real import Real
-from sets import BitSet, SetContext
+from partition.sets import BitSet, SetContext
 
 
 def _at_least(format: FloatFormat, r: Real) raises -> UInt64:

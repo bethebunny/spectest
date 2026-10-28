@@ -3,9 +3,9 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from spec.types import Types
 from value.float_formats import BF16, F16, F32, F64, FloatFormat
-from partitions.compile import compile_set_aliased
+from partition.compile import compile_set_aliased
 from partitions_testing import compile_set, parse_set_expr, set_expr_node
-from sets import BitSet, SetContext
+from partition.sets import BitSet, SetContext
 
 comptime NEG_ZERO = UInt64(1) << 63
 

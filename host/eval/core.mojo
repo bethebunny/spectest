@@ -10,11 +10,11 @@ from spec.spec import Spec, Param
 from value.fixed import int_max, int_min
 from value.float_formats import format_by_id
 from value.literal import is_integer_literal, parse_number
-from partitions.compile import compiled_set
+from partition.compile import compiled_set
 from prelude import api
 from prelude.collections import EqMode, equal
 from prelude.util import real_value
-from sets import SetContext
+from partition.sets import SetContext
 from spec.ast import Op
 from spec.bits import value_from_bits
 from value.equality import same

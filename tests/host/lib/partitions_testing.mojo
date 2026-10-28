@@ -8,8 +8,8 @@ clauses. It accepts specs the checker rejects, which the partition error tests n
 import spec.types as ty
 import spec.ast as sx
 from spec.spec import Clause, Fn, Param, Partition, PartitionClass, Spec
-from partitions.compile import compile_set_aliased
-from sets import BitSet, SetContext
+from partition.compile import compile_set_aliased
+from partition.sets import BitSet, SetContext
 from spec.ast import Ast
 from specfile.parser import parse_spec
 

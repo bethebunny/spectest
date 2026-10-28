@@ -10,7 +10,7 @@ from mcheck.source import Source
 from value.bigint import BigInt
 from value.floats import is_nan, is_zero, is_normal
 from value.float_formats import F64
-from sets import SetContext, BitSet
+from partition.sets import SetContext, BitSet
 from value.value import Value
 
 

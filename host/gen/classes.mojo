@@ -3,7 +3,7 @@
 from spec.types import Types
 from spec.bits import value_from_bits
 from mcheck.source import Source
-from sets import BitSet, SetContext
+from partition.sets import BitSet, SetContext
 from value.value import Value
 
 

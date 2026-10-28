@@ -9,7 +9,7 @@ from spec.spec import Spec
 from value.digits import hex_digits
 from value.fixed import low_mask, signed_of
 from value.number_text import float_text
-from sets import BitSet, SetContext
+from partition.sets import BitSet, SetContext
 from spec.ast import Ast, Diagnostic
 
 from .compile import Elem, SetCompiler, alias_elems, elem_of

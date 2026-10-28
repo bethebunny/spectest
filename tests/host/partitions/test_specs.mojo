@@ -2,9 +2,9 @@ from std.pathlib import Path
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.time import perf_counter_ns
 
-from partitions.check import compile_partitions
+from partition.coverage import compile_partitions
 from partitions_testing import build_spec
-from sets import SetContext
+from partition.sets import SetContext
 
 
 def _fixed_classes(spec_path: String) raises -> Int:

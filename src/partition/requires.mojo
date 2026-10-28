@@ -3,7 +3,7 @@
 import spec.ast as sx
 from spec.spec import Spec
 from value.real import Real
-from sets import BitSet, SetContext
+from partition.sets import BitSet, SetContext
 from spec.ast import Ast
 
 from .compile import SetCompiler, alias_elems, elem_of, only_arg

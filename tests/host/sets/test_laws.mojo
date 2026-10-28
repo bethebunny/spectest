@@ -3,7 +3,7 @@ bool arrays on small widths."""
 
 from std.testing import assert_equal, assert_true, TestSuite
 
-from sets import BitSet, SetContext
+from partition.sets import BitSet, SetContext
 
 comptime W = 10
 comptime N = 1 << W

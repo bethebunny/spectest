@@ -14,7 +14,7 @@ from value.floats import exactly, to_real
 from value.float_formats import FORMATS, FloatFormat, format_by_id
 from value.literal import parse_number
 from value.real import Real
-from sets import BitSet, SetContext
+from partition.sets import BitSet, SetContext
 from spec.ast import Ast, Node
 
 from .ranges import float_range

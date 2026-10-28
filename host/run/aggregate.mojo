@@ -27,8 +27,8 @@ from eval.numbers import (
 )
 from eval.text import located, source_text
 from mcheck.rand import Rng
-from partitions.compile import compiled_set
-from sets import SetContext
+from partition.compile import compiled_set
+from partition.sets import SetContext
 from spec import ast
 from value.text import format_value
 from value.value import Value
