@@ -20,7 +20,10 @@ A cached rerun takes about a second.
   ```
 
   A failing test exits with 1. `tests/host/conftest.py` makes each
-  `tests/host/**/test_*.mojo` one pytest item, which builds the file and runs it.
+  `tests/host/**/test_*.mojo` one pytest item. A run that selects several files of one
+  directory builds one runner for all of its test files and runs each item from it (the
+  runner registers each `test_` function by name, since `__functions_in_module()` sees
+  only the main file). A run of one file of a directory builds that file alone.
 - Run one package or file: `uv run pytest tests/host/<dir or file> -n 0 -q -p no:cacheprovider`.
 - Include roots are `-I host -I host/vendor/bitpattern`, plus `-I tests/host/lib` for
   test-only helpers. A package under `host/` needs an `__init__.mojo`. Import by module
@@ -28,9 +31,9 @@ A cached rerun takes about a second.
 - A file given to `mojo build` as the top-level module can't use relative imports. Use
   package paths there.
 - A cold compile of a small test takes 4 to 10 s, and `mojo run` spends 1 to 3 s even
-  when its cache is warm. So the conftest keeps each built test in `.mojo-tests/`,
-  keyed by the compiler version, the test file and every module it imports. An
-  unchanged test reruns at once. `-O0` is slower, and `-O1` equals `-O3`.
+  when its cache is warm. So the conftest keeps each built test or runner in
+  `.mojo-tests/`, keyed by the compiler version, the test files and every module they
+  import. An unchanged test reruns at once. `-O0` is slower, and `-O1` equals `-O3`.
 - The compiler's own cache (`~/.modular/cache`) keeps two entries per binary, and both
   cover the whole program. So test binaries share no work, and a cold test costs 6 to
   45 s. Source locations are part of the key: an edit that shifts lines misses for every
