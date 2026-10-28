@@ -16,8 +16,12 @@ from numeric.digits import magnitude_of_fields
 from numeric.real import Real
 
 comptime RNDN = Int32(0)
+comptime ARGUMENT = 0
+comptime RESULT = 1
+comptime _NUMERATOR = 2
+comptime _DENOMINATOR = 3
 comptime CELLS = 4
-"""Cell 0 holds the argument, 1 the result, 2 and 3 temporaries."""
+"""The argument, the result, and two cells for setting a ratio."""
 comptime WORDS = 4
 """An `mpfr_t` is four words: the precision, the sign, the exponent and the limbs' address."""
 
@@ -54,9 +58,8 @@ def _open_library() raises -> OwnedDLHandle:
     var system = _try_open("libmpfr.so.6")
     if system is not None:
         return system.take()
-    var bundled = bundled_library()
-    if bundled is not None:
-        return OwnedDLHandle(bundled.value())
+    if case .Some(path) = bundled_library():
+        return OwnedDLHandle(path)
     raise Error("mpfr: cannot load libmpfr.so.6 or the copy shipped with gmpy2")
 
 
@@ -89,24 +92,28 @@ struct Mpfr(Movable):
     var lib: Pointer[Library, MutUntrackedOrigin]
     var cells: List[Int]
     """`WORDS` words for each cell's `mpfr_t`."""
-    var emin: Int
-    var emax: Int
+    var saved_emin: Int
+    var saved_emax: Int
 
-    def __init__(out self) raises:
+    def __init__(out self, *, precision: Int, emin: Int, emax: Int) raises:
+        """Cells of `precision` bits, with MPFR's exponent range set to [emin, emax]
+        until they are freed."""
         self.lib = _LIBRARY.get_or_create_ptr()
         if self.lib[].handle is None:
             raise Error(self.lib[].error)
         self.cells = List[Int](length=WORDS * CELLS, fill=0)
-        self.emin = Int(self.lib[].handle.value().call["mpfr_get_emin", Int](()))
-        self.emax = Int(self.lib[].handle.value().call["mpfr_get_emax", Int](()))
+        self.saved_emin = Int(self.lib[].handle.value().call["mpfr_get_emin", Int](()))
+        self.saved_emax = Int(self.lib[].handle.value().call["mpfr_get_emax", Int](()))
         for cell in range(CELLS):
-            self.handle().call["mpfr_init2"](self.addr(cell), 64)
+            self.handle().call["mpfr_init2"](self.addr(cell), precision)
+        _ = self.handle().call["mpfr_set_emin", Int32](emin)
+        _ = self.handle().call["mpfr_set_emax", Int32](emax)
 
     def __deinit__(deinit self):
         for cell in range(CELLS):
             self.handle().call["mpfr_clear"](self.addr(cell))
-        _ = self.handle().call["mpfr_set_emin", Int32](self.emin)
-        _ = self.handle().call["mpfr_set_emax", Int32](self.emax)
+        _ = self.handle().call["mpfr_set_emin", Int32](self.saved_emin)
+        _ = self.handle().call["mpfr_set_emax", Int32](self.saved_emax)
 
     def handle(self) -> ref [MutUntrackedOrigin] OwnedDLHandle:
         return self.lib[].handle.value()
@@ -114,12 +121,8 @@ struct Mpfr(Movable):
     def addr(self, cell: Int) -> Int:
         return Int(self.cells.unsafe_ptr()) + 8 * WORDS * cell
 
-    def set_precision(self, cell: Int, precision: Int):
+    def _set_precision(self, cell: Int, *, precision: Int):
         self.handle().call["mpfr_set_prec"](self.addr(cell), precision)
-
-    def set_range(self, emin: Int, emax: Int):
-        _ = self.handle().call["mpfr_set_emin", Int32](emin)
-        _ = self.handle().call["mpfr_set_emax", Int32](emax)
 
     def clear_flags(self):
         self.handle().call["mpfr_clear_flags"](())
@@ -140,27 +143,27 @@ struct Mpfr(Movable):
 
     def _set_exact_integer(self, cell: Int, value: BigInt):
         """Sets the cell, whose precision is raised to hold the value exactly."""
-        self.set_precision(cell, max(value.bit_length(), 8))
+        self._set_precision(cell, precision=max(value.bit_length(), 8))
         var digits = abs(value).hex() + "\0"
         _ = self.handle().call["mpfr_set_str", Int32](self.addr(cell), Int(digits.unsafe_ptr()), Int32(16), RNDN)
         if value.negative:
             _ = self.handle().call["mpfr_neg", Int32](self.addr(cell), self.addr(cell), RNDN)
 
     def set_real(self, cell: Int, r: Real):
-        """The real at the cell's precision, rounded to nearest when not exact. Uses cells
-        2 and 3."""
+        """The real at the cell's precision, rounded to nearest when not exact."""
         if r.is_inf():
             self.set_infinity(cell, r.numerator.negative)
             return
         var precision = self.precision(cell)
-        self._set_exact_integer(2, r.numerator)
+        var numerator = self.addr(_NUMERATOR)
+        self._set_exact_integer(_NUMERATOR, r.numerator)
         if r.denominator == BigInt(1):
-            self.set_precision(cell, precision)
-            _ = self.handle().call["mpfr_set", Int32](self.addr(cell), self.addr(2), RNDN)
+            self._set_precision(cell, precision=precision)
+            _ = self.handle().call["mpfr_set", Int32](self.addr(cell), numerator, RNDN)
             return
-        self._set_exact_integer(3, r.denominator)
-        self.set_precision(cell, precision)
-        _ = self.handle().call["mpfr_div", Int32](self.addr(cell), self.addr(2), self.addr(3), RNDN)
+        self._set_exact_integer(_DENOMINATOR, r.denominator)
+        self._set_precision(cell, precision=precision)
+        _ = self.handle().call["mpfr_div", Int32](self.addr(cell), numerator, self.addr(_DENOMINATOR), RNDN)
 
     # Reading a cell
 
@@ -191,11 +194,11 @@ struct Mpfr(Movable):
 
     # Operations
 
-    def apply(self, function: String, rop: Int, op: Int) -> Int32:
-        """Sets cell `rop` to `function` of cell `op`, rounded to nearest at the precision
-        of `rop`; the ternary value."""
-        var r = self.addr(rop)
-        var x = self.addr(op)
+    def apply(self, function: String) -> Int32:
+        """Sets RESULT to `function` of ARGUMENT, rounded to nearest at the precision of
+        RESULT; the ternary value."""
+        var r = self.addr(RESULT)
+        var x = self.addr(ARGUMENT)
         ref lib = self.handle()
         match function:
             case "sqrt":
@@ -213,5 +216,6 @@ struct Mpfr(Movable):
             case _:
                 return lib.call["mpfr_atan", Int32](r, x, RNDN)
 
-    def subnormalize(self, cell: Int, ternary: Int32):
-        _ = self.handle().call["mpfr_subnormalize", Int32](self.addr(cell), ternary, RNDN)
+    def subnormalize(self, ternary: Int32):
+        """Rounds RESULT again as the format's subnormals are, given `apply`'s ternary value."""
+        _ = self.handle().call["mpfr_subnormalize", Int32](self.addr(RESULT), ternary, RNDN)

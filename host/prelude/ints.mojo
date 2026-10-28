@@ -22,7 +22,7 @@ def fits_int(x: Value, bits: Int, signed: Bool) raises -> Value:
 
 def fits_float(x: Value, f: FloatFormat) raises -> Value:
     var r = real_of(x, String("fits<", f, ">"))
-    return Value.bool(Bool(exactly(f, r)))
+    return Value.bool(exactly(f, r) is not None)
 
 
 def le_uint(b: Value) raises -> Value:
