@@ -59,14 +59,14 @@ def _run_one[P: Property](
     for id, verdict in out.value().verdicts:
         ref p = result.properties[result._index(id)]
         match verdict:
-            case .PASSED:
+            case .Passed:
                 p.passes += 1
-            case .FAILED:
+            case .Failed:
                 p.fails += 1
                 if not p.failed:
                     p.failed = True
                     p.choices = src.rec.copy()
-            case .SKIPPED:
+            case .Skipped:
                 p.skips += 1
     return True
 

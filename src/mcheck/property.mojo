@@ -6,17 +6,17 @@ from .source import Source
 __enum Verdict(Equatable, ImplicitlyCopyable, Writable):
     """What one example did to one property."""
 
-    case PASSED
-    case FAILED
-    case SKIPPED
+    case Passed
+    case Failed
+    case Skipped
 
     def __eq__(self, other: Self) -> Bool:
         return self._get_enum_discriminant() == other._get_enum_discriminant()
 
 
-comptime PASSED = Verdict.PASSED
-comptime FAILED = Verdict.FAILED
-comptime SKIPPED = Verdict.SKIPPED
+comptime PASSED = Verdict.Passed
+comptime FAILED = Verdict.Failed
+comptime SKIPPED = Verdict.Skipped
 
 
 struct Outcome(Copyable):
