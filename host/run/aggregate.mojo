@@ -40,6 +40,76 @@ from .results import AggregateSummary, ClauseResult, Counterexample
 comptime WORST_LIMIT = 5
 
 
+@fieldwise_init
+struct Shape(ImplicitlyCopyable):
+    """The parts of an aggregate clause such as `sum(v in S: e) <= c` or `all(v in S: p)`."""
+
+    var top: Int
+    """The comprehension."""
+    var op: ast.Op
+    """The comparison with the bound, NO_OP for all(...)."""
+    var bound: Int
+    """The bound, 0 for all(...)."""
+
+
+def _shape(spec: Spec, clause: Int) raises -> Shape:
+    ref cl = spec.clauses[clause]
+    ref node = spec.ast.nodes[cl.expr]
+    if node.kind == .COMPREHENSION and node.op == .ALL:
+        return Shape(cl.expr, .NO_OP, 0)
+    if node.kind == .BINARY and node.op in [ast.Op.LE, ast.Op.LT, ast.Op.EQ]:
+        ref comp = spec.ast.nodes[node.children[0]]
+        if comp.kind == .COMPREHENSION and comp.op in [ast.Op.SUM, ast.Op.MAX]:
+            return Shape(node.children[0], node.op, node.children[1])
+    raise Error(
+        t"{cl.id}: an aggregate clause is sum(v in S: e) <= c, < c or == 0, max(v in S: e) <= c"
+        t" or < c, or all(v in S: p)"
+    )
+
+
+struct Members(Movable):
+    """The members of an aggregate's set that its terms are judged on."""
+
+    var values: List[Value]
+    var total: Int
+    """How many members the set has, at most 2**62."""
+    var sampled: Bool
+    """Whether `values` is a seeded sample of a larger set."""
+
+    def __init__(out self, var values: List[Value]):
+        """Every member of a set."""
+        self.total = len(values)
+        self.values = values^
+        self.sampled = False
+
+    def __init__(out self, *, var sample: List[Value], total: Int):
+        self.values = sample^
+        self.total = total
+        self.sampled = True
+
+
+def _set_members(
+    spec: Spec, mut ctx: SetContext, iterable: Int, *, limit: Int, samples: Int, seed: UInt64
+) raises -> Members:
+    """The members of a partition set: all of them when there are at most `limit`, else a
+    seeded sample."""
+    var elem, s = compiled_set(ctx, spec, iterable)
+    var count = ctx.count(s)
+    if count <= UInt128(limit):
+        return Members([value_from_bits(spec.types, elem, bits) for bits in ctx.members(s, limit)])
+    var rng = Rng(seed)
+    # Only the whole 64-bit type has more members than a UInt64 counts.
+    var exact = count <= UInt128(UInt64.MAX)
+    # The ends of the set, then random members.
+    var indices: List[UInt64] = [0]
+    if exact:
+        indices.append(UInt64(count - 1))
+    for _ in range(samples - 2):
+        indices.append(rng.below(UInt64(count)) if exact else rng.next())
+    var sample = [value_from_bits(spec.types, elem, ctx.nth(s, index)) for index in indices]
+    return Members(sample=sample^, total=Int(min(count, UInt128(1 << 62))))
+
+
 def _rank_less(a: Value, b: Value) raises -> Bool:
     """Is term `a` smaller than term `b`? A qerr ranks by its NaN part, then its steps."""
     if a.kind == .QERR and b.kind == .QERR:
@@ -57,37 +127,124 @@ def _is_zero(t: Value) raises -> Bool:
     return compare_values(t, Value.int(0)) == 0
 
 
-def _members(
+def _keep_worst(mut worst: List[Tuple[Value, Value]], member: Value, term: Value) raises:
+    """Keeps `term` among the largest terms, largest first and earlier first among equals."""
+    var at = len(worst)
+    while at > 0 and _rank_less(worst[at - 1][1], term):
+        at -= 1
+    if at < WORST_LIMIT:
+        worst.insert(at, (member.copy(), term.copy()))
+        if len(worst) > WORST_LIMIT:
+            _ = worst.pop()
+
+
+def _judge(
     spec: Spec,
     mut ctx: SetContext,
-    iterable: Int,
-    limit: Int,
-    samples: Int,
+    mut host: RunHost,
+    f: Int,
+    clause: Int,
+    options: RunOptions,
     seed: UInt64,
-    mut total_out: Int,
-    mut sampled: Bool,
-) raises -> List[Value]:
-    """The members of a partition set: all of them when there are at most `limit`,
-    else a seeded sample."""
-    var elem, s = compiled_set(ctx, spec, iterable)
-    var count = ctx.count(s)
-    if count <= UInt128(limit):
-        total_out = Int(count)
-        return [value_from_bits(spec.types, elem, bits) for bits in ctx.members(s, limit)]
-    var out = List[Value]()
-    sampled = True
-    total_out = Int(min(count, UInt128(1 << 62)))
-    var rng = Rng(seed)
-    # Only the whole 64-bit type has more members than a UInt64 counts.
-    var exact = count <= UInt128(UInt64.MAX)
-    # The ends of the set, then random members.
-    out.append(value_from_bits(spec.types, elem, ctx.nth(s, 0)))
-    if exact:
-        out.append(value_from_bits(spec.types, elem, ctx.nth(s, UInt64(count - 1))))
-    for _ in range(max(0, samples - 2)):
-        var index = rng.below(UInt64(count)) if exact else rng.next()
-        out.append(value_from_bits(spec.types, elem, ctx.nth(s, index)))
-    return out^
+    mut result: ClauseResult,
+) raises:
+    var shape = _shape(spec, clause)
+    ref comp = spec.ast.nodes[shape.top]
+    var kind = comp.op
+    var iterable = comp.children[0]
+    var body = comp.children[1]
+    var env = Env()
+    var bound = evaluate(spec, shape.bound, env, host) if shape.bound != 0 else Value.int(0)
+    var members: Members
+    if type_kind(spec, iterable) == ty.SET:
+        members = _set_members(
+            spec, ctx, iterable, limit=options.exhaustive_limit, samples=options.aggregate_samples, seed=seed
+        )
+    else:
+        var run = Run()
+        members = Members(elements(value_of(spec, iterable, env, run, host), String(kind, "(...)")))
+    var sum = qerr_zero() if type_kind(spec, shape.top) == ty.QERR else Value.int(0)
+    var largest: Optional[Value] = None
+    var failures = 0
+    var evaluated = 0
+    var skipped = 0
+    # Members and their terms: the largest terms, or the first members all(...) fails on.
+    var worst: List[Tuple[Value, Value]] = []
+    for member in members.values:
+        var run = Run()
+        run.push(shape.top, member.copy())
+        var term: Value
+        try:
+            term = value_of(spec, body, env, run, host)
+        except err:
+            var failure = run.failure_or(err, body)
+            if failure.skipped:
+                skipped += 1
+                continue
+            raise Error(located(spec, failure.node, failure.message))
+        evaluated += 1
+        if kind == .ALL:
+            if term.kind != .BOOL:
+                raise Error(located(spec, body, String(t"the body of all(...) must be a bool, not {show(term)}")))
+            if not term.as_bool():
+                failures += 1
+                if len(worst) < WORST_LIMIT:
+                    worst.append((member.copy(), Value.bool(False)))
+            continue
+        var t = term_of(term)
+        if t.kind != .QERR and compare_values(t, Value.int(0)) < 0:
+            var message = String(
+                "the term ", show(t), " for ", comp.text, " = ", show(member),
+                " is negative: the terms of an aggregate ", kind, "(...) are non-negative",
+            )
+            raise Error(located(spec, body, message))
+        if kind == .SUM:
+            sum = add_term(sum, t)
+        else:
+            largest = larger(largest.value(), t) if largest is not None else t.copy()
+        if not _is_zero(t):
+            _keep_worst(worst, member, t)
+    var summary = AggregateSummary()
+    summary.evaluated = evaluated
+    summary.skipped = skipped
+    summary.total = members.total
+    summary.sampled = members.sampled
+    summary.worst = [(format_value(member), format_value(term)) for member, term in worst]
+    var holds: Bool
+    if kind == .ALL:
+        holds = failures == 0
+        summary.value = String(failures)
+        summary.bound = "0"
+    else:
+        var no_max = kind == .MAX and largest is None
+        if no_max and evaluated + skipped == 0:
+            raise Error(located(spec, shape.top, "max(...) over a set with no members has no value"))
+        var value = sum.copy() if kind == .SUM else largest.copy().or_else(Value.none())
+        summary.bound = format_value(bound)
+        if value.kind == .BOOL or no_max:
+            holds = True
+            summary.value = "none"
+        else:
+            summary.value = format_value(value)
+            if value.kind == .QERR or bound.kind == .QERR:
+                holds = qerr_compare(shape.op, value, bound)
+            else:
+                var c = compare_values(value, bound)
+                holds = (c == 0) if shape.op == .EQ else holds_order(shape.op, c)
+    result.mode = "sampled" if members.sampled else "exhaustive"
+    if holds:
+        result.passed = 1
+    else:
+        result.failed = 1
+        result.failing_inputs = 1
+        var how = String("a seeded sample of ", evaluated + skipped, " of") if members.sampled else String("every member of")
+        var cx = Counterexample()
+        cx.inputs = [(comp.text.copy(), String(how, " ", source_text(spec, iterable), " (", members.total, " members)"))]
+        cx.observation = String(kind, " = ", summary.value, ", against the bound ", summary.bound)
+        cx.seed = Int(options.seed)
+        cx.reproduce = String("seed=", options.seed, " decl=", spec.fns[f].decl_id, " clause=", spec.clauses[clause].id)
+        result.counterexample = cx^
+    result.aggregate = summary^
 
 
 def run_aggregate(
@@ -101,160 +258,10 @@ def run_aggregate(
 ) raises -> ClauseResult:
     var started = perf_counter_ns()
     ref cl = spec.clauses[clause]
-    var result = ClauseResult(
-        cl.id.copy(), source_text(spec, cl.node), "aggregate", spec.fns[f].decl_id.copy()
-    )
+    var result = ClauseResult(cl.id.copy(), source_text(spec, cl.node), "aggregate", spec.fns[f].decl_id.copy())
     result.mode = "exhaustive"
     try:
-        var e = cl.expr
-        var top = 0
-        var op = ast.Op.NO_OP
-        var bound_node = 0
-        ref en = spec.ast.nodes[e]
-        if en.kind == .COMPREHENSION and en.op == .ALL:
-            top = e
-        elif (
-            en.kind == .BINARY
-            and spec.ast.nodes[en.children[0]].kind == .COMPREHENSION
-            and (spec.ast.nodes[en.children[0]].op == .SUM or spec.ast.nodes[en.children[0]].op == .MAX)
-            and (en.op == .LE or en.op == .LT or en.op == .EQ)
-        ):
-            top = en.children[0]
-            op = en.op
-            bound_node = en.children[1]
-        else:
-            raise Error(
-                String(
-                    cl.id,
-                    ": an aggregate clause is sum(v in S: e) <= c, < c or == 0,"
-                    " max(v in S: e) <= c or < c, or all(v in S: p)",
-                )
-            )
-        ref comp = spec.ast.nodes[top]
-        var kind = comp.op
-        var iterable = comp.children[0]
-        var body = comp.children[1]
-        var env = Env()
-        var bound = Value.int(0)
-        if bound_node != 0:
-            bound = evaluate(spec, bound_node, env, host)
-        var total = 0
-        var sampled = False
-        var members: List[Value]
-        if type_kind(spec, iterable) == ty.SET:
-            members = _members(
-                spec, ctx, iterable, options.exhaustive_limit, options.aggregate_samples, seed, total, sampled
-            )
-        else:
-            var run = Run()
-            members = elements(value_of(spec, iterable, env, run, host), String(kind, "(...)"))
-            total = len(members)
-        var acc = qerr_zero() if type_kind(spec, top) == ty.QERR else Value.int(0)
-        var best = Optional[Value]()
-        var failures = 0
-        var evaluated = 0
-        var skipped = 0
-        var worst_members = List[Value]()
-        var worst_terms = List[Value]()
-        for member in members:
-            var run = Run()
-            run.push(top, member.copy())
-            var term: Value
-            try:
-                term = value_of(spec, body, env, run, host)
-            except err:
-                var failure = run.failure_or(err, body)
-                if failure.skipped:
-                    skipped += 1
-                    continue
-                raise Error(located(spec, failure.node, failure.message))
-            evaluated += 1
-            if kind == .ALL:
-                if term.kind != .BOOL:
-                    raise Error(located(spec, body, String("the body of all(...) must be a bool, not ", show(term))))
-                if not term.as_bool():
-                    failures += 1
-                    if len(worst_members) < WORST_LIMIT:
-                        worst_members.append(member.copy())
-                        worst_terms.append(Value.bool(False))
-                continue
-            var t = term_of(term)
-            if t.kind != .QERR and compare_values(t, Value.int(0)) < 0:
-                raise Error(
-                    located(
-                        spec,
-                        body,
-                        String(
-                            "the term ", show(t), " for ", comp.text, " = ", show(member),
-                            " is negative: the terms of an aggregate ", kind, "(...) are non-negative",
-                        ),
-                    )
-                )
-            if kind == .SUM:
-                acc = add_term(acc, t)
-            elif best is not None:
-                best = larger(best.value(), t)
-            else:
-                best = t.copy()
-            if not _is_zero(t):
-                # Keep the largest terms, largest first and earlier first among equals.
-                var at = len(worst_terms)
-                while at > 0 and _rank_less(worst_terms[at - 1], t):
-                    at -= 1
-                if at < WORST_LIMIT:
-                    worst_terms.insert(at, t.copy())
-                    worst_members.insert(at, member.copy())
-                    if len(worst_terms) > WORST_LIMIT:
-                        _ = worst_terms.pop()
-                        _ = worst_members.pop()
-        var summary = AggregateSummary()
-        summary.evaluated = evaluated
-        summary.skipped = skipped
-        summary.total = total
-        summary.sampled = sampled
-        summary.worst = [(format_value(m), format_value(t)) for m, t in zip(worst_members, worst_terms)]
-        var holds: Bool
-        var value_text: String
-        if kind == .ALL:
-            holds = failures == 0
-            value_text = String(failures)
-            summary.bound = "0"
-        else:
-            var value: Value
-            if kind == .SUM:
-                value = acc.copy()
-            elif best is not None:
-                value = best.value().copy()
-            else:
-                if evaluated + skipped == 0:
-                    raise Error(located(spec, top, "max(...) over a set with no members has no value"))
-                value = Value.none()
-            summary.bound = format_value(bound)
-            if value.kind == .BOOL or (best is None and kind == .MAX):
-                holds = True
-                value_text = "none"
-            else:
-                value_text = format_value(value)
-                if value.kind == .QERR or bound.kind == .QERR:
-                    holds = qerr_compare(op, value, bound)
-                else:
-                    var c = compare_values(value, bound)
-                    holds = (c == 0) if op == .EQ else holds_order(op, c)
-        summary.value = value_text.copy()
-        result.mode = "sampled" if sampled else "exhaustive"
-        if holds:
-            result.passed = 1
-        else:
-            result.failed = 1
-            result.failing_inputs = 1
-            var cx = Counterexample()
-            var how = String("a seeded sample of ", evaluated + skipped, " of") if sampled else String("every member of")
-            cx.inputs.append((comp.text.copy(), String(how, " ", source_text(spec, iterable), " (", total, " members)")))
-            cx.observation = String(kind, " = ", value_text, ", against the bound ", summary.bound)
-            cx.seed = Int(options.seed)
-            cx.reproduce = String("seed=", options.seed, " decl=", spec.fns[f].decl_id, " clause=", cl.id)
-            result.counterexample = cx^
-        result.aggregate = summary^
+        _judge(spec, ctx, host, f, clause, options, seed, result)
     except err:
         if host.take_timeout():
             result.inconclusive = 1
