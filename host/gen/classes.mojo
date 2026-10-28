@@ -1,18 +1,10 @@
 """Steering by partition classes."""
 
-import check.types as ty
 from check.types import Types
 from eval.coerce import value_from_bits
 from mcheck.source import Source
 from sets import BitSet, SetContext
 from wire.value import Value
-
-
-def fixed_value(types: Types, t: Int, bits: UInt64) raises -> Value:
-    """The value of fixed-width type `t` with bit pattern `bits`."""
-    if types.kind(t) not in [ty.BOOL, ty.FIXED_INT, ty.FLOAT]:
-        raise Error(t"gen: {types.text(t)} is not a fixed-width type")
-    return value_from_bits(types, t, bits)
 
 
 def draw_in_classes(
@@ -32,4 +24,4 @@ def draw_in_classes(
     var count = ctx.count(chosen)
     # past UInt64 is 2**64 members: the whole 64-bit type
     var index = src.draw_below(UInt64(count)) if count <= UInt128(UInt64.MAX) else src.draw_bits(64)
-    return fixed_value(types, elem, ctx.nth(chosen, index))
+    return value_from_bits(types, elem, ctx.nth(chosen, index))
