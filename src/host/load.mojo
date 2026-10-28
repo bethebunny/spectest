@@ -5,7 +5,7 @@ from std.pathlib import Path
 from specfile.checker import check_source_with
 from specfile.files import Files
 from spec.spec import Spec
-from gen.sizes import Sizes
+from host.draw.sizes import Sizes
 from value.digits import hex_digits
 from partition.coverage import PartitionSets, compile_partitions
 from partition.sets import SetContext

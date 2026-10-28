@@ -1,8 +1,8 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from spec.types import Types
-from gen.sizes import Sizes
-from gen.value import draw_value
+from host.draw.sizes import Sizes
+from host.draw.value import draw_value
 from mcheck.source import Source
 from value.bigint import BigInt
 from value.floats import is_nan, is_inf, is_zero, is_subnormal, is_normal

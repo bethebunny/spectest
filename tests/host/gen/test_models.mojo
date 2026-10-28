@@ -2,7 +2,7 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from spec.spec import Spec, Model, Build, Param, Fn, Observer, Partition
 from spec.types import Types
-from gen.models import (
+from host.draw.models import (
     Builder,
     PARAM_SPAN,
     default_marker,
@@ -11,7 +11,7 @@ from gen.models import (
     is_default,
     is_not_drawn,
 )
-from gen.sizes import Sizes
+from host.draw.sizes import Sizes
 from mcheck.source import Source
 from spec.ast import Ast, NodeKind
 from value.value import Value

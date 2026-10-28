@@ -23,16 +23,16 @@ from interpreter.api import (
 from interpreter.coerce import bits_of_value, coerce_arg
 from interpreter.env import Env
 from interpreter.text import source_text
-from gen.classes import draw_in_classes
-from gen.domain import product_size, values_at
-from gen.models import (
+from host.draw.classes import draw_in_classes
+from host.draw.domain import product_size, values_at
+from host.draw.models import (
     default_marker,
     draw_args,
     draw_model,
     is_default,
     is_not_drawn,
 )
-from gen.value import draw_value
+from host.draw.value import draw_value
 from mcheck.choices import Choices
 from mcheck.property import FAILED, PASSED, Outcome, Property, run_example
 from mcheck.search import SearchResult, enumerate_all, search
@@ -46,7 +46,7 @@ from value.value import Value
 from .aggregate import run_aggregate
 from .decode import decode, describe
 from .driver import Driver
-from .host import TIMEOUT, RunHost
+from .run_host import TIMEOUT, RunHost
 from .load import Loaded
 from .options import RunOptions
 from .results import ClauseResult, Counterexample, RunResult

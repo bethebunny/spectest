@@ -1,8 +1,8 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from spec.types import Types
-from gen.classes import draw_in_classes
-from gen.domain import domain_size, value_at
+from host.draw.classes import draw_in_classes
+from host.draw.domain import domain_size, value_at
 from mcheck.property import Property, Outcome, PASSED
 from mcheck.search import enumerate_all
 from mcheck.settings import Settings

@@ -16,7 +16,7 @@ from spec import types as ty
 from interpreter.api import explain, judge
 from interpreter.env import Env
 from interpreter.text import source_text
-from gen.models import is_default, is_not_drawn
+from host.draw.models import is_default, is_not_drawn
 from mcheck.choices import Choices
 from mcheck import property as mcheck
 from mcheck.property import FAILED, PASSED, SKIPPED, Outcome, Property
@@ -25,7 +25,7 @@ from mcheck.source import Many, Source
 from value.value import Value
 
 from .driver import Driver
-from .host import RunHost
+from .run_host import RunHost
 from .load import Loaded
 from .options import RunOptions
 from .results import ClauseResult, Counterexample, RunResult

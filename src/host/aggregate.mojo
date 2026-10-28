@@ -33,7 +33,7 @@ from spec import ast
 from value.text import format_value
 from value.value import Value
 
-from .host import RunHost
+from .run_host import RunHost
 from .options import RunOptions
 from .results import AggregateSummary, ClauseResult, Counterexample
 

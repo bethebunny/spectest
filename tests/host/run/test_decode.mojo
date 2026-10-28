@@ -3,8 +3,8 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from spec.types import Types
 from value.bigint import BigInt
 from value.float_formats import BF16, F16, F32, F64
-from run.decode import decode, encode
-from run.util import (
+from host.decode import decode, encode
+from host.util import (
     collect_models,
     contains_name,
     handles_of,
@@ -13,7 +13,7 @@ from run.util import (
     parse_type,
     type_has_model,
 )
-from run.verdict import CAUSE_COUNT, CAUSE_NAMES, Cause
+from host.verdict import CAUSE_COUNT, CAUSE_NAMES, Cause
 from value.text import format_value
 from value.value import Value
 

@@ -2,10 +2,10 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from spec.spec import Spec
 from value.digits import hex_digits
-from run.items import items_of
-from run.load import fnv, load, load_source
-from run.options import RunOptions
-from run.results import (
+from host.items import items_of
+from host.load import fnv, load, load_source
+from host.options import RunOptions
+from host.results import (
     AggregateSummary,
     ClauseResult,
     Counterexample,

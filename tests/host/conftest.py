@@ -48,9 +48,8 @@ import pytest
 from hypothesis import settings
 
 ROOT = Path(__file__).resolve().parents[2]
-HOST = ROOT / "host"
 # Test-only modules (helpers shared by test files) live in tests/host/lib, outside host/.
-INCLUDES = [ROOT / "src", HOST, ROOT / "src" / "vendor" / "bitpattern", ROOT / "tests" / "host" / "lib"]
+INCLUDES = [ROOT / "src", ROOT / "src" / "vendor" / "bitpattern", ROOT / "tests" / "host" / "lib"]
 BUILDS = ROOT / ".mojo-tests"
 # A cold build of a large test file plus its run, with room to spare.
 TIMEOUT = 600
