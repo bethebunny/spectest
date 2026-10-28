@@ -392,7 +392,7 @@ struct Prop(Movable, Property):
             var classes = [self.loaded[].sets.set_of(self.f, p, k) for k in range(len(part.classes))]
             args[i] = draw_in_classes(src, self.loaded[].ctx, spec.types, classes, t)
             return
-        if spec.types.kind(t) == ty.MODEL:
+        if spec.types.kind(t) == .MODEL:
             return
         # A predicate class: pick a class (or none), then draw until a value is in it.
         var k = src.draw_choice(len(part.classes) + 1)
@@ -505,7 +505,7 @@ struct Prop(Movable, Property):
         """A value for a counterexample: a handle by its observed fields."""
         try:
             ref spec = self.loaded[].spec
-            if v.kind == .HANDLE and spec.types.kind(t) == ty.MODEL:
+            if v.kind == .HANDLE and spec.types.kind(t) == .MODEL:
                 if case .Some(m) = spec.model_named(spec.types.info(t).name):
                     var fields: List[String] = []
                     for o in self._fields(m):
@@ -899,7 +899,7 @@ struct Prop(Movable, Property):
                 if func.params[p].name in self.plan.modified and args[p].kind == .HANDLE:
                     afters += String("\n", func.params[p].name, " after = ", self.show(args[p], self.param_types[p]))
         if afters:
-            if spec.types.kind(self.result_type) == ty.UNIT:
+            if spec.types.kind(self.result_type) == .UNIT:
                 observation = String(afters[byte=1:])
             else:
                 observation += afters

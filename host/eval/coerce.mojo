@@ -14,9 +14,9 @@ from .numbers import integer_of, real_of, show, to_real_kind
 def needs_exact(types: ty.Types, t: Int) -> Bool:
     """Do values of type t hold fixed-width integers or floats?"""
     match types.kind(t):
-        case ty.FIXED_INT | ty.FLOAT:
+        case .FIXED_INT | .FLOAT:
             return True
-        case ty.LIST | ty.OPTION | ty.MAP | ty.TUPLE | ty.RECORD:
+        case .LIST | .OPTION | .MAP | .TUPLE | .RECORD:
             return any([needs_exact(types, arg) for arg in types.info(t).args])
         case _:
             return False
@@ -61,22 +61,22 @@ def coerce_arg(types: ty.Types, v: Value, t: Int, what: String) raises -> Value:
         return v.copy()
     ref info = types.info(t)
     match info.kind:
-        case ty.FIXED_INT:
+        case .FIXED_INT:
             return _to_int(types, t, v, what)
-        case ty.FLOAT:
+        case .FLOAT:
             return _to_float(v, format_by_id(UInt8(info.bits)), what)
-        case ty.LIST if v.kind == .LIST:
+        case .LIST if v.kind == .LIST:
             return Value.list([coerce_arg(types, item, info.args[0], what) for item in v.items()])
-        case ty.OPTION if v.kind == .OPTION and v.count() == 1:
+        case .OPTION if v.kind == .OPTION and v.count() == 1:
             return Value.some(coerce_arg(types, v.item(0), info.args[0], what))
-        case ty.TUPLE if v.kind == .TUPLE and v.count() == len(info.args):
+        case .TUPLE if v.kind == .TUPLE and v.count() == len(info.args):
             return Value.tuple([coerce_arg(types, item, arg, what) for item, arg in zip(v.items(), info.args)])
-        case ty.MAP if v.kind == .MAP:
+        case .MAP if v.kind == .MAP:
             return Value.map(
                 [coerce_arg(types, key, info.args[0], what) for key in v.keys()],
                 [coerce_arg(types, value, info.args[1], what) for value in v.values()],
             )
-        case ty.RECORD if v.kind == .RECORD:
+        case .RECORD if v.kind == .RECORD:
             var names: List[String] = []
             var values: List[Value] = []
             for name, value in v.pairs():
@@ -93,9 +93,9 @@ def coerce_arg(types: ty.Types, v: Value, t: Int, what: String) raises -> Value:
 def has_real(types: ty.Types, t: Int) -> Bool:
     """Do values of type t hold reals, outside records?"""
     match types.kind(t):
-        case ty.REAL:
+        case .REAL:
             return True
-        case ty.LIST | ty.OPTION | ty.MAP | ty.TUPLE:
+        case .LIST | .OPTION | .MAP | .TUPLE:
             return any([has_real(types, arg) for arg in types.info(t).args])
         case _:
             return False
@@ -104,19 +104,19 @@ def has_real(types: ty.Types, t: Int) -> Bool:
 def fit(types: ty.Types, v: Value, t: Int) -> Value:
     """`v` with integers where `t` expects a `real` made REAL."""
     var k = types.kind(t)
-    if k == ty.REAL:
+    if k == .REAL:
         return to_real_kind(v)
     if not has_real(types, t):
         return v.copy()
     ref info = types.info(t)
     match k:
-        case ty.LIST if v.kind == .LIST:
+        case .LIST if v.kind == .LIST:
             return Value.list([fit(types, item, info.args[0]) for item in v.items()])
-        case ty.OPTION if v.kind == .OPTION and v.count() == 1:
+        case .OPTION if v.kind == .OPTION and v.count() == 1:
             return Value.some(fit(types, v.item(0), info.args[0]))
-        case ty.TUPLE if v.kind == .TUPLE and v.count() == len(info.args):
+        case .TUPLE if v.kind == .TUPLE and v.count() == len(info.args):
             return Value.tuple([fit(types, item, arg) for item, arg in zip(v.items(), info.args)])
-        case ty.MAP if v.kind == .MAP:
+        case .MAP if v.kind == .MAP:
             try:
                 return Value.map(
                     [fit(types, key, info.args[0]) for key in v.keys()],
@@ -140,11 +140,11 @@ def value_from_bits(types: ty.Types, t: Int, bits: UInt64) raises -> Value:
     """The value of fixed-width type `t` with bit pattern `bits`."""
     ref info = types.info(t)
     match info.kind:
-        case ty.BOOL:
+        case .BOOL:
             return Value.bool(bits != 0)
-        case ty.FIXED_INT:
+        case .FIXED_INT:
             return int_from_bits(bits, info.bits, info.signed)
-        case ty.FLOAT:
+        case .FLOAT:
             return Value.float(format_by_id(UInt8(info.bits)), bits)
         case _:
             raise Error(t"{types.text(t)} is not a fixed-width type")
@@ -154,13 +154,13 @@ def bits_of_value(types: ty.Types, t: Int, v: Value) raises -> UInt64:
     """The bit pattern of a value of fixed-width type `t`."""
     ref info = types.info(t)
     match info.kind:
-        case ty.BOOL:
+        case .BOOL:
             return UInt64(1) if v.as_bool() else UInt64(0)
-        case ty.FLOAT:
+        case .FLOAT:
             if v.kind != .FLOAT:
                 raise Error(t"expected a float, got {show(v)}")
             return v.float_bits()
-        case ty.FIXED_INT:
+        case .FIXED_INT:
             if v.kind != .INT:
                 raise Error(t"expected an integer, got {show(v)}")
             var n = v.as_bigint()

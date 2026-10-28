@@ -266,7 +266,7 @@ struct Checker:
         for k, word in enumerate(materialize[NAMES]()):
             self.prelude_ids[String(word)] = k
             self.prelude_sigs.append(make_sig(String(word)))
-        self.poison = self.spec.types.intern(ty.TypeInfo(ty.ANY, 0, False, "poison", [], []))
+        self.poison = self.spec.types.intern(ty.TypeInfo(.ANY, name="poison"))
         self.unit = self.spec.types.unit()
         self.bool_ = self.spec.types.bool_()
         self.int_ = self.spec.types.int_()
@@ -317,14 +317,14 @@ struct Checker:
 
     # -- types -----------------------------------------------------------------
 
-    def tkind(self, t: Int) -> UInt8:
+    def tkind(self, t: Int) -> ty.TypeKind:
         return self.spec.types.infos[t].kind
 
     def text(self, t: Int) -> String:
         return self.spec.types.text(t)
 
     def is_any(self, t: Int) -> Bool:
-        return self.spec.types.infos[t].kind == ty.ANY
+        return self.spec.types.infos[t].kind == .ANY
 
     def is_poison(self, t: Int) -> Bool:
         return t == self.poison
@@ -337,7 +337,7 @@ struct Checker:
 
     def is_stringish(self, t: Int) -> Bool:
         var k = self.tkind(t)
-        return k == ty.STRING or k == ty.LITERAL
+        return k == .STRING or k == .LITERAL
 
     def arg(self, t: Int, i: Int) -> Int:
         return self.spec.types.infos[t].args[i]
@@ -353,22 +353,16 @@ struct Checker:
         return id
 
     def components(self, t: Int) -> List[Int]:
-        var shared = self.tkind(t) in (ty.LIST, ty.OPTION, ty.SET, ty.MAP, ty.TUPLE, ty.RECORD, ty.MODEL)
-        return self.spec.types.infos[t].args.copy() if shared else []
-
-    def contains_kind(self, t: Int, kind: UInt8) -> Bool:
-        if self.tkind(t) == kind:
-            return True
-        return any([self.contains_kind(c, kind) for c in self.components(t)])
+        return self.spec.types.components(t)
 
     def contains_model(self, t: Int) -> Bool:
-        return self.contains_kind(t, ty.MODEL)
+        return self.spec.types.contains_kind(t, .MODEL)
 
     def contains_real(self, t: Int) -> Bool:
-        return self.contains_kind(t, ty.REAL)
+        return self.spec.types.contains_kind(t, .REAL)
 
     def contains_any(self, t: Int) -> Bool:
-        return self.contains_kind(t, ty.ANY)
+        return self.spec.types.contains_kind(t, .ANY)
 
     def join(mut self, a: Int, b: Int) -> Int:
         """The common type of two values (if-branches, list elements, operands of ==):
@@ -382,7 +376,7 @@ struct Checker:
             return a
         var ka = self.tkind(a)
         var kb = self.tkind(b)
-        if ka == ty.FLOAT or kb == ty.FLOAT:
+        if ka == .FLOAT or kb == .FLOAT:
             return NO_TYPE
         if self.is_integer(a) and self.is_integer(b):
             return self.int_
@@ -390,19 +384,19 @@ struct Checker:
             return self.real_
         if self.is_stringish(a) and self.is_stringish(b):
             return self.string_
-        if ka == ty.LIST and kb == ty.LIST:
+        if ka == .LIST and kb == .LIST:
             var e = self.join(self.arg(a, 0), self.arg(b, 0))
             return NO_TYPE if e < 0 else self.spec.types.list_of(e)
-        if ka == ty.OPTION and kb == ty.OPTION:
+        if ka == .OPTION and kb == .OPTION:
             var e = self.join(self.arg(a, 0), self.arg(b, 0))
             return NO_TYPE if e < 0 else self.spec.types.option_of(e)
-        if ka == ty.MAP and kb == ty.MAP:
+        if ka == .MAP and kb == .MAP:
             var k = self.join(self.arg(a, 0), self.arg(b, 0))
             var v = self.join(self.arg(a, 1), self.arg(b, 1))
             if k < 0 or v < 0:
                 return NO_TYPE
             return self.spec.types.map_of(k, v)
-        if ka == ty.TUPLE and kb == ty.TUPLE:
+        if ka == .TUPLE and kb == .TUPLE:
             var xs = self.spec.types.infos[a].args.copy()
             var ys = self.spec.types.infos[b].args.copy()
             if len(xs) != len(ys):
@@ -419,13 +413,13 @@ struct Checker:
     def non_eq_part(self, t: Int) -> Int:
         """The component of t that lacks canonical equality, or -1 (unknown parts pass)."""
         var k = self.tkind(t)
-        if k == ty.ANY:
+        if k == .ANY:
             return NO_TYPE
-        if k == ty.FLOAT or k == ty.MODEL or k == ty.SET or k == ty.FN:
+        if k == .FLOAT or k == .MODEL or k == .SET or k == .FN:
             return t
-        if k == ty.TYPEVAR:
+        if k == .TYPEVAR:
             return t if not self.spec.types.infos[t].names else NO_TYPE
-        if k in (ty.LIST, ty.OPTION, ty.MAP, ty.TUPLE, ty.RECORD):
+        if k in (ty.TypeKind.LIST, ty.TypeKind.OPTION, ty.TypeKind.MAP, ty.TypeKind.TUPLE, ty.TypeKind.RECORD):
             for c in self.components(t):
                 var bad = self.non_eq_part(c)
                 if bad >= 0:
@@ -435,11 +429,11 @@ struct Checker:
     def ordered(self, t: Int) -> Bool:
         """has_total_order, letting unknown parts (an empty list literal) pass."""
         var k = self.tkind(t)
-        if k == ty.ANY:
+        if k == .ANY:
             return True
-        if k == ty.LIST:
+        if k == .LIST:
             return self.ordered(self.arg(t, 0))
-        if k == ty.TUPLE:
+        if k == .TUPLE:
             return all([self.ordered(e) for e in self.spec.types.infos[t].args])
         return self.spec.types.has_total_order(t)
 
@@ -453,34 +447,34 @@ struct Checker:
     def type_constant(mut self, scalar: Int, attr: String) -> Int:
         """Type of `T.attr` for a scalar type, or -1 if T has no such constant."""
         var k = self.tkind(scalar)
-        if k == ty.FLOAT:
+        if k == .FLOAT:
             if attr == "min" or attr == "max":
                 return scalar
             if float_set_name(attr):
                 return self.spec.types.set_of(scalar)
-        elif k == ty.FIXED_INT:
+        elif k == .FIXED_INT:
             if attr == "min" or attr == "max":
                 return self.int_
             if attr == "all":
                 return self.spec.types.set_of(scalar)
-        elif k == ty.BOOL and attr == "all":
+        elif k == .BOOL and attr == "all":
             return self.spec.types.set_of(scalar)
         return NO_TYPE
 
     def constants_of(self, scalar: Int) -> List[String]:
         var k = self.tkind(scalar)
-        var out: List[String] = ["all"] if k == ty.BOOL else []
-        if k == ty.FLOAT:
+        var out: List[String] = ["all"] if k == .BOOL else []
+        if k == .FLOAT:
             out = ["min", "max"]
             out.extend([String(w) for w in FLOAT_SET_NAMES.split(" ")])
-        elif k == ty.FIXED_INT:
+        elif k == .FIXED_INT:
             out = ["min", "max", "all"]
-        if k == ty.FLOAT or k == ty.FIXED_INT:
+        if k == .FLOAT or k == .FIXED_INT:
             out.extend(["range(a, b)", 'pattern("...")'])
         return out^
 
     def has_set_constructor(self, scalar: Int, attr: String) -> Bool:
-        return is_word_in(attr, "range pattern") and self.tkind(scalar) in (ty.FLOAT, ty.FIXED_INT)
+        return is_word_in(attr, "range pattern") and self.tkind(scalar) in (ty.TypeKind.FLOAT, ty.TypeKind.FIXED_INT)
 
     def contains_float(mut self, t: Int) -> Bool:
         """Whether values of type t hold floats, looking through model fields."""
@@ -488,9 +482,9 @@ struct Checker:
 
     def _contains_float(mut self, t: Int, seen: List[Int]) -> Bool:
         var k = self.tkind(t)
-        if k == ty.FLOAT:
+        if k == .FLOAT:
             return True
-        if k == ty.MODEL:
+        if k == .MODEL:
             var pos = self.model_pos_of_type(t)
             if pos < 0:
                 return False

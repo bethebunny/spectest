@@ -80,19 +80,19 @@ def _record(types: Types, v: Value, t: Int, path: String) raises -> Value:
 def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
     ref info = types.info(t)
     match info.kind:
-        case ty.ANY | ty.TYPEVAR:
+        case .ANY | .TYPEVAR:
             return v.copy()
-        case ty.UNIT:
+        case .UNIT:
             return Value.none()
-        case ty.BOOL:
+        case .BOOL:
             return _scalar(types, v, t, path, .BOOL)
-        case ty.INT:
+        case .INT:
             return _scalar(types, v, t, path, .INT)
-        case ty.STRING:
+        case .STRING:
             return _scalar(types, v, t, path, .STRING)
-        case ty.BYTES:
+        case .BYTES:
             return _scalar(types, v, t, path, .BYTES)
-        case ty.FIXED_INT:
+        case .FIXED_INT:
             if v.kind != .INT:
                 raise _mismatch(types, t, v, path)
             var low = int_min(info.bits, info.signed)
@@ -101,17 +101,17 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
             if n < low or high < n:
                 raise _mismatch(types, t, v, path, String("outside the ", types.text(t), " range ", low, "..", high))
             return v.copy()
-        case ty.FLOAT:
+        case .FLOAT:
             return _float(types, v, t, format_by_id(UInt8(info.bits)), path)
-        case ty.LIST:
+        case .LIST:
             if v.kind != .LIST and v.kind != .TUPLE:
                 raise _mismatch(types, t, v, path)
             return Value.list([_decode(item, info.args[0], types, String(path, "[", i, "]")) for i, item in enumerate(v.items())])
-        case ty.TUPLE:
+        case .TUPLE:
             if (v.kind != .TUPLE and v.kind != .LIST) or v.count() != len(info.args):
                 raise _mismatch(types, t, v, path)
             return Value.tuple([_decode(v.item(i), arg, types, String(path, ".", i)) for i, arg in enumerate(info.args)])
-        case ty.MAP:
+        case .MAP:
             if v.kind != .MAP:
                 raise _mismatch(types, t, v, path)
             var keys: List[Value] = []
@@ -120,17 +120,17 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
                 keys.append(_decode(key, info.args[0], types, path + "{key}"))
                 values.append(_decode(value, info.args[1], types, path + "{value}"))
             return Value.map(keys^, values^)
-        case ty.OPTION:
+        case .OPTION:
             if v.kind != .OPTION:
                 return Value.some(_decode(v, info.args[0], types, path))
             if v.count() == 0:
                 return Value.none()
             return Value.some(_decode(v.item(0), info.args[0], types, path))
-        case ty.LITERAL | ty.ENUM:
+        case .LITERAL | .ENUM:
             if v.kind != .STRING and v.kind != .ENUM:
                 raise _mismatch(types, t, v, path)
             var member = v.text().copy()
-            if info.kind == ty.LITERAL:
+            if info.kind == .LITERAL:
                 if member not in info.names:
                     raise _mismatch(types, t, v, path, "not a member of the union")
                 return Value.enum(String(), member^)
@@ -139,11 +139,11 @@ def _decode(v: Value, t: Int, types: Types, path: String) raises -> Value:
             if member not in info.names:
                 raise _mismatch(types, t, v, path, String(member, " is not a member"))
             return Value.enum(info.name.copy(), member^)
-        case ty.RECORD:
+        case .RECORD:
             if v.kind != .RECORD and v.kind != .MAP:
                 raise _mismatch(types, t, v, path)
             return _record(types, v, t, path)
-        case ty.MODEL:
+        case .MODEL:
             if v.kind != .HANDLE:
                 raise _mismatch(types, t, v, path)
             # A qualified model names a Python class; a handle of another class is not one.

@@ -268,7 +268,7 @@ def walk_quantifier[
     ref n = spec.ast.nodes[e]
     var decided = value.is_bool(n.op == .EXISTS)
     var iterable = n.children[0]
-    var is_set = type_kind(spec, iterable) == ty.SET
+    var is_set = type_kind(spec, iterable) == .SET
     var collection = Outcome(Value.none()) if is_set else outcome_of(spec, iterable, env, run, host)
     if not decided or not collection.ok:
         if not is_set and not is_literal(spec, iterable):

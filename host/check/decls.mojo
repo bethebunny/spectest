@@ -463,7 +463,7 @@ def check_default(mut c: Checker, p: Param):
         return
     var t = p.type
     if not assignable(c, dt, t, default):
-        if c.tkind(t) == ty.LITERAL and c.kind_of(default) == .STR:
+        if c.tkind(t) == .LITERAL and c.kind_of(default) == .STR:
             c.error(default, '"' + c.text_of(default) + '" is not one of ' + c.text(t))
         else:
             c.error(
@@ -475,7 +475,7 @@ def check_default(mut c: Checker, p: Param):
     if not value:
         return
     var k = c.tkind(t)
-    if k == ty.FIXED_INT:
+    if k == .FIXED_INT:
         var bits = c.spec.types.infos[t].bits
         var signed = c.spec.types.infos[t].signed
         if not _in_fixed_range(value.value(), bits, signed):
@@ -483,7 +483,7 @@ def check_default(mut c: Checker, p: Param):
                 default,
                 t"{c.source_of(default)} is not a {c.text(t)} value ({_int_range_text(bits, signed)})",
             )
-    elif k == ty.FLOAT:
+    elif k == .FLOAT:
         try:
             var fmt = format_by_id(UInt8(c.spec.types.infos[t].bits))
             if not exactly(fmt, value.value()):
@@ -959,7 +959,7 @@ def _check_partition(
             var st = c.spec.types.set_of(ptype)
             var t = infer(c, expr, st)
             if not c.is_any(t) and t != st:
-                var all_name = "nan" if c.tkind(ptype) == ty.FLOAT else "all"
+                var all_name = "nan" if c.tkind(ptype) == .FLOAT else "all"
                 c.error(
                     expr,
                     t"class {cname} of the {c.text(ptype)} parameter {pname} must be a set of {c.text(ptype)} "

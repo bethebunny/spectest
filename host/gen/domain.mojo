@@ -1,6 +1,5 @@
 """Small domains: types with at most 2**16 values, enumerated by index."""
 
-import check.types as ty
 from check.types import Types
 from eval.coerce import value_from_bits
 from wire.value import Value
@@ -15,24 +14,24 @@ def domain_size(types: Types, t: Int) -> Optional[UInt64]:
     ref info = types.info(t)
     var n: UInt64
     match info.kind:
-        case ty.BOOL:
+        case .BOOL:
             n = 2
-        case ty.FIXED_INT:
+        case .FIXED_INT:
             if info.bits > 16:
                 return None
             n = UInt64(1) << UInt64(info.bits)
-        case ty.FLOAT:
+        case .FLOAT:
             if info.bits > 2:  # the format ids of f16 and bf16
                 return None
             n = 65536
-        case ty.LITERAL | ty.ENUM:
+        case .LITERAL | .ENUM:
             n = UInt64(len(info.names))
-        case ty.OPTION:
+        case .OPTION:
             var inner = domain_size(types, info.args[0])
             if inner is None:
                 return None
             n = inner.value() + 1
-        case ty.TUPLE:
+        case .TUPLE:
             return product_size(types, info.args, limit=MAX_DOMAIN)
         case _:
             return None
@@ -63,11 +62,11 @@ def value_at(types: Types, t: Int, index: UInt64) raises -> Value:
         raise Error(t"gen: index out of the domain of {types.text(t)}")
     ref info = types.info(t)
     match info.kind:
-        case ty.BOOL | ty.FIXED_INT | ty.FLOAT:
+        case .BOOL | .FIXED_INT | .FLOAT:
             return value_from_bits(types, t, index)
-        case ty.LITERAL | ty.ENUM:
-            return Value.enum(info.name if info.kind == ty.ENUM else String(), info.names[Int(index)])
-        case ty.OPTION:
+        case .LITERAL | .ENUM:
+            return Value.enum(info.name if info.kind == .ENUM else String(), info.names[Int(index)])
+        case .OPTION:
             return Value.none() if index == 0 else Value.some(value_at(types, info.args[0], index - 1))
         case _:
             return Value.tuple(values_at(types, info.args, index))

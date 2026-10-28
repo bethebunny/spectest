@@ -64,7 +64,7 @@ def _fail(mut c: Checker, message: Some[Writable], arg: Int = -1, key: String = 
 def _float(mut c: Checker, info: CallInfo, i: Int) -> Bool:
     var t = info.args[i]
     var k = c.tkind(t)
-    if k == ty.FLOAT or k == ty.ANY:
+    if k == .FLOAT or k == .ANY:
         return True
     var hint = String()
     if c.is_numeric(t):
@@ -100,7 +100,7 @@ def _integer(mut c: Checker, info: CallInfo, i: Int) -> Bool:
     if c.is_integer(t) or c.is_any(t):
         return True
     var hint = String()
-    if c.tkind(t) == ty.REAL:
+    if c.tkind(t) == .REAL:
         hint = " (use // for integer division)"
     _ = _fail(
         c,
@@ -114,9 +114,9 @@ def _list(mut c: Checker, info: CallInfo, i: Int) -> Int:
     """The element type of a list argument; -1 (with the failure recorded) otherwise."""
     var t = info.args[i]
     var k = c.tkind(t)
-    if k == ty.LIST:
+    if k == .LIST:
         return c.arg(t, 0)
-    if k == ty.ANY:
+    if k == .ANY:
         return t
     _ = _fail(
         c, info.name + " takes a list, but " + _ord(i) + " is " + c.text(t), i
@@ -127,9 +127,9 @@ def _list(mut c: Checker, info: CallInfo, i: Int) -> Int:
 def _option(mut c: Checker, info: CallInfo, i: Int) -> Int:
     var t = info.args[i]
     var k = c.tkind(t)
-    if k == ty.OPTION:
+    if k == .OPTION:
         return c.arg(t, 0)
-    if k == ty.ANY:
+    if k == .ANY:
         return t
     _ = _fail(
         c, info.name + " takes an option, but " + _ord(i) + " is " + c.text(t), i
@@ -140,7 +140,7 @@ def _option(mut c: Checker, info: CallInfo, i: Int) -> Int:
 def _bytes(mut c: Checker, info: CallInfo, i: Int) -> Bool:
     var t = info.args[i]
     var k = c.tkind(t)
-    if k == ty.BYTES or k == ty.ANY:
+    if k == .BYTES or k == .ANY:
         return True
     _ = _fail(
         c, info.name + " takes bytes, but " + _ord(i) + " is " + c.text(t), i
@@ -151,7 +151,7 @@ def _bytes(mut c: Checker, info: CallInfo, i: Int) -> Bool:
 def _model(mut c: Checker, info: CallInfo, i: Int) -> Bool:
     var t = info.args[i]
     var k = c.tkind(t)
-    if k == ty.MODEL or k == ty.ANY:
+    if k == .MODEL or k == .ANY:
         return True
     _ = _fail(
         c,
@@ -171,14 +171,14 @@ def _eq_elems(mut c: Checker, info: CallInfo, elem: Int, what: String) -> Bool:
         return True
     var hint: String
     var bk = c.tkind(bad)
-    if bk == ty.FLOAT:
+    if bk == .FLOAT:
         hint = (
             "floats have no canonical equality; map them to bits(x) or real(x) first, "
             "or compare whole values with eq(a, b, float=...)"
         )
-    elif bk == ty.MODEL:
+    elif bk == .MODEL:
         hint = "model " + c.spec.types.infos[bad].name + " handles have no canonical equality"
-    elif bk == ty.TYPEVAR:
+    elif bk == .TYPEVAR:
         hint = "declare the type parameter as " + c.spec.types.infos[bad].name + ": Eq"
     else:
         hint = c.text(bad) + " has no canonical equality"
@@ -195,9 +195,9 @@ def _ordered_elems(mut c: Checker, info: CallInfo, elem: Int) -> Bool:
         return True
     var hint: String
     var k = c.tkind(elem)
-    if k == ty.FLOAT:
+    if k == .FLOAT:
         hint = "floats have no total order (NaN); map them to real(x) first"
-    elif k == ty.TYPEVAR:
+    elif k == .TYPEVAR:
         hint = "declare the type parameter as " + c.spec.types.infos[elem].name + ": Ord"
     else:
         hint = c.text(elem) + " has no total order"
@@ -228,10 +228,10 @@ def _same_type(mut c: Checker, info: CallInfo, i: Int, j: Int) -> Int:
     return t
 
 
-def _type_arg(mut c: Checker, info: CallInfo, kinds: List[UInt8], what: String) -> Int:
+def _type_arg(mut c: Checker, info: CallInfo, kinds: List[ty.TypeKind], what: String) -> Int:
     var t = info.targs[0]
     var k = c.tkind(t)
-    if k == ty.ANY:
+    if k == .ANY:
         return t
     for want in kinds:
         if k == want:
@@ -243,7 +243,7 @@ def _type_arg(mut c: Checker, info: CallInfo, kinds: List[UInt8], what: String) 
 def _qe_untyped(mut c: Checker, info: CallInfo, i: Int) -> Int:
     var t = info.args[i]
     var k = c.tkind(t)
-    if k == ty.FLOAT or k == ty.ANY:
+    if k == .FLOAT or k == .ANY:
         return t
     var hint = String()
     if c.is_numeric(t):
@@ -267,7 +267,7 @@ def _qe_untyped(mut c: Checker, info: CallInfo, i: Int) -> Int:
 
 def _float_type_arg(mut c: Checker, info: CallInfo) -> Int:
     return _type_arg(
-        c, info, [ty.FLOAT], "a float type (f16, bf16, f32, f64)"
+        c, info, [ty.TypeKind.FLOAT], "a float type (f16, bf16, f32, f64)"
     )
 
 
@@ -309,7 +309,7 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
                 var a = info.args[i]
                 if c.is_any(a) or c.is_any(t):
                     continue
-                if c.tkind(a) == ty.FLOAT and a != t:
+                if c.tkind(a) == .FLOAT and a != t:
                     return _fail(
                         c,
                         "qe<"
@@ -342,7 +342,7 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
         var b = _qe_untyped(c, info, 1)
         if b < 0:
             return c.poison
-        if c.tkind(a) == ty.FLOAT and c.tkind(b) == ty.FLOAT and a != b:
+        if c.tkind(a) == .FLOAT and c.tkind(b) == .FLOAT and a != b:
             return _fail(
                 c,
                 "qe compares two floats of one format, but got "
@@ -355,7 +355,7 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
         return c.qerr_
     if k == T_QERR_PART:
         var kk = c.tkind(t0)
-        if kk != ty.QERR and kk != ty.ANY:
+        if kk != .QERR and kk != .ANY:
             return _fail(
                 c,
                 info.name
@@ -366,7 +366,7 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
         return c.int_
     if k == T_CR:
         var kk = c.tkind(t0)
-        if kk == ty.FLOAT or kk == ty.ANY:
+        if kk == .FLOAT or kk == .ANY:
             return t0
         var hint = String()
         if c.is_numeric(t0):
@@ -401,7 +401,7 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
         return t
     if k == T_WRAP:
         var t = _type_arg(
-            c, info, [ty.FIXED_INT], "a fixed-width integer type (i8 ... u64)"
+            c, info, [ty.TypeKind.FIXED_INT], "a fixed-width integer type (i8 ... u64)"
         )
         if t < 0:
             return c.poison
@@ -411,7 +411,7 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
     if k == T_FITS:
         if (
             _type_arg(
-                c, info, [ty.FIXED_INT, ty.FLOAT], "a fixed-width integer or float type"
+                c, info, [ty.TypeKind.FIXED_INT, ty.TypeKind.FLOAT], "a fixed-width integer or float type"
             )
             < 0
         ):
@@ -426,12 +426,12 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
     if k == T_LEN:
         var kk = c.tkind(t0)
         if (
-            kk == ty.LIST
-            or kk == ty.STRING
-            or kk == ty.LITERAL
-            or kk == ty.BYTES
-            or kk == ty.MAP
-            or kk == ty.ANY
+            kk == .LIST
+            or kk == .STRING
+            or kk == .LITERAL
+            or kk == .BYTES
+            or kk == .MAP
+            or kk == .ANY
         ):
             return c.int_
         return _fail(
@@ -443,7 +443,7 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
         var elem = _list(c, info, 0)
         if elem < 0 or not _ordered_elems(c, info, elem):
             return c.poison
-        if c.tkind(t0) == ty.LIST:
+        if c.tkind(t0) == .LIST:
             return t0
         return c.spec.types.list_of(elem)
     if k == T_IS_SORTED:
@@ -498,11 +498,11 @@ def type_prelude(mut c: Checker, sig: PreludeSig, info: CallInfo) -> Int:
         return c.int_
     if k == T_KEYS or k == T_VALUES:
         var kk = c.tkind(t0)
-        if kk != ty.MAP and kk != ty.ANY:
+        if kk != .MAP and kk != .ANY:
             return _fail(
                 c, info.name + " takes a map, but argument 1 is " + c.text(t0), 0
             )
-        if kk == ty.MAP:
+        if kk == .MAP:
             return c.spec.types.list_of(c.arg(t0, 0 if k == T_KEYS else 1))
         return c.spec.types.list_of(t0)
     if k == T_RANGE:

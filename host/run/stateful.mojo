@@ -237,11 +237,11 @@ struct Machine(Property):
                 continue
             var t = self.props[c].param_types[i]
             var k = types.kind(t)
-            if k != ty.INT and k != ty.FIXED_INT:
+            if k != .INT and k != .FIXED_INT:
                 continue
             if src.draw_below(4) == 3:
                 continue
-            var low = 0 if k == ty.FIXED_INT and not types.info(t).signed else -4
+            var low = 0 if k == .FIXED_INT and not types.info(t).signed else -4
             args[i] = Value.int(src.draw_int(low, 4))
 
     def regenerate(mut self, choices: Choices) -> List[Step]:
@@ -388,7 +388,7 @@ struct Machine(Property):
         if reply.value.kind == .ERROR:
             return String(call, " raised ", reply.value.error_text())
         ref prop = self.props[step.callable]
-        if not is_ctor and reply.result is not None and self.loaded[].spec.types.kind(prop.result_type) != ty.UNIT:
+        if not is_ctor and reply.result is not None and self.loaded[].spec.types.kind(prop.result_type) != .UNIT:
             return String(call, " -> ", prop.show(reply.result.value(), prop.result_type))
         return call^
 

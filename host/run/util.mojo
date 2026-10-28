@@ -12,9 +12,9 @@ def norm_name(name: String) -> String:
     return String(name.removeprefix("builtins."))
 
 
-def _has_parts(kind: UInt8) -> Bool:
+def _has_parts(kind: ty.TypeKind) -> Bool:
     match kind:
-        case ty.LIST | ty.OPTION | ty.TUPLE | ty.MAP | ty.RECORD:
+        case .LIST | .OPTION | .TUPLE | .MAP | .RECORD:
             return True
         case _:
             return False
@@ -24,12 +24,12 @@ def is_handle(types: ty.Types, t: Int) -> Bool:
     """Whether `t` is a model passed around as a handle (`signed` marks an interface,
     whose objects live in its steps)."""
     ref info = types.info(t)
-    return info.kind == ty.MODEL and not info.signed
+    return info.kind == .MODEL and not info.signed
 
 
 def type_has_model(types: ty.Types, t: Int) -> Bool:
     ref info = types.info(t)
-    return info.kind == ty.MODEL or (_has_parts(info.kind) and any([type_has_model(types, a) for a in info.args]))
+    return info.kind == .MODEL or (_has_parts(info.kind) and any([type_has_model(types, a) for a in info.args]))
 
 
 def collect_models(types: ty.Types, t: Int, mut out: List[String]):
@@ -64,17 +64,17 @@ def handles_of(types: ty.Types, v: Value, t: Int, model: String) -> List[Value]:
     # TODO: each guarded case returns, since a guarded case on an __enum that runs off
     # its end goes on matching the cases after it (Mojo 1.2).
     match info.kind, v.kind:
-        case ty.MODEL, .HANDLE if info.name == model:
+        case .MODEL, .HANDLE if info.name == model:
             out.append(v.copy())
             return out^
-        case (ty.LIST, .LIST) | (ty.OPTION, .OPTION):
+        case (.LIST, .LIST) | (.OPTION, .OPTION):
             for item in v.items():
                 out += handles_of(types, item, info.args[0], model)
-        case ty.TUPLE, .TUPLE if v.count() == len(info.args):
+        case .TUPLE, .TUPLE if v.count() == len(info.args):
             for i, arg in enumerate(info.args):
                 out += handles_of(types, v.item(i), arg, model)
             return out^
-        case ty.MAP, .MAP:
+        case .MAP, .MAP:
             for key, value in v.pairs():
                 out += handles_of(types, key, info.args[0], model)
                 out += handles_of(types, value, info.args[1], model)

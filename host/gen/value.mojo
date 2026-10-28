@@ -1,7 +1,6 @@
 """draw_value: a value of any spec type a parameter can have."""
 
-import check.types as ty
-from check.types import Types
+from check.types import TypeKind, Types
 from mcheck.source import MANY_LABEL, Source
 from numeric.formats import format_by_id
 from wire.value import Value
@@ -21,9 +20,9 @@ def is_flat(types: Types, t: Int) -> Bool:
     """Scalars, and tuples, options and records of them: what a long list holds."""
     ref info = types.info(t)
     match info.kind:
-        case ty.LIST | ty.MAP:
+        case .LIST | .MAP:
             return False
-        case ty.TUPLE | ty.OPTION | ty.RECORD:
+        case .TUPLE | .OPTION | .RECORD:
             return all([is_flat(types, a) for a in info.args])
         case _:
             return True
@@ -92,33 +91,33 @@ def _draw_inner(
 ) raises -> Value:
     ref info = types.info(t)
     match info.kind:
-        case ty.BOOL:
+        case .BOOL:
             return Value.bool(src.draw_bool())
-        case ty.INT:
+        case .INT:
             return draw_unbounded_int(src)
-        case ty.FIXED_INT:
+        case .FIXED_INT:
             return draw_int_value(src, info.bits, info.signed)
-        case ty.FLOAT:
+        case .FLOAT:
             var format = format_by_id(UInt8(info.bits))
             return Value.float(format, draw_float_bits(src, format))
-        case ty.STRING:
+        case .STRING:
             return draw_string(src, sizes, depth)
-        case ty.BYTES:
+        case .BYTES:
             return draw_bytes(src, sizes, depth)
-        case ty.LIST:
+        case .LIST:
             return _draw_list(src, types, info.args[0], sizes, depth)
-        case ty.MAP:
+        case .MAP:
             return _draw_map(src, types, info.args[0], info.args[1], sizes, depth)
-        case ty.TUPLE:
+        case .TUPLE:
             return Value.tuple([draw_value(src, types, a, sizes, depth + 1) for a in info.args])
-        case ty.OPTION:
+        case .OPTION:
             if src.draw_bool(0.75):
                 return Value.some(draw_value(src, types, info.args[0], sizes, depth + 1))
             return Value.none()
-        case ty.LITERAL | ty.ENUM:
-            var name = info.name if info.kind == ty.ENUM else String()
+        case .LITERAL | .ENUM:
+            var name = info.name if info.kind == .ENUM else String()
             return Value.enum(name, info.names[src.draw_choice(len(info.names))])
-        case ty.RECORD:
+        case .RECORD:
             var fields = [draw_value(src, types, a, sizes, depth + 1) for a in info.args]
             return Value.record(info.name, info.names, fields^)
         case _:
@@ -135,7 +134,7 @@ def draw_value(
     raise; models go through `draw_model`.
     """
     var kind = types.kind(t)
-    if kind in [ty.BOOL, ty.INT, ty.FIXED_INT, ty.FLOAT, ty.LITERAL, ty.ENUM]:
+    if kind in [TypeKind.BOOL, TypeKind.INT, TypeKind.FIXED_INT, TypeKind.FLOAT, TypeKind.LITERAL, TypeKind.ENUM]:
         # one or two choices: a span would repeat the element's own
         return _draw_inner(src, types, t, sizes, depth)
     src.start_span(Int(kind))

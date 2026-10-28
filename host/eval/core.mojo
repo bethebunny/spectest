@@ -48,14 +48,22 @@ comptime SET_LIMIT = 1 << 16
 """The most members of a partition set a comprehension visits."""
 
 
-def type_kind(spec: Spec, node: Int) -> UInt8:
+def type_kind(spec: Spec, node: Int) -> ty.TypeKind:
     return spec.types.infos[spec.node_types[node]].kind
 
 
 def scalar_type_id(types: ty.Types, name: String) -> Optional[Int]:
     """The interned scalar type `name` denotes (`bool`, `i32`, `f64`, ...), if any."""
     for t, info in enumerate(types.infos):
-        var scalar = info.kind in [ty.BOOL, ty.INT, ty.REAL, ty.STRING, ty.BYTES, ty.FIXED_INT, ty.FLOAT]
+        var scalar = info.kind in [
+            ty.TypeKind.BOOL,
+            ty.TypeKind.INT,
+            ty.TypeKind.REAL,
+            ty.TypeKind.STRING,
+            ty.TypeKind.BYTES,
+            ty.TypeKind.FIXED_INT,
+            ty.TypeKind.FLOAT,
+        ]
         if scalar and types.text(t) == name:
             return t
     return None
@@ -234,7 +242,7 @@ def _name_value[
             return enum_member(spec, enum_type=r.owner, index=r.index)
         case sp.R_CLASS:
             var expr = spec.ast.child(r.index, 0)
-            if type_kind(spec, expr) == ty.BOOL:
+            if type_kind(spec, expr) == .BOOL:
                 return value_of(spec, expr, env, run, host)
             raise Error(t"class {name} is a partition set: it has no value in a clause")
         case sp.R_CONST:
@@ -262,10 +270,10 @@ def _attr_value[
         case sp.R_CONST:
             return host.constant(r.index)
         case sp.R_TYPE_CONST:
-            if type_kind(spec, e) == ty.SET:
+            if type_kind(spec, e) == .SET:
                 raise Error(t"{spec.ast.source_text(e)} is a partition set: it has no value in a clause")
             ref scalar = spec.types.infos[r.index]
-            if scalar.kind == ty.FIXED_INT:
+            if scalar.kind == .FIXED_INT:
                 var low = r.name == "min"
                 return Value.int(int_min(scalar.bits, scalar.signed) if low else int_max(scalar.bits, scalar.signed))
             var f = format_by_id(UInt8(scalar.bits))
@@ -308,9 +316,9 @@ def _binary_value[
         if left == (op == .OR):
             return Value.bool(op != .AND)
         return Value.bool(want_bool(value_of(spec, n.children[1], env, run, host), String(t"the right operand of {op}")))
-    if type_kind(spec, e) == ty.SET:
+    if type_kind(spec, e) == .SET:
         raise Error(t"{op} combines partition sets: it has no value in a clause")
-    if op == .IN and type_kind(spec, n.children[1]) == ty.SET:
+    if op == .IN and type_kind(spec, n.children[1]) == .SET:
         return Value.bool(set_contains(spec, n.children[1], value_of(spec, n.children[0], env, run, host)))
     var a = value_of(spec, n.children[0], env, run, host)
     var b = value_of(spec, n.children[1], env, run, host)
@@ -320,7 +328,7 @@ def _binary_value[
             var is_equal: Bool
             if has_qerr:
                 is_equal = qerr_compare(Op.EQ, a, b)
-            elif type_kind(spec, n.children[0]) == ty.CHOICE or type_kind(spec, n.children[1]) == ty.CHOICE:
+            elif type_kind(spec, n.children[0]) == .CHOICE or type_kind(spec, n.children[1]) == .CHOICE:
                 is_equal = same(a, b)
             else:
                 is_equal = values_equal(a, b)
@@ -375,7 +383,7 @@ def _comprehension_value[
     var body = n.children[1]
     var what = String(t"the body of {kind}(...)")
     var items: List[Value]
-    if type_kind(spec, iterable) == ty.SET:
+    if type_kind(spec, iterable) == .SET:
         items = set_members(spec, iterable)
     else:
         items = elements(value_of(spec, iterable, env, run, host), String(t"{kind}(...)"))
@@ -404,7 +412,7 @@ def _comprehension_value[
         case .MAP:
             result = Value.list([_body_at(spec, body, item, env, run, host) for item in items])
         case .SUM:
-            var total = qerr_zero() if type_kind(spec, e) == ty.QERR else Value.int(0)
+            var total = qerr_zero() if type_kind(spec, e) == .QERR else Value.int(0)
             for item in items:
                 total = add_term(total, _body_at(spec, body, item, env, run, host))
             result = total^
@@ -567,7 +575,7 @@ def _positional(spec: Spec, call: Int) -> List[Int]:
 def _holds_handles(types: ty.Types, t: Int) -> Bool:
     """A model, or a list of models: `eq` compares such values through their observers."""
     var k = types.kind(t)
-    return k == ty.MODEL or (k == ty.LIST and types.kind(types.info(t).args[0]) == ty.MODEL)
+    return k == .MODEL or (k == .LIST and types.kind(types.info(t).args[0]) == .MODEL)
 
 
 def model_eq[
@@ -583,14 +591,14 @@ def model_eq[
     """`eq` of two values holding model handles: handles compare through their
     zero-argument observers, read with the host."""
     var k = spec.types.kind(t)
-    if k == ty.LIST:
+    if k == .LIST:
         if a.count() != b.count():
             return False
         for x, y in zip(a.items(), b.items()):
             if not model_eq(spec, x, y, spec.types.info(t).args[0], mode, host):
                 return False
         return True
-    if k != ty.MODEL:
+    if k != .MODEL:
         return equal(a, b, mode)
     var found = spec.model_named(spec.types.info(t).name)
     if found is None:

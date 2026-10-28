@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from check.types import Types, ANY_TYPE, LIST, FIXED_INT
+from check.types import ANY_TYPE, TypeKind, Types
 from check.spec import Spec, Resolution, R_PARAM, R_QERR_PART, R_EXTERN
 from prelude.names import prelude_id, prelude_name, prelude_count
 from syntax.ast import Ast
@@ -13,9 +13,9 @@ def test_types_intern() raises:
     var b = t.list_of(t.scalar("f64").value())
     assert_equal(a, b)
     assert_equal(t.text(a), "list<f64>")
-    assert_equal(t.kind(a), LIST)
+    assert_equal(t.kind(a), TypeKind.LIST)
     var i32 = t.scalar("i32").value()
-    assert_equal(t.kind(i32), FIXED_INT)
+    assert_equal(t.kind(i32), TypeKind.FIXED_INT)
     assert_equal(t.text(t.map_of(t.string(), t.tuple_of([i32, t.bool_()]))), "map<string, (i32, bool)>")
     assert_equal(t.text(t.literal(["any", "all"])), "\"any\" | \"all\"")
     assert_false(t.has_canonical_eq(a))
@@ -28,6 +28,12 @@ def test_types_intern() raises:
     assert_equal(t.text(ANY_TYPE), "?")
     var r1 = t.record("pkg.R", ["x"], [i32])
     assert_equal(t.record("pkg.R", ["x"], [i32]), r1)
+
+
+def test_types_intern_by_value() raises:
+    var t = Types()
+    assert_true(t.literal(["a", "b"]) != t.literal(["a\x1fb"]))
+    assert_equal(t.enum_("pkg.E", ["a"]), t.enum_("pkg.E", ["b"]))
 
 
 def test_spec_tables() raises:

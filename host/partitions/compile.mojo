@@ -23,11 +23,11 @@ comptime NO_FORMAT = FloatFormat(0, 0, 0)
 
 
 @fieldwise_init
-struct Elem(Copyable, Equatable, TrivialRegisterPassable):
+struct Elem(Equatable, ImplicitlyCopyable):
     """A fixed-width element type: bool, a fixed integer or a float."""
 
-    var kind: UInt8
-    """BOOL, FIXED_INT or FLOAT of check.types."""
+    var kind: ty.TypeKind
+    """BOOL, FIXED_INT or FLOAT."""
     var width: Int
     var signed: Bool
     var format: FloatFormat
@@ -35,24 +35,24 @@ struct Elem(Copyable, Equatable, TrivialRegisterPassable):
 
     @staticmethod
     def bool() -> Self:
-        return Self(ty.BOOL, 1, False, NO_FORMAT)
+        return Self(.BOOL, 1, False, NO_FORMAT)
 
     @staticmethod
     def int(width: Int, *, signed: Bool) -> Self:
-        return Self(ty.FIXED_INT, width, signed, NO_FORMAT)
+        return Self(.FIXED_INT, width, signed, NO_FORMAT)
 
     @staticmethod
     def float(format: FloatFormat) -> Self:
-        return Self(ty.FLOAT, format.width(), True, format)
+        return Self(.FLOAT, format.width(), True, format)
 
     def is_bool(self) -> Bool:
-        return self.kind == ty.BOOL
+        return self.kind == .BOOL
 
     def is_int(self) -> Bool:
-        return self.kind == ty.FIXED_INT
+        return self.kind == .FIXED_INT
 
     def is_float(self) -> Bool:
-        return self.kind == ty.FLOAT
+        return self.kind == .FLOAT
 
     def name(self) -> String:
         if self.is_int():
@@ -70,11 +70,11 @@ def elem_of(types: ty.Types, t: Int) -> Optional[Elem]:
     """The element type for type id `t`, or None when it is not fixed-width."""
     ref info = types.info(t)
     match info.kind:
-        case ty.BOOL:
+        case .BOOL:
             return Elem.bool()
-        case ty.FIXED_INT:
+        case .FIXED_INT:
             return Elem.int(info.bits, signed=info.signed)
-        case ty.FLOAT:
+        case .FLOAT:
             try:
                 return Elem.float(format_by_id(UInt8(info.bits)))
             except:
