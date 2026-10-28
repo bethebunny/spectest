@@ -1,8 +1,7 @@
 # spectest spec language — v1
 
-This is the repo copy of the language definition. The review copy is the doc
-"spectest spec language — v1 draft" (https://claude.ai/artifact/1Fqu1m3CTGrSA5ebM7GJXw);
-when they disagree, fix both.
+This is the definition of the spec language. `docs/v2/syntax.md` lists what v2 adds
+to it.
 
 A spec file declares a component's API (its types, abstract models, functions
 and stateful interfaces) and attaches clauses: pure conditions over inputs and

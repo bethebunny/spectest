@@ -1,7 +1,6 @@
 # spectest v2 implementation plan
 
-v2 splits spectest into a Mojo host and a Python driver, as the design doc
-"spectest v2 design" describes (https://claude.ai/artifact/Hse62fiuRkV8FaMXnwqNY1).
+v2 splits spectest into a Mojo host and a Python driver.
 The host parses and checks specs, generates inputs, judges clauses, keeps the failure
 store and writes reports. The driver calls the code under test. Both run in one
 process: pytest loads the host as an extension module, `spectest._host`, and the host
