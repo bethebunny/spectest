@@ -2,7 +2,7 @@
 
 
 @fieldwise_init
-struct Span(Copyable, Movable, ImplicitlyCopyable):
+struct Span(TrivialRegisterPassable):
     """A half-open range [start, end) of choice positions with an integer label."""
 
     var start: Int
@@ -13,17 +13,12 @@ struct Span(Copyable, Movable, ImplicitlyCopyable):
         return self.end - self.start
 
 
-struct Choices(Copyable, Movable):
+struct Choices(Copyable, Defaultable):
     """Each choice is a value in [0, bound]; shrinking moves values toward 0."""
 
     var values: List[UInt64]
     var bounds: List[UInt64]
     var spans: List[Span]
-
-    def __init__(out self):
-        self.values = []
-        self.bounds = []
-        self.spans = []
 
     def __init__(out self, var values: List[UInt64]):
         """Choices with maximal bounds, as stored or hand-written."""

@@ -6,11 +6,10 @@ A file holds `c <value> <bound>` per choice, `d <sid>` per deleted step and
 numbered in the order the choices generate them."""
 
 from std.os import makedirs
-from std.os.path import exists
 from std.pathlib import Path
 
 from mcheck.choices import Choices
-from mcheck.store import file_name
+from mcheck.store import choice_lines, file_name, lines_after
 
 comptime HEADER = "stateful-steps 1"
 
@@ -32,9 +31,7 @@ struct Stored(Movable):
 
 def save_stored(dir: String, key: String, stored: Stored) raises:
     makedirs(dir, exist_ok=True)
-    var text = String(HEADER, "\n")
-    for value, bound in zip(stored.choices.values, stored.choices.bounds):
-        text += String("c ", Int(value), " ", Int(bound), "\n")
+    var text = String(HEADER, "\n", choice_lines(stored.choices))
     for sid in stored.deleted:
         text += String("d ", sid, "\n")
     for sid, index, value in zip(stored.arg_sid, stored.arg_index, stored.arg_value):
@@ -43,14 +40,11 @@ def save_stored(dir: String, key: String, stored: Stored) raises:
 
 
 def load_stored(dir: String, key: String) raises -> Optional[Stored]:
-    var path = file_name(dir, key, ".steps")
-    if not exists(path):
-        return None
-    var lines = Path(path).read_text().split("\n")
-    if len(lines) == 0 or String(lines[0]) != HEADER:
+    var lines = lines_after(HEADER, file_name(dir, key, ".steps"))
+    if lines is None:
         return None
     var out = Stored()
-    for line in lines[1:]:
+    for line in lines.value():
         var parts = line.split(" ")
         if len(parts) == 3 and String(parts[0]) == "c":
             out.choices.push(UInt64(atol(parts[1])), UInt64(atol(parts[2])))

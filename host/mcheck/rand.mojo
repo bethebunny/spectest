@@ -1,5 +1,7 @@
 """Deterministic randomness: splitmix64 seeds xoshiro256**."""
 
+from std.bit import pop_count, rotate_bits_left
+
 
 def splitmix64(mut state: UInt64) -> UInt64:
     state += UInt64(0x9E3779B97F4A7C15)
@@ -23,22 +25,22 @@ struct Rng(Copyable, Movable):
         self.s3 = splitmix64(sm)
 
     def next(mut self) -> UInt64:
-        var x = self.s1 * UInt64(5)
-        var result = ((x << 7) | (x >> 57)) * UInt64(9)
+        var result = rotate_bits_left[7](self.s1 * 5) * 9
         var t = self.s1 << 17
         self.s2 ^= self.s0
         self.s3 ^= self.s1
         self.s1 ^= self.s2
         self.s0 ^= self.s3
         self.s2 ^= t
-        self.s3 = (self.s3 << 45) | (self.s3 >> 19)
+        self.s3 = rotate_bits_left[45](self.s3)
         return result
 
     def below(mut self, n: UInt64) -> UInt64:
         """Uniform in [0, n); n must be positive."""
-        if n & (n - 1) == 0:
+        if pop_count(n) == 1:
             return self.next() & (n - 1)
-        var threshold = (UInt64(0) - n) % n
+        # 2**64 mod n: draws below it would favour the low residues
+        var threshold = (0 - n) % n
         while True:
             var r = self.next()
             if r >= threshold:
