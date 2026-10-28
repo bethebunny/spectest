@@ -2,15 +2,24 @@
 
 A test file is a Mojo program named ``test_*.mojo`` whose ``main`` runs a
 ``TestSuite``. It is built with the venv's ``mojo``, with ``host/``, the vendored
-bitpattern core and ``tests/host/lib`` (test-only helpers) on the include path, so ``from wire.value import Value`` and ``from
-arena import Arena`` both work, and then run. A compile error or a failing test fails
-the item, with mojo's output as the report.
+bitpattern core and ``tests/host/lib`` (test-only helpers) on the include path, so
+``from wire.value import Value`` and ``from arena import Arena`` both work, and then
+run. A compile error or a failing test fails the item, with mojo's output as the
+report.
 
-Built tests are kept in ``.mojo-tests/``, keyed by a hash of the test file, the
-compiler's version and every ``.mojo`` module the test imports, directly or through
-other modules. A rerun with nothing changed runs the kept binary at once; a change to
-a module rebuilds the tests that use it (several seconds each, more for tests of the
-checker).
+Each binary compiles everything it imports from scratch, so when a run selects
+several files of one directory, they share one binary: a runner generated in
+``.mojo-tests/`` that imports each test file of the directory and runs the one that
+``SPECTEST_MODULE`` names. A run of one file of a directory builds that file alone,
+which is quicker.
+
+Binaries are kept in ``.mojo-tests/``, keyed by a hash of the compiler's version, the
+runner and every ``.mojo`` module the tests import, directly or through other
+modules. A rerun with nothing changed runs the kept binary at once; a change to a
+module rebuilds the binaries that use it (several seconds to a minute each). Each
+process first builds the binaries of the run that no other process is building, so
+xdist workers build in parallel. A failed build is kept for the run, so each of its
+items reports it without building again.
 
 The test runs with ``SPECTEST_STRENGTH`` set to ``dev`` in the dev loop and ``full``
 under ``--ci`` or a non-dev Hypothesis profile, so a Mojo test can scale its own
@@ -21,12 +30,16 @@ sample counts the way the Python tests' budgets do.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import os
 import re
 import subprocess
 import sys
+import uuid
+from collections import Counter
 from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from functools import cache
 from importlib.metadata import version
 from pathlib import Path
@@ -41,10 +54,15 @@ INCLUDES = [HOST, HOST / "vendor" / "bitpattern", ROOT / "tests" / "host" / "lib
 BUILDS = ROOT / ".mojo-tests"
 # A cold build of a large test file plus its run, with room to spare.
 TIMEOUT = 600
+# Names this run's failed builds, which its xdist workers share.
+RUN = os.environ.get("PYTEST_XDIST_TESTRUNUID") or uuid.uuid4().hex
+TEST = re.compile(r"^def (test_\w+)\(", re.MULTILINE)
 
 
 # `from wire.value import Value`, `from .x import (a, b)`, `import check.types`.
-FROM_IMPORT = re.compile(r"^\s*from\s+([.\w]+)\s+import\s+(\([^)]*\)|[^\n]*)", re.MULTILINE)
+FROM_IMPORT = re.compile(
+    r"^\s*from\s+([.\w]+)\s+import\s+(\([^)]*\)|[^\n]*)", re.MULTILINE
+)
 PLAIN_IMPORT = re.compile(r"^\s*import\s+([\w.]+)", re.MULTILINE)
 
 
@@ -106,29 +124,107 @@ def closure(path: Path) -> frozenset[Path]:
     return frozenset(seen)
 
 
-def test_digest(path: Path) -> str:
-    """A hash of the compiler's version, the test file and every module it builds on."""
+# A unit is what one binary builds: a test file, or a directory of them.
+
+
+def stem(unit: Path) -> str:
+    return "__".join(unit.relative_to(ROOT).with_suffix("").parts)
+
+
+def tests(unit: Path) -> list[Path]:
+    return sorted(unit.glob("test_*.mojo")) if unit.is_dir() else [unit]
+
+
+# Runs the test file that SPECTEST_MODULE names. It registers each test by name, as
+# `__functions_in_module()` sees only the main file, and gives each suite its file's
+# name for the report.
+RUNNER = """\
+from std.os import getenv
+from std.reflection import SourceLocation
+from std.testing import TestSuite
+
+{imports}
+
+
+def main() raises:
+    var module = getenv("SPECTEST_MODULE")
+{suites}    raise Error("no test file " + module)
+"""
+SUITE = """\
+    if module == "{module}":
+        var suite = TestSuite(location=SourceLocation(line=1, col=1, file_name="{path}"))
+{tests}        suite^.run()
+        return
+"""
+
+
+def runner(unit: Path) -> str:
+    suites = [
+        SUITE.format(
+            module=t.stem,
+            path=t.relative_to(ROOT),
+            tests="".join(
+                f"        suite.test[{t.stem}.{f}]()\n"
+                for f in TEST.findall(t.read_text())
+            ),
+        )
+        for t in tests(unit)
+    ]
+    imports = "\n".join(f"import {t.stem}" for t in tests(unit))
+    return RUNNER.format(imports=imports, suites="".join(suites))
+
+
+@cache
+def binary(unit: Path) -> Path:
+    """Where `unit` is built, by a hash of the compiler's version, the runner and
+    every file it builds on."""
     h = hashlib.sha256(version("mojo-compiler").encode())
-    h.update(path.read_bytes())
-    for f in sorted(closure(path)):
+    if unit.is_dir():
+        h.update(runner(unit).encode())
+    for f in sorted({f for t in tests(unit) for f in (t, *closure(t))}):
         h.update(str(f.relative_to(ROOT)).encode())
         h.update(f.read_bytes())
-    return h.hexdigest()
+    return BUILDS / f"{stem(unit)}-{h.hexdigest()[:16]}"
 
 
-def build(path: Path) -> Path:
-    """The built test, building it first unless a build of the same sources is kept."""
-    digest = test_digest(path)[:16]
-    stem = "__".join(path.relative_to(ROOT).with_suffix("").parts)
-    binary = BUILDS / f"{stem}-{digest}"
-    if binary.exists():
-        return binary
+@contextmanager
+def locked(unit: Path, *, wait: bool) -> Iterator[bool]:
+    """Whether this process holds `unit`'s build lock, waiting for it if `wait`."""
     BUILDS.mkdir(exist_ok=True)
-    mojo = Path(sys.executable).parent / "mojo"
-    includes = [arg for p in INCLUDES for arg in ("-I", str(p))]
-    partial = BUILDS / f".partial-{os.getpid()}-{binary.name}"
+    with (BUILDS / f"{stem(unit)}.lock").open("w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+        else:
+            yield True
+
+
+def build(unit: Path) -> Path:
+    """`unit`'s binary, built unless a build of the same sources is kept. The caller
+    holds `unit`'s lock."""
+    out = binary(unit)
+    failed = out.with_name(f"{out.name}.{RUN}.failed")
+    if out.exists():
+        return out
+    if failed.exists():
+        raise MojoTestFailed(failed.read_text())
+    main, includes = unit, INCLUDES
+    if unit.is_dir():
+        main, includes = BUILDS / f"{stem(unit)}.mojo", [*INCLUDES, unit]
+        main.write_text(runner(unit))
+    partial = out.with_name(f".partial-{out.name}")
     proc = subprocess.run(
-        [str(mojo), "build", *includes, "-strip-file-prefix", f"{ROOT}/", str(path), "-o", str(partial)],
+        [
+            str(Path(sys.executable).parent / "mojo"),
+            "build",
+            *(arg for p in includes for arg in ("-I", str(p))),
+            "-strip-file-prefix",
+            f"{ROOT}/",
+            str(main),
+            "-o",
+            str(partial),
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -137,11 +233,31 @@ def build(path: Path) -> Path:
     )
     if proc.returncode != 0:
         partial.unlink(missing_ok=True)
+        failed.write_text(proc.stdout + proc.stderr)
         raise MojoTestFailed(proc.stdout + proc.stderr)
-    for old in BUILDS.glob(f"{stem}-*"):
+    for old in BUILDS.glob(f"{stem(unit)}-*"):
         old.unlink(missing_ok=True)
-    partial.rename(binary)
-    return binary
+    partial.rename(out)
+    return out
+
+
+@cache
+def units(session: pytest.Session) -> dict[Path, Path]:
+    """Each selected test file's unit: its directory when the selection holds several
+    of its files."""
+    paths = [i.path for i in session.items if isinstance(i, MojoTest)]
+    selected = Counter(p.parent for p in paths)
+    return {p: p.parent if selected[p.parent] > 1 else p for p in paths}
+
+
+@cache
+def build_all(session: pytest.Session) -> None:
+    """Builds the selection's units that no other process is building, so workers
+    build in parallel rather than wait on one unit."""
+    for unit in dict.fromkeys(units(session).values()):
+        with locked(unit, wait=False) as held, suppress(MojoTestFailed):
+            if held:
+                build(unit)
 
 
 def strength(config: pytest.Config) -> str:
@@ -149,7 +265,9 @@ def strength(config: pytest.Config) -> str:
     return "full" if full else "dev"
 
 
-def pytest_collect_file(parent: pytest.Collector, file_path: Path) -> pytest.File | None:
+def pytest_collect_file(
+    parent: pytest.Collector, file_path: Path
+) -> pytest.File | None:
     if file_path.suffix == ".mojo" and file_path.name.startswith("test_"):
         return MojoFile.from_parent(parent, path=file_path)
     return None
@@ -165,11 +283,19 @@ class MojoTestFailed(Exception):
 
 
 class MojoTest(pytest.Item):
+    def setup(self) -> None:
+        build_all(self.session)
+
     def runtest(self) -> None:
-        binary = build(self.path)
-        env = dict(os.environ, SPECTEST_STRENGTH=strength(self.config))
+        with locked(unit := units(self.session)[self.path], wait=True):
+            program = build(unit)
+        env = dict(
+            os.environ,
+            SPECTEST_STRENGTH=strength(self.config),
+            SPECTEST_MODULE=self.path.stem,
+        )
         proc = subprocess.run(
-            [str(binary)],
+            [str(program)],
             capture_output=True,
             text=True,
             check=False,
