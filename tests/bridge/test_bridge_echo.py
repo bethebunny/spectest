@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from spectest import _host
+from spectest._host import echo, version
 from spectest.driver.wire import Converted, Enum, Error, Float, Handle, Map, Record
 
 F64_NAN_PAYLOAD = 0x7FF8_0000_0000_1234
@@ -46,19 +46,19 @@ def same(a: object, b: object) -> bool:
     "n", [0, -1, 1, 2**63 - 1, 2**63, -(2**63), -(2**63) - 1, 2**64, 2**200, -(2**200)]
 )
 def test_ints(n: int) -> None:
-    assert same(_host.echo(n), n)
+    assert same(echo(n), n)
 
 
 @pytest.mark.parametrize("value", [True, False])
 def test_bool_is_not_int(value: bool) -> None:
-    assert _host.echo(value) is value
+    assert echo(value) is value
 
 
 @pytest.mark.parametrize(
     "fmt, bits", [(fmt, bits) for fmt, patterns in FLOATS.items() for bits in patterns]
 )
 def test_floats(fmt: str, bits: int) -> None:
-    assert _host.echo(Float(fmt, bits)) == Float(fmt, bits)
+    assert echo(Float(fmt, bits)) == Float(fmt, bits)
 
 
 def test_float_values_are_untouched() -> None:
@@ -87,48 +87,48 @@ def test_float_values_are_untouched() -> None:
     ],
 )
 def test_plain(value: object) -> None:
-    assert same(_host.echo(value), value)
+    assert same(echo(value), value)
 
 
 def test_map_with_list_keys() -> None:
     m = Map((([1, 2], "a"), ((), [3]), ("k", None)))
-    assert _host.echo(m) == m
-    assert _host.echo(Map(())) == Map(())
+    assert echo(m) == m
+    assert echo(Map(())) == Map(())
 
 
 def test_map_duplicate_keys_are_refused() -> None:
     with pytest.raises(RuntimeError, match="duplicate"):
-        _host.echo(Map(((1, 2), (1, 3))))
+        echo(Map(((1, 2), (1, 3))))
 
 
 def test_record() -> None:
     r = Record("pkg.Point", (("x", 1), ("y", [Float("f64", 0)])))
-    assert _host.echo(r) == r
-    assert _host.echo(Record("pkg.Empty", ())) == Record("pkg.Empty", ())
+    assert echo(r) == r
+    assert echo(Record("pkg.Empty", ())) == Record("pkg.Empty", ())
 
 
 def test_enum() -> None:
-    assert _host.echo(Enum("pkg.Color", "RED")) == Enum("pkg.Color", "RED")
-    assert _host.echo(Enum("", "left")) == Enum("", "left")
+    assert echo(Enum("pkg.Color", "RED")) == Enum("pkg.Color", "RED")
+    assert echo(Enum("", "left")) == Enum("", "left")
 
 
 def test_handle() -> None:
     h = Handle(2**64 - 1, "pkg.Thing")
-    assert _host.echo(h) == h
+    assert echo(h) == h
 
 
 def test_error() -> None:
     e = Error("pkg.MyError", ("pkg.Base", "ValueError"), "msg é \x00 end")
-    assert _host.echo(e) == e
-    assert _host.echo(Error("spectest.ResolveError", (), "")) == Error(
+    assert echo(e) == e
+    assert echo(Error("spectest.ResolveError", (), "")) == Error(
         "spectest.ResolveError", (), ""
     )
 
 
 def test_converted_reads_as_its_inner_value() -> None:
-    assert _host.echo(Converted("datetime.date", 738000)) == 738000
-    assert _host.echo(Converted("pkg.C", [Converted("pkg.D", "x")])) == ["x"]
-    assert _host.echo(Converted("pkg.C", None)) is None
+    assert echo(Converted("datetime.date", 738000)) == 738000
+    assert echo(Converted("pkg.C", [Converted("pkg.D", "x")])) == ["x"]
+    assert echo(Converted("pkg.C", None)) is None
 
 
 @pytest.mark.parametrize(
@@ -136,18 +136,18 @@ def test_converted_reads_as_its_inner_value() -> None:
 )
 def test_non_wire_objects_are_type_errors(value: object) -> None:
     with pytest.raises(TypeError):
-        _host.echo(value)
+        echo(value)
 
 
 def test_malformed_wire_objects_raise() -> None:
     with pytest.raises(RuntimeError, match="f128"):
-        _host.echo(Float("f128", 0))
+        echo(Float("f128", 0))
     with pytest.raises(TypeError):
-        _host.echo(Record("a", ((1, 2),)))
+        echo(Record("a", ((1, 2),)))
 
 
 def test_version() -> None:
-    assert isinstance(_host.version(), str)
+    assert isinstance(version(), str)
 
 
 def test_no_leaks() -> None:
@@ -168,12 +168,12 @@ def test_no_leaks() -> None:
         b"b",
     ]
     for _ in range(1000):
-        _host.echo(nested)
+        echo(nested)
     gc.collect()
     counts = (sys.getrefcount(sentinel), sys.getrefcount(big))
     rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     for _ in range(100_000):
-        _host.echo(nested)
+        echo(nested)
     gc.collect()
     rss_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     assert (sys.getrefcount(sentinel), sys.getrefcount(big)) == counts
@@ -185,9 +185,9 @@ def test_errors_do_not_leak() -> None:
     bad = [sentinel, (Record(sentinel, ((sentinel, 1.5),)),)]
     for _ in range(100):
         with pytest.raises(TypeError):
-            _host.echo(bad)
+            echo(bad)
     before = sys.getrefcount(sentinel)
     for _ in range(10_000):
         with pytest.raises(TypeError):
-            _host.echo(bad)
+            echo(bad)
     assert sys.getrefcount(sentinel) == before

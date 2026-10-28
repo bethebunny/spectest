@@ -34,7 +34,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/spectest"]
+packages = ["spectest"]
+exclude = ["*.mojo"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

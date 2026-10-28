@@ -26,9 +26,9 @@ import hashlib
 import json
 import re
 import sys
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 import pytest
 
@@ -155,7 +155,7 @@ class _State:
         self.payloads: list[dict[str, Any]] = []
         self.written: list[str] = []
         self.bound: dict[int, dict[str, str]] = {}
-        self.loaded: list[tuple[Any, int]] = []  # (host, spec handle) of each v2 spec
+        self.loaded: list[tuple[Host, int]] = []  # (host, spec handle) of each v2 spec
         self.runs: dict[tuple[int, str, str], dict[str, Any]] = {}  # v2 runs, one per key
 
     def unload_specs(self) -> None:
@@ -813,15 +813,26 @@ def spec_clause_name(clause_id: str, decl: str, instantiation: dict[str, str]) -
     return f"{decl}[{inst_text(instantiation)}]{clause_id[len(decl) :]}"
 
 
-def _load_host() -> Any:
+class Host(NamedTuple):
+    """The functions of ``spectest._host`` (docs/v2/host-api.md)."""
+
+    load: Callable[[str, Driver], int]
+    items: Callable[[int], list[dict[str, Any]]]
+    run: Callable[[int, str, dict[str, Any]], dict[str, Any]]
+    unload: Callable[[int], None]
+
+
+def _load_host() -> Host:
+    # Importing the names, not the module: without a build, spectest/_host is an empty
+    # namespace package, which imports fine.
     try:
-        import spectest._host as host
+        from spectest._host import items, load, run, unload
     except ImportError as exc:
         raise pytest.UsageError(
             f"spectest: the host module spectest._host is not available ({exc}); "
             "build it with `uv run python scripts/build_host.py`"
         ) from exc
-    return host
+    return Host(load, items, run, unload)
 
 
 def _first_set(*values: Any) -> Any:

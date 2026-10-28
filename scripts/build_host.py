@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "host" / "bridge" / "module.mojo"
-MODULE = ROOT / "src" / "spectest" / "_host.abi3.so"
+MODULE = ROOT / "spectest" / "_host" / "__init__.abi3.so"
 INCLUDES = [ROOT / "host", ROOT / "host" / "vendor" / "bitpattern"]
 RUNTIME = ["libKGENCompilerRTShared", "libAsyncRTRuntimeGlobals", "libMSupportGlobals"]
 SUFFIX = ".dylib" if sys.platform == "darwin" else ".so"
@@ -42,6 +42,7 @@ def build() -> bool:
         return False
     mojo = Path(sys.executable).parent / "mojo"
     lib = distribution("mojo-compiler").locate_file("modular/lib")
+    MODULE.parent.mkdir(exist_ok=True)
     for name in RUNTIME:
         copy = MODULE.parent / f"{name}{SUFFIX}"
         copy.unlink(missing_ok=True)
@@ -50,7 +51,7 @@ def build() -> bool:
     flags += ["-strip-file-prefix", f"{ROOT}/"]
     if sys.platform == "darwin":
         flags += ["-Xlinker", "-undefined", "-Xlinker", "dynamic_lookup"]
-        flags += ["-Xlinker", "-install_name", "-Xlinker", "@rpath/_host.abi3.so"]
+        flags += ["-Xlinker", "-install_name", "-Xlinker", "@rpath/__init__.abi3.so"]
     env = dict(os.environ, MODULAR_MOJO_MAX_SHARED_LIBS=f"-Xlinker,-rpath,-Xlinker,{ORIGIN}")
     started = time.perf_counter()
     command = [str(mojo), "build", str(SOURCE), "--emit", "shared-lib", "-o", str(MODULE)]

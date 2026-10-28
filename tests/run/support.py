@@ -6,7 +6,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from spectest import _host
+from spectest._host import items as host_items
+from spectest._host import load as host_load
+from spectest._host import run as host_run
+from spectest._host import unload as host_unload
 from spectest.driver import Driver
 
 
@@ -15,17 +18,17 @@ class Loaded:
 
     def __init__(self, path: Path, driver: Driver | None = None) -> None:
         self.driver = driver or Driver()
-        self.handle = _host.load(str(path), self.driver)
+        self.handle = host_load(str(path), self.driver)
 
     def items(self) -> list[dict[str, Any]]:
-        return _host.items(self.handle)
+        return host_items(self.handle)
 
     def run(self, decl: str, **options: Any) -> Result:
         options.setdefault("seed", 1)
-        return Result(_host.run(self.handle, decl, options))
+        return Result(host_run(self.handle, decl, options))
 
     def close(self) -> None:
-        _host.unload(self.handle)
+        host_unload(self.handle)
 
 
 class Result:

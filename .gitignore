@@ -5,8 +5,8 @@
 .ruff_cache/
 __pycache__/
 *.egg-info/
-src/spectest/_host.abi3.so
-src/spectest/libKGENCompilerRTShared.*
-src/spectest/libAsyncRTRuntimeGlobals.*
-src/spectest/libMSupportGlobals.*
+spectest/_host/__init__.abi3.so
+spectest/_host/libKGENCompilerRTShared.*
+spectest/_host/libAsyncRTRuntimeGlobals.*
+spectest/_host/libMSupportGlobals.*
 .mojo-tests/
