@@ -12,13 +12,13 @@ def fail(who: String, message: Some[Writable]) -> Error:
 
 
 def int_of(v: Value, who: String) raises -> BigInt:
-    if v.kind != .INT:
+    if v.kind != .Int:
         raise fail(who, t"expected an integer, got {v}")
     return v.as_bigint()
 
 
 def float_of(v: Value, who: String) raises -> FloatFormat:
-    if v.kind != .FLOAT:
+    if v.kind != .Float:
         raise fail(who, t"expected a float, got {v}")
     return v.float_format()
 
@@ -26,9 +26,9 @@ def float_of(v: Value, who: String) raises -> FloatFormat:
 def real_of(v: Value, who: String) raises -> Real:
     """An INT, REAL or FLOAT as an extended real. A NaN raises."""
     match v.kind:
-        case .INT | .REAL:
+        case .Int | .Real:
             return v.as_real()
-        case .FLOAT:
+        case .Float:
             var f = v.float_format()
             if is_nan(f, v.float_bits()):
                 raise fail(who, t"cannot promote a NaN ({f} bits {hex(v.float_bits())})")
@@ -42,6 +42,6 @@ def real_value(r: Real) -> Value:
 
 
 def list_items(v: Value, who: String) raises -> List[Value]:
-    if v.kind not in [Kind.LIST, Kind.TUPLE]:
+    if v.kind not in [Kind.List, Kind.Tuple]:
         raise fail(who, t"expected a list, got {v}")
     return v.items()

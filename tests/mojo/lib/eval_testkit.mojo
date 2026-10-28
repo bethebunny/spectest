@@ -60,7 +60,7 @@ struct Mock(EvalHost):
     ) raises -> Value:
         self.log.append(String("observe ", model, ".", observer, " ", len(args)))
         self.last_args = args.copy()
-        var of_handle = String(model, ".", observer, ".", Int(obj.handle_id()) if obj.kind == .HANDLE else -2)
+        var of_handle = String(model, ".", observer, ".", Int(obj.handle_id()) if obj.kind == .Handle else -2)
         if of_handle in self.observed:
             return self.observed[of_handle].copy()
         var of_any = String(model, ".", observer, ".-1")

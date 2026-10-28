@@ -42,9 +42,9 @@ struct DriverClient(Driver, Movable):
         """The target id of a qualified name. Raises with the message of the `Error`
         the driver returns for a name that doesn't resolve."""
         var result = from_python(self._invoke(wire()[].names.resolve, [new_string(name)]).ptr)
-        if result.kind == .ERROR:
+        if result.kind == .Error:
             raise Error(result.text())
-        if result.kind == .INT:
+        if result.kind == .Int:
             if case .Some(id) = result.small_int():
                 return id
         raise Error(t"driver.resolve returned {result}")

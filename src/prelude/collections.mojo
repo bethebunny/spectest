@@ -39,11 +39,11 @@ def _keys(items: List[Value]) -> List[_Same]:
 def length(x: Value) raises -> Value:
     """Elements of a list, Unicode scalars of a string, bytes, or pairs of a map."""
     match x.kind:
-        case .LIST | .TUPLE | .MAP:
+        case .List | .Tuple | .Map:
             return Value.int(x.count())
-        case .BYTES:
+        case .Bytes:
             return Value.int(len(x.data()))
-        case .STRING:
+        case .String:
             return Value.int(x.text().count_codepoints())
         case _:
             raise fail("len", t"expected a collection, got {x}")
@@ -118,13 +118,13 @@ def index_of(xs: Value, x: Value) raises -> Value:
 
 
 def keys(m: Value) raises -> Value:
-    if m.kind != .MAP:
+    if m.kind != .Map:
         raise fail("keys", t"expected a map, got {m}")
     return Value.list(m.keys())
 
 
 def values(m: Value) raises -> Value:
-    if m.kind != .MAP:
+    if m.kind != .Map:
         raise fail("values", t"expected a map, got {m}")
     return Value.list(m.values())
 
@@ -150,7 +150,7 @@ def some(x: Value) -> Value:
 
 
 def _check_option(o: Value, who: String) raises:
-    if o.kind != .OPTION:
+    if o.kind != .Option:
         raise fail(who, t"expected an option, got {o}")
 
 
@@ -196,7 +196,7 @@ struct EqMode(ImplicitlyCopyable):
 
 
 def _keyword_text(value: Value) -> String:
-    return value.text().copy() if value.kind == .STRING else ""
+    return value.text().copy() if value.kind == .String else ""
 
 
 def float_eq(name: Optional[Value]) raises -> FloatEq:
@@ -230,26 +230,26 @@ def ignores_order(name: Optional[Value]) raises -> Bool:
 def equal(a: Value, b: Value, mode: EqMode) raises -> Bool:
     """`eq(a, b)` with the given keyword arguments."""
     for kind in [a.kind, b.kind]:
-        if kind in [Kind.HANDLE, Kind.ERROR]:
+        if kind in [Kind.Handle, Kind.Error]:
             raise fail("eq", t"cannot compare {kind} values")
-    if a.kind in [Kind.INT, Kind.REAL] and b.kind in [Kind.INT, Kind.REAL]:
+    if a.kind in [Kind.Int, Kind.Real] and b.kind in [Kind.Int, Kind.Real]:
         return compare(a, b) == 0
     if a.kind != b.kind:
         return False
     match a.kind:
-        case .FLOAT:
+        case .Float:
             return _equal_floats(a, b, mode.floats)
-        case .LIST | .TUPLE:
+        case .List | .Tuple:
             if a.count() != b.count():
                 return False
             if mode.ignore_order:
                 return _equal_unordered(a.items(), b.items(), mode)
             return _all_equal(a.items(), b.items(), mode)
-        case .OPTION:
+        case .Option:
             return a.count() == b.count() and _all_equal(a.items(), b.items(), mode)
-        case .MAP:
+        case .Map:
             return a.count() == b.count() and _equal_maps(a, b, mode)
-        case .RECORD:
+        case .Record:
             return a.name() == b.name() and a.count() == b.count() and _equal_fields(a, b, mode)
         case _:
             return a == b

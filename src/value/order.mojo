@@ -11,9 +11,9 @@ from value.value import Kind, Value
 
 def is_ord(value: Value) -> Bool:
     match value.kind:
-        case .BOOL | .INT | .REAL | .STRING | .BYTES:
+        case .Bool | .Int | .Real | .String | .Bytes:
             return True
-        case .LIST | .TUPLE:
+        case .List | .Tuple:
             return all([is_ord(item) for item in value.items()])
         case _:
             return False
@@ -31,18 +31,18 @@ def _compare_bytes(a: Span[UInt8, _], b: Span[UInt8, _]) -> Int:
 
 
 def compare(a: Value, b: Value) raises -> Int:
-    if a.kind in [Kind.INT, Kind.REAL] and b.kind in [Kind.INT, Kind.REAL]:
+    if a.kind in [Kind.Int, Kind.Real] and b.kind in [Kind.Int, Kind.Real]:
         return _compare(a.as_real(), b.as_real())
     if a.kind != b.kind:
         raise Error(t"cannot order a {a.kind} against a {b.kind}")
     match a.kind:
-        case .BOOL:
+        case .Bool:
             return _compare(Int(a.as_bool()), Int(b.as_bool()))
-        case .STRING:
+        case .String:
             return _compare(a.text(), b.text())
-        case .BYTES:
+        case .Bytes:
             return _compare_bytes(a.data(), b.data())
-        case .LIST | .TUPLE:
+        case .List | .Tuple:
             for x, y in zip(a.items(), b.items()):
                 var c = compare(x, y)
                 if c != 0:

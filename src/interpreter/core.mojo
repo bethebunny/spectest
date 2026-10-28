@@ -90,13 +90,13 @@ def self_of(env: Env) raises -> Value:
 
 
 def want_bool(v: Value, what: String) raises -> Bool:
-    if v.kind != .BOOL:
+    if v.kind != .Bool:
         raise Error(t"{what} must be a bool, but it is {show(v)}")
     return v.as_bool()
 
 
 def is_sequence(v: Value) -> Bool:
-    return v.kind in [Kind.LIST, Kind.STRING, Kind.BYTES, Kind.ENUM]
+    return v.kind in [Kind.List, Kind.String, Kind.Bytes, Kind.Enum]
 
 
 def is_old_call(spec: Spec, e: Int) -> Bool:
@@ -171,7 +171,7 @@ def _value[
         case .INDEX:
             var v = value_of(spec, n.children[0], env, run, host)
             var i = value_of(spec, n.children[1], env, run, host)
-            if v.kind == .MAP:
+            if v.kind == .Map:
                 return map_lookup(v, i)
             if not is_sequence(v):
                 raise Error(t"cannot index {show(v)}")
@@ -185,7 +185,7 @@ def _value[
             return slice_value(v, lo, hi)
         case .TUPLE_INDEX:
             var v = value_of(spec, n.children[0], env, run, host)
-            if v.kind not in [Kind.TUPLE, Kind.LIST]:
+            if v.kind not in [Kind.Tuple, Kind.List]:
                 raise Error(t".{n.text} needs a tuple, but the value is {show(v)}")
             var index = Int(n.text)
             if not 0 <= index < v.count():
@@ -281,19 +281,19 @@ def _attr_value[
             return Value.float(f, top if r.name == "max" else top | f.sign_mask())
         case .OBSERVER:
             var obj = value_of(spec, n.children[0], env, run, host)
-            if obj.kind != .HANDLE:
+            if obj.kind != .Handle:
                 raise Error(t"observer {n.text} needs a handle, but got {show(obj)}")
             return host.observe(obj, r.owner, r.index, [])
         case .RECORD_FIELD:
             var record = value_of(spec, n.children[0], env, run, host)
-            if record.kind != .RECORD:
+            if record.kind != .Record:
                 raise Error(t".{n.text} needs a record, but got {show(record)}")
             if case .Some(field) = record.field(n.text):
                 return field.copy()
             raise Error(t"record {record.name()} has no field {n.text}")
         case .QERR_PART:
             var q = value_of(spec, n.children[0], env, run, host)
-            if q.kind != .QERR:
+            if q.kind != .Qerr:
                 raise Error(t".{n.text} needs a qerr, but got {show(q)}")
             return q.item(0 if n.text == "steps" else 1)
         case .SET_CTOR:
@@ -322,7 +322,7 @@ def _binary_value[
         return Value.bool(set_contains(spec, n.children[1], value_of(spec, n.children[0], env, run, host)))
     var a = value_of(spec, n.children[0], env, run, host)
     var b = value_of(spec, n.children[1], env, run, host)
-    var has_qerr = a.kind == .QERR or b.kind == .QERR
+    var has_qerr = a.kind == .Qerr or b.kind == .Qerr
     match op:
         case .EQ | .NE:
             var is_equal: Bool
@@ -339,7 +339,7 @@ def _binary_value[
             return Value.bool(contains(b, a))
         case .ADD:
             if has_qerr:
-                if a.kind == .QERR and b.kind == .QERR:
+                if a.kind == .Qerr and b.kind == .Qerr:
                     return qerr_add(a, b)
                 raise Error(t"+ adds two qerr values, not {show(a)} and {show(b)}")
             if case .Some(joined) = concat(a, b):
@@ -506,7 +506,7 @@ def _call_value[
             ref f = spec.fns[r.index]
             var args = coerced(spec, bind_args(spec, e, f.params, f.name, env, run, host), f.params, f.name)
             var out = host.call_fn(r.index, args)
-            if out.kind == .ERROR:
+            if out.kind == .Error:
                 raise run.skip(e, String(t"the call of {f.name} raised {out.error_text()}"))
             return fit(spec.types, out, spec.node_types[e])
         case .DEF:
@@ -524,7 +524,7 @@ def _call_value[
                 if spec.ast.nodes[callee].kind != .ATTR:
                     raise Error(t"observer call {r.name} has no handle")
                 obj = value_of(spec, spec.ast.child(callee, 0), env, run, host)
-            if obj.kind != .HANDLE:
+            if obj.kind != .Handle:
                 raise Error(t"observer {r.name} needs a handle, but got {show(obj)}")
             var what = String(t"{spec.models[r.owner].name}.{r.name}")
             var args = coerced(spec, bind_args(spec, e, observer.params, what, env, run, host), observer.params, what)

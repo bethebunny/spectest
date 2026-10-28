@@ -6,7 +6,7 @@ from prelude.util import fail, list_items
 
 
 def valid_utf8(b: Value) raises -> Value:
-    if b.kind != .BYTES:
+    if b.kind != .Bytes:
         raise fail("valid_utf8", t"expected bytes, got {b}")
     try:
         _ = StringSlice(from_utf8=Span(b.data()))
@@ -16,7 +16,7 @@ def valid_utf8(b: Value) raises -> Value:
 
 
 def codepoints(s: Value) raises -> Value:
-    if s.kind != .STRING:
+    if s.kind != .String:
         raise fail("codepoints", t"expected a string, got {s}")
     return Value.list([Value.int(Int(cp.to_u32())) for cp in s.text().codepoints()])
 
@@ -25,7 +25,7 @@ def from_codepoints(cps: Value) raises -> Value:
     """The string of Unicode scalar values (a surrogate or a value past 0x10FFFF is an error)."""
     var text = String()
     for item in list_items(cps, "from_codepoints"):
-        if item.kind != .INT:
+        if item.kind != .Int:
             raise fail("from_codepoints", t"expected an integer, got {item}")
         var small = item.small_int()
         if small is None:

@@ -38,14 +38,14 @@ def _inexact(what: String, v: Value, f: FloatFormat) -> Error:
 def _to_float(v: Value, f: FloatFormat, what: String) raises -> Value:
     var found: Optional[UInt64]
     match v.kind:
-        case .FLOAT:
+        case .Float:
             var source = v.float_format()
             if source == f:
                 return v.copy()
             if is_nan(source, v.float_bits()):
                 raise _inexact(what, v, f)
             found = converted(source, f, v.float_bits())
-        case .INT | .REAL:
+        case .Int | .Real:
             found = exactly(f, real_of(v))
         case _:
             raise Error(t"{what}: expected a number for {f}, got {show(v)}")
@@ -64,18 +64,18 @@ def coerce_arg(types: ty.Types, v: Value, t: Int, what: String) raises -> Value:
             return _to_int(types, t, v, what)
         case .FLOAT:
             return _to_float(v, format_by_id(UInt8(info.bits)), what)
-        case .LIST if v.kind == .LIST:
+        case .LIST if v.kind == .List:
             return Value.list([coerce_arg(types, item, info.args[0], what) for item in v.items()])
-        case .OPTION if v.kind == .OPTION and v.count() == 1:
+        case .OPTION if v.kind == .Option and v.count() == 1:
             return Value.some(coerce_arg(types, v.item(0), info.args[0], what))
-        case .TUPLE if v.kind == .TUPLE and v.count() == len(info.args):
+        case .TUPLE if v.kind == .Tuple and v.count() == len(info.args):
             return Value.tuple([coerce_arg(types, item, arg, what) for item, arg in zip(v.items(), info.args)])
-        case .MAP if v.kind == .MAP:
+        case .MAP if v.kind == .Map:
             return Value.map(
                 [coerce_arg(types, key, info.args[0], what) for key in v.keys()],
                 [coerce_arg(types, value, info.args[1], what) for value in v.values()],
             )
-        case .RECORD if v.kind == .RECORD:
+        case .RECORD if v.kind == .Record:
             var names: List[String] = []
             var values: List[Value] = []
             for name, value in v.pairs():
@@ -109,13 +109,13 @@ def fit(types: ty.Types, v: Value, t: Int) -> Value:
         return v.copy()
     ref info = types.info(t)
     match k:
-        case .LIST if v.kind == .LIST:
+        case .LIST if v.kind == .List:
             return Value.list([fit(types, item, info.args[0]) for item in v.items()])
-        case .OPTION if v.kind == .OPTION and v.count() == 1:
+        case .OPTION if v.kind == .Option and v.count() == 1:
             return Value.some(fit(types, v.item(0), info.args[0]))
-        case .TUPLE if v.kind == .TUPLE and v.count() == len(info.args):
+        case .TUPLE if v.kind == .Tuple and v.count() == len(info.args):
             return Value.tuple([fit(types, item, arg) for item, arg in zip(v.items(), info.args)])
-        case .MAP if v.kind == .MAP:
+        case .MAP if v.kind == .Map:
             try:
                 return Value.map(
                     [fit(types, key, info.args[0]) for key in v.keys()],
@@ -138,11 +138,11 @@ def bits_of_value(types: ty.Types, t: Int, v: Value) raises -> UInt64:
         case .BOOL:
             return UInt64(1) if v.as_bool() else UInt64(0)
         case .FLOAT:
-            if v.kind != .FLOAT:
+            if v.kind != .Float:
                 raise Error(t"expected a float, got {show(v)}")
             return v.float_bits()
         case .FIXED_INT:
-            if v.kind != .INT:
+            if v.kind != .Int:
                 raise Error(t"expected an integer, got {show(v)}")
             var n = v.as_bigint()
             if n.magnitude.bits() > 64:

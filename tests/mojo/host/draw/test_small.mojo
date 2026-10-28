@@ -40,14 +40,14 @@ struct Visit(Property):
 
 def key(v: Value) -> UInt64:
     """A number that identifies a small-domain value among those of its type."""
-    if v.kind == .FLOAT:
+    if v.kind == .Float:
         return v.float_bits()
-    if v.kind == .INT:
+    if v.kind == .Int:
         return UInt64(v.small_int().value() & 0xFFFF)
     var k = UInt64(0)
     for i in range(v.count()):
         var item = v.item(i)
-        k = k * 256 + (UInt64(1) if item.kind != .INT and item.as_bool() else key(item))
+        k = k * 256 + (UInt64(1) if item.kind != .Int and item.as_bool() else key(item))
     return k
 
 
@@ -149,7 +149,7 @@ def test_class_steering_is_even() raises:
     for _ in range(3000):
         src.reset_generate()
         var v = draw_in_classes(src, ctx, types, classes, t)
-        assert_true(v.kind == .FLOAT)
+        assert_true(v.kind == .Float)
         var b = v.float_bits()
         if is_nan(F64, b):
             nans += 1

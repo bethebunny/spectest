@@ -104,7 +104,7 @@ def judge[
     var run = Run()
     try:
         var v = value_of(spec, c.expr, env, run, host)
-        if v.kind != .BOOL:
+        if v.kind != .Bool:
             return Judgment(Verdict.ERROR, String(t"the clause must evaluate to a bool, but it is {show(v)}"), c.expr)
         return Judgment(Verdict.TRUE if v.as_bool() else Verdict.FALSE)
     except err:
@@ -203,7 +203,7 @@ def _class_holds[
         var params = List[Value](length=len(func.params), fill=Value.none())
         params[part.param] = value.copy()
         var held = evaluate(spec, expr, Env(params^), host)
-        if held.kind != .BOOL:
+        if held.kind != .Bool:
             raise Error(t"a predicate class must be a bool, but it is {show(held)}")
         return held.as_bool()
     # A class's set may name the classes before it.

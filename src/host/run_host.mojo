@@ -67,14 +67,14 @@ struct RunHost[D: Driver](Builder, EvalHost):
         return out
 
     def _reply(mut self, var reply: Value) -> Value:
-        if reply.kind == .ERROR and reply.name() == TIMEOUT:
+        if reply.kind == .Error and reply.name() == TIMEOUT:
             self.timed_out = True
         return reply^
 
     def begin_example(mut self, args: List[Value]):
         self.timed_out = False
         self.planned.clear()
-        self.known = [a.handle_id() for a in args if a.kind == .HANDLE]
+        self.known = [a.handle_id() for a in args if a.kind == .Handle]
 
     def bind_types(self, mut env: Env):
         for e in self.instantiation.items():
@@ -85,7 +85,7 @@ struct RunHost[D: Driver](Builder, EvalHost):
 
     def track(mut self, v: Value, *, deep: Bool = True):
         """Remembers the handles in `v`, or only `v` itself when not `deep`."""
-        if v.kind == .HANDLE:
+        if v.kind == .Handle:
             self.seen.append(v.handle_id())
         elif deep:
             for item in v.items():
@@ -123,9 +123,9 @@ struct RunHost[D: Driver](Builder, EvalHost):
     def build(mut self, model: Int, build: Int, args: List[Value]) raises -> Value:
         ref b = self.loaded[].spec.models[model].builds[build]
         var out = self._reply(self.client[].call(self.named_target(b.target), args))
-        if out.kind == .ERROR:
+        if out.kind == .Error:
             raise Error(t"building {b.target} raised {out.error_text()}")
-        if out.kind != .HANDLE:
+        if out.kind != .Handle:
             raise Error(t"building {b.target} returned {format_value(out)}, not an object")
         self.track(out, deep=False)
         return out^
@@ -142,13 +142,13 @@ struct RunHost[D: Driver](Builder, EvalHost):
             got = observe_with(spec, model, observer, obj, args, self)
         else:
             var reply = self._reply(self.client[].observe(obj, o.name, Optional(args.copy()) if o.params or args else None))
-            if reply.kind == .ERROR:
+            if reply.kind == .Error:
                 raise Error(t"observer {spec.models[model].name}.{o.name} raised {reply.error_text()}")
             try:
                 got = decode(reply, o.type, spec.types)
             except e:
                 raise Error(t"observer {spec.models[model].name}.{o.name}: {e}")
-        if got.kind == .HANDLE:
+        if got.kind == .Handle:
             self.seen.append(got.handle_id())
         return got^
 
@@ -162,7 +162,7 @@ struct RunHost[D: Driver](Builder, EvalHost):
         else:
             out = self._planned(`fn`, args)
             self.planned[key^] = out.copy()
-        if out.kind == .ERROR and out.name() == TIMEOUT:
+        if out.kind == .Error and out.name() == TIMEOUT:
             self.timed_out = True
             raise Error(t"planned call of {self.loaded[].spec.fns[`fn`].name} raised {TIMEOUT}: {out.text()}")
         return out^
@@ -189,7 +189,7 @@ struct RunHost[D: Driver](Builder, EvalHost):
             if j.is_error() or j.is_skip():
                 raise Error(t"{cl.id}: {j.describe(spec)}")
         var out = self.call(f, args)
-        if out.kind == .ERROR:
+        if out.kind == .Error:
             return out^
         try:
             var got = decode(out, result_type, spec.types)
@@ -206,7 +206,7 @@ struct RunHost[D: Driver](Builder, EvalHost):
             return known.copy()
         ref c = self.loaded[].spec.consts[`const`]
         var raw = self.client[].get(self.client[].resolve(c.name))
-        if raw.kind == .ERROR:
+        if raw.kind == .Error:
             raise Error(t"constant {c.name}: {raw.error_text()}")
         var got = decode(raw, c.type, self.loaded[].spec.types)
         self.constants[`const`] = got.copy()
@@ -214,20 +214,20 @@ struct RunHost[D: Driver](Builder, EvalHost):
         return got^
 
     def fresh(mut self, obj: Value) raises -> Bool:
-        return obj.kind == .HANDLE and obj.handle_id() not in self.known
+        return obj.kind == .Handle and obj.handle_id() not in self.known
 
     def same_object(mut self, a: Value, b: Value) raises -> Bool:
-        if a.kind == .HANDLE and b.kind == .HANDLE:
+        if a.kind == .Handle and b.kind == .Handle:
             return a.handle_id() == b.handle_id()
         return a == b
 
     def shares_memory(mut self, a: Value, b: Value) raises -> Bool:
-        if a.kind == .HANDLE and b.kind == .HANDLE:
+        if a.kind == .Handle and b.kind == .Handle:
             return a.handle_id() == b.handle_id()
         raise Error("shares_memory needs two objects")
 
     def call_extern(mut self, name: String, args: List[Value]) raises -> Value:
         var out = self._reply(self.client[].call(self.named_target(name), args))
-        if out.kind == .ERROR:
+        if out.kind == .Error:
             raise Error(t"{name} raised {out.error_text()}")
         return out^

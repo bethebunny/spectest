@@ -30,11 +30,11 @@ def show(v: Value) -> String:
 
 def kind_text(v: Value) -> String:
     match v.kind:
-        case .LIST | .TUPLE:
+        case .List | .Tuple:
             return String(t"a list of length {v.count()}")
-        case .STRING:
+        case .String:
             return String(t"a string of length {v.text().byte_length()}")
-        case .BYTES:
+        case .Bytes:
             return String(t"bytes of length {len(v.data())}")
         case _:
             return show(v)
@@ -44,15 +44,15 @@ def kind_text(v: Value) -> String:
 
 
 def is_number(v: Value) -> Bool:
-    return v.kind in [Kind.INT, Kind.REAL, Kind.FLOAT]
+    return v.kind in [Kind.Int, Kind.Real, Kind.Float]
 
 
 def real_of(v: Value) raises -> Real:
     """An INT, REAL or FLOAT as an extended real. Promoting a NaN is an error."""
     match v.kind:
-        case .INT | .REAL:
+        case .Int | .Real:
             return v.as_real()
-        case .FLOAT:
+        case .Float:
             var f = v.float_format()
             if is_nan(f, v.float_bits()):
                 raise Error("promoting a NaN to a real is an error")
@@ -63,19 +63,19 @@ def real_of(v: Value) raises -> Real:
 
 def promote(v: Value) raises -> Value:
     """A FLOAT as the REAL it denotes; INT and REAL unchanged."""
-    return real_value(real_of(v)) if v.kind == .FLOAT else v.copy()
+    return real_value(real_of(v)) if v.kind == .Float else v.copy()
 
 
 def to_real_kind(v: Value) -> Value:
     """An INT as the REAL of the same value; every other value unchanged."""
-    return Value.real(v.as_bigint(), BigInt(1)) if v.kind == .INT else v.copy()
+    return Value.real(v.as_bigint(), BigInt(1)) if v.kind == .Int else v.copy()
 
 
 def integer_of(v: Value) -> Optional[BigInt]:
     """An INT, or a REAL that is a whole number, as an integer."""
-    if v.kind == .INT:
+    if v.kind == .Int:
         return v.as_bigint()
-    if v.kind == .REAL and v.item(1).as_bigint() == 1:
+    if v.kind == .Real and v.item(1).as_bigint() == 1:
         return v.item(0).as_bigint()
     return None
 
@@ -89,7 +89,7 @@ def _integer(v: Value, what: String) raises -> BigInt:
 
 def _index(v: Value, what: String) raises -> Int:
     """An INT index, or -1 for one too large for an Int, which no sequence has."""
-    if v.kind != .INT:
+    if v.kind != .Int:
         raise Error(t"{what} must be an integer, but it is {show(v)}")
     return v.small_int().or_else(-1)
 
@@ -99,12 +99,12 @@ def _index(v: Value, what: String) raises -> Int:
 
 def negate(v: Value) raises -> Value:
     match v.kind:
-        case .FLOAT:
+        case .Float:
             var f = v.float_format()
             return Value.float(f, v.float_bits() ^ f.sign_mask())
-        case .INT:
+        case .Int:
             return Value.int(-v.as_bigint())
-        case .REAL:
+        case .Real:
             return real_value(-real_of(v))
         case _:
             raise Error(t"unary - needs a number, but the operand is {show(v)}")
@@ -168,7 +168,7 @@ def arith(op: Op, a: Value, b: Value) raises -> Value:
             return Value.int(_bitwise(x, y, op))
         case _:
             pass
-    if a.kind == .INT and b.kind == .INT:
+    if a.kind == .Int and b.kind == .Int:
         var x = a.as_bigint()
         var y = b.as_bigint()
         match op:
@@ -200,14 +200,14 @@ def arith(op: Op, a: Value, b: Value) raises -> Value:
 
 def is_stringish(v: Value) -> Bool:
     """A string, or a member of a literal union, which reads as one."""
-    return v.kind == .STRING or (v.kind == .ENUM and v.name() == "")
+    return v.kind == .String or (v.kind == .Enum and v.name() == "")
 
 
 def sequence_length(v: Value) -> Int:
     match v.kind:
-        case .STRING:
+        case .String:
             return v.text().count_codepoints()
-        case .BYTES:
+        case .Bytes:
             return len(v.data())
         case _:
             return v.count()
@@ -219,9 +219,9 @@ def index_value(v: Value, i: Value) raises -> Value:
     if not 0 <= k < sequence_length(v):
         raise Error(t"index {i.as_bigint()} is out of range for {kind_text(v)}")
     match v.kind:
-        case .BYTES:
+        case .Bytes:
             return Value.int(Int(v.data()[k]))
-        case .LIST | .TUPLE:
+        case .List | .Tuple:
             return v.item(k)
         case _:
             return Value.string(String(v.text()[codepoint=k]))
@@ -235,9 +235,9 @@ def slice_value(v: Value, a: Value, b: Value) raises -> Value:
             t"slice [{a.as_bigint()}:{b.as_bigint()}] is out of range for {kind_text(v)} (need 0 <= a <= b <= len)"
         )
     match v.kind:
-        case .BYTES:
+        case .Bytes:
             return Value.bytes(List(v.data()[lo:hi]))
-        case .LIST:
+        case .List:
             return Value.list([v.item(i) for i in range(lo, hi)])
         case _:
             return Value.string(String(v.text()[codepoint=lo:hi]))
@@ -245,11 +245,11 @@ def slice_value(v: Value, a: Value, b: Value) raises -> Value:
 
 def concat(a: Value, b: Value) -> Optional[Value]:
     """`a + b` on lists, strings and bytes; None for other operands."""
-    if a.kind == .LIST and b.kind == .LIST:
+    if a.kind == .List and b.kind == .List:
         return Value.list(a.items() + b.items())
     if is_stringish(a) and is_stringish(b):
         return Value.string(a.text() + b.text())
-    if a.kind == .BYTES and b.kind == .BYTES:
+    if a.kind == .Bytes and b.kind == .Bytes:
         return Value.bytes(a.data() + b.data().copy())
     return None
 
@@ -259,11 +259,11 @@ def elements(v: Value, what: String) raises -> List[Value]:
     if is_stringish(v):
         return [Value.string(String(cp)) for cp in v.text().codepoints()]
     match v.kind:
-        case .LIST | .TUPLE:
+        case .List | .Tuple:
             return v.items()
-        case .BYTES:
+        case .Bytes:
             return [Value.int(Int(b)) for b in v.data()]
-        case .MAP:
+        case .Map:
             return v.keys()
         case _:
             raise Error(t"{what} ranges over a list, string, bytes or map, but got {show(v)}")
@@ -274,9 +274,9 @@ def elements(v: Value, what: String) raises -> List[Value]:
 
 def _has_literal(v: Value) -> Bool:
     match v.kind:
-        case .ENUM:
+        case .Enum:
             return v.name() == ""
-        case .LIST | .TUPLE | .OPTION | .MAP:
+        case .List | .Tuple | .Option | .Map:
             return any([_has_literal(item) for item in v.items()])
         case _:
             return False
@@ -287,13 +287,13 @@ def norm(v: Value) raises -> Value:
     if not _has_literal(v):
         return v.copy()
     match v.kind:
-        case .ENUM:
+        case .Enum:
             return Value.string(v.text().copy())
-        case .LIST:
+        case .List:
             return Value.list([norm(item) for item in v.items()])
-        case .TUPLE:
+        case .Tuple:
             return Value.tuple([norm(item) for item in v.items()])
-        case .OPTION:
+        case .Option:
             return Value.some(norm(v.item(0)))
         case _:
             return Value.map([norm(key) for key in v.keys()], [norm(value) for value in v.values()])
@@ -318,16 +318,16 @@ def contains(container: Value, x: Value) raises -> Bool:
             raise Error(t"in on a string looks for a substring, not {show(x)}")
         return x.text() in container.text()
     match container.kind:
-        case .LIST | .TUPLE:
+        case .List | .Tuple:
             return _has_equal(container.items(), x)
-        case .MAP:
+        case .Map:
             return _has_equal(container.keys(), x)
-        case .BYTES:
-            if x.kind == .INT:
+        case .Bytes:
+            if x.kind == .Int:
                 if case .Some(byte) = x.small_int():
                     return 0 <= byte <= 255 and UInt8(byte) in container.data()
                 return False
-            if x.kind == .BYTES:
+            if x.kind == .Bytes:
                 return StringSlice(unsafe_from_utf8=Span(x.data())) in StringSlice(
                     unsafe_from_utf8=Span(container.data())
                 )
@@ -374,7 +374,7 @@ struct QerrParts(Movable):
 
 def qerr_parts(v: Value) raises -> QerrParts:
     """The steps and nans of a qerr; a number c reads as c + 0*nan."""
-    if v.kind == .QERR:
+    if v.kind == .Qerr:
         return QerrParts(Real(v.item(0).as_bigint()), v.item(1).as_bigint())
     if is_number(v):
         return QerrParts(real_of(v), BigInt(0))
@@ -414,9 +414,9 @@ def qerr_compare(op: Op, a: Value, b: Value) raises -> Bool:
 def term_of(v: Value) raises -> Value:
     """A sum or max term: a qerr or a number (a float promotes; NaN is an error)."""
     match v.kind:
-        case .QERR | .INT | .REAL:
+        case .Qerr | .Int | .Real:
             return v.copy()
-        case .FLOAT:
+        case .Float:
             return promote(v)
         case _:
             raise Error(t"a term must be a number or a qerr, but it is {show(v)}")
@@ -424,8 +424,8 @@ def term_of(v: Value) raises -> Value:
 
 def add_term(total: Value, v: Value) raises -> Value:
     var t = term_of(v)
-    if total.kind == .QERR or t.kind == .QERR:
-        if not (total.kind == .QERR and t.kind == .QERR):
+    if total.kind == .Qerr or t.kind == .Qerr:
+        if not (total.kind == .Qerr and t.kind == .Qerr):
             raise Error(t"cannot add {show(t)} to the qerr {show(total)}")
         return qerr_add(total, t)
     return arith(Op.ADD, total, t)
@@ -433,10 +433,10 @@ def add_term(total: Value, v: Value) raises -> Value:
 
 def larger(a: Value, b: Value) raises -> Value:
     """The larger term; of two qerrs, the larger steps and the larger nans."""
-    if a.kind == .QERR and b.kind == .QERR:
+    if a.kind == .Qerr and b.kind == .Qerr:
         var steps = max(a.item(0).as_bigint(), b.item(0).as_bigint())
         var nans = max(a.item(1).as_bigint(), b.item(1).as_bigint())
         return Value.qerr(steps^, nans^)
-    if a.kind == .QERR or b.kind == .QERR:
+    if a.kind == .Qerr or b.kind == .Qerr:
         raise Error(t"cannot compare {show(a)} with {show(b)}")
     return b.copy() if compare(a, b) < 0 else a.copy()

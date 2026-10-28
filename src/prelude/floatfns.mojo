@@ -66,7 +66,7 @@ def _ordinal(f: FloatFormat, bits: UInt64) -> Int:
 
 def _in_format(v: Value, f: FloatFormat) raises -> Value:
     var who = String("qe<", f, ">")
-    if v.kind == .FLOAT:
+    if v.kind == .Float:
         if v.float_format() != f:
             raise fail(who, t"compares {f} values, got a {v.float_format()}")
         return v.copy()
@@ -96,7 +96,7 @@ def qe(x: Value, y: Value, format: Optional[FloatFormat]) raises -> Value:
 
 
 def qerr_part(who: String, v: Value, index: Int) raises -> Value:
-    if v.kind != .QERR:
+    if v.kind != .Qerr:
         raise fail(who, t"expected a qerr, got {v}")
     return v.item(index)
 

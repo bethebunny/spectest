@@ -51,22 +51,22 @@ __enum Kind(Equatable, Hashable, ImplicitlyCopyable, Writable):
     """What a value is. `INVALID` is no value: it marks a slot, eg. an argument left to
     its default."""
 
-    case INVALID
-    case BOOL
-    case INT
-    case FLOAT
-    case STRING
-    case BYTES
-    case LIST
-    case TUPLE
-    case MAP
-    case OPTION
-    case RECORD
-    case ENUM
-    case HANDLE
-    case ERROR
-    case REAL
-    case QERR
+    case Invalid
+    case Bool
+    case Int
+    case Float
+    case String
+    case Bytes
+    case List
+    case Tuple
+    case Map
+    case Option
+    case Record
+    case Enum
+    case Handle
+    case Error
+    case Real
+    case Qerr
 
     def __eq__(self, other: Self) -> Bool:
         return self._get_enum_discriminant() == other._get_enum_discriminant()
@@ -84,7 +84,7 @@ __enum Kind(Equatable, Hashable, ImplicitlyCopyable, Writable):
 
     def holds_pairs(self) -> Bool:
         """MAP and RECORD items are key and value (or field name and value) pairs."""
-        return self in [Kind.MAP, Kind.RECORD]
+        return self in [Kind.Map, Kind.Record]
 
 
 @fieldwise_init
@@ -136,37 +136,37 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
 
     @staticmethod
     def bool(value: Bool) -> Self:
-        return Self(.BOOL, word=UInt64(value))
+        return Self(.Bool, word=UInt64(value))
 
     @staticmethod
     def int(value: Int) -> Self:
-        return Self(.INT, word=bitcast[DType.uint64](Int64(value)))
+        return Self(.Int, word=bitcast[DType.uint64](Int64(value)))
 
     @staticmethod
     def int(var value: BigInt) -> Self:
         if case .Some(small) = value.int64_or_none():
-            return Self(.INT, word=bitcast[DType.uint64](small))
-        return Self(.INT, big=value^)
+            return Self(.Int, word=bitcast[DType.uint64](small))
+        return Self(.Int, big=value^)
 
     @staticmethod
     def float(format: FloatFormat, bits: UInt64) -> Self:
-        return Self(.FLOAT, sub=format.id, word=bits)
+        return Self(.Float, sub=format.id, word=bits)
 
     @staticmethod
     def string(var text: String) -> Self:
-        return Self(.STRING, text=text^)
+        return Self(.String, text=text^)
 
     @staticmethod
     def bytes(var data: List[UInt8]) -> Self:
-        return Self(.BYTES, data=data^)
+        return Self(.Bytes, data=data^)
 
     @staticmethod
     def list(var items: List[Value]) -> Self:
-        return Self(.LIST, items=items^)
+        return Self(.List, items=items^)
 
     @staticmethod
     def tuple(var items: List[Value]) -> Self:
-        return Self(.TUPLE, items=items^)
+        return Self(.Tuple, items=items^)
 
     @staticmethod
     def map(var keys: List[Value], var values: List[Value]) raises -> Self:
@@ -178,15 +178,15 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
             if key in keys[:i]:
                 raise Error("map: duplicate key")
             items += [key.copy(), value.copy()]
-        return Self(.MAP, items=items^)
+        return Self(.Map, items=items^)
 
     @staticmethod
     def none() -> Self:
-        return Self(.OPTION)
+        return Self(.Option)
 
     @staticmethod
     def some(var value: Value) -> Self:
-        return Self(.OPTION, items=[value^])
+        return Self(.Option, items=[value^])
 
     @staticmethod
     def record(
@@ -197,32 +197,32 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
         var items: List[Value] = []
         for field, value in zip(fields, values):
             items += [Value.string(field), value.copy()]
-        return Self(.RECORD, name=type_name^, items=items^)
+        return Self(.Record, name=type_name^, items=items^)
 
     @staticmethod
     def enum(var type_name: String, var member: String) -> Self:
-        return Self(.ENUM, name=type_name^, text=member^)
+        return Self(.Enum, name=type_name^, text=member^)
 
     @staticmethod
     def handle(id: UInt64, var class_name: String) -> Self:
-        return Self(.HANDLE, name=class_name^, word=id)
+        return Self(.Handle, name=class_name^, word=id)
 
     @staticmethod
     def error(
         var class_name: String, bases: List[String], var message: String
     ) -> Self:
         var items = [Value.string(base) for base in bases]
-        return Self(.ERROR, name=class_name^, text=message^, items=items^)
+        return Self(.Error, name=class_name^, text=message^, items=items^)
 
     @staticmethod
     def real(var numerator: BigInt, var denominator: BigInt) -> Self:
         """The caller keeps the form canonical: lowest terms, positive denominator,
         or a denominator of 0 with a numerator of 1 or -1 for the infinities."""
-        return Self(.REAL, items=[Value.int(numerator^), Value.int(denominator^)])
+        return Self(.Real, items=[Value.int(numerator^), Value.int(denominator^)])
 
     @staticmethod
     def qerr(var steps: BigInt, var nans: BigInt) -> Self:
-        return Self(.QERR, items=[Value.int(steps^), Value.int(nans^)])
+        return Self(.Qerr, items=[Value.int(steps^), Value.int(nans^)])
 
     # Accessors. Each one expects the kinds it names.
 
@@ -243,7 +243,7 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
 
     def as_real(self) -> Real:
         """INT or REAL: the value as a `Real`."""
-        if self.kind == .INT:
+        if self.kind == .Int:
             return Real(self.as_bigint())
         return Real(
             lowest_numerator=self.item(0).as_bigint(),
@@ -365,23 +365,23 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
         """A debugging form, `kind(...)`. Reports use `value.text.format_value`."""
         writer.write(self.kind, "(")
         match self.kind:
-            case .BOOL:
+            case .Bool:
                 writer.write("true" if self.as_bool() else "false")
-            case .INT:
+            case .Int:
                 writer.write(self.as_bigint())
-            case .FLOAT:
+            case .Float:
                 writer.write(self.sub, ", ", hex(self.word))
-            case .HANDLE:
+            case .Handle:
                 writer.write(self.word)
             case _:
                 pass
         if self.heap is not None:
             ref p = self.heap.value()[]
-            if self.kind in [Kind.STRING, Kind.ENUM, Kind.ERROR]:
+            if self.kind in [Kind.String, Kind.Enum, Kind.Error]:
                 writer.write(repr(p.text))
             if p.name:
                 writer.write(" name=", repr(p.name))
-            if self.kind == .BYTES:
+            if self.kind == .Bytes:
                 writer.write(len(p.data), " bytes")
             for i, item in enumerate(p.items):
                 writer.write(", " if i else "", item[])

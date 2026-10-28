@@ -112,7 +112,7 @@ def _set_members(
 
 def _rank_less(a: Value, b: Value) raises -> Bool:
     """Is term `a` smaller than term `b`? A qerr ranks by its NaN part, then its steps."""
-    if a.kind == .QERR and b.kind == .QERR:
+    if a.kind == .Qerr and b.kind == .Qerr:
         var na = a.item(1).as_bigint()
         var nb = b.item(1).as_bigint()
         if na != nb:
@@ -122,7 +122,7 @@ def _rank_less(a: Value, b: Value) raises -> Bool:
 
 
 def _is_zero(t: Value) raises -> Bool:
-    if t.kind == .QERR:
+    if t.kind == .Qerr:
         return t.item(0).as_bigint().is_zero() and t.item(1).as_bigint().is_zero()
     return compare_values(t, Value.int(0)) == 0
 
@@ -184,7 +184,7 @@ def _judge(
             raise Error(located(spec, failure.node, failure.message))
         evaluated += 1
         if kind == .ALL:
-            if term.kind != .BOOL:
+            if term.kind != .Bool:
                 raise Error(located(spec, body, String(t"the body of all(...) must be a bool, not {show(term)}")))
             if not term.as_bool():
                 failures += 1
@@ -192,7 +192,7 @@ def _judge(
                     worst.append((member.copy(), Value.bool(False)))
             continue
         var t = term_of(term)
-        if t.kind != .QERR and compare_values(t, Value.int(0)) < 0:
+        if t.kind != .Qerr and compare_values(t, Value.int(0)) < 0:
             var message = String(
                 "the term ", show(t), " for ", comp.text, " = ", show(member),
                 " is negative: the terms of an aggregate ", kind, "(...) are non-negative",
@@ -221,12 +221,12 @@ def _judge(
             raise Error(located(spec, shape.top, "max(...) over a set with no members has no value"))
         var value = sum.copy() if kind == .SUM else largest.copy().or_else(Value.none())
         summary.bound = format_value(bound)
-        if value.kind == .BOOL or no_max:
+        if value.kind == .Bool or no_max:
             holds = True
             summary.value = "none"
         else:
             summary.value = format_value(value)
-            if value.kind == .QERR or bound.kind == .QERR:
+            if value.kind == .Qerr or bound.kind == .Qerr:
                 holds = qerr_compare(shape.op, value, bound)
             else:
                 var c = compare_values(value, bound)

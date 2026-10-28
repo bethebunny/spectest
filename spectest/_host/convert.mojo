@@ -184,40 +184,40 @@ def _value_of(obj: PyObjectPtr, wire: Wire) raises -> Value:
 def _object_of(value: Value, wire: Wire) raises -> Owned:
     ref classes = wire.classes
     match value.kind:
-        case .BOOL:
+        case .Bool:
             return Owned(checked(PyBool_FromLong(value.as_bool())))
-        case .INT:
+        case .Int:
             if case .Some(small) = value.small_int():
                 return new_int(small)
             var digits = value.as_bigint().hex()
             return Owned(checked(PyLong_FromString(digits.as_c_string_span(), 16)))
-        case .FLOAT:
+        case .Float:
             var format = value.float_format().name()
             return call(classes.float, [new_string(format), new_u64(value.float_bits())])
-        case .STRING:
+        case .String:
             return new_string(value.text())
-        case .BYTES:
+        case .Bytes:
             return Owned(checked(PyBytes_FromStringAndSize(value.data())))
-        case .LIST:
+        case .List:
             return new_list([_object_of(item, wire) for item in value.items()])
-        case .TUPLE:
+        case .Tuple:
             return _tuple_of_items(value, wire)
-        case .OPTION:
+        case .Option:
             return Owned(Py_NewRef(wire.none)) if value.count() == 0 else _object_of(value.item(0), wire)
-        case .MAP:
+        case .Map:
             return call(classes.map, [_tuple_of_pairs(value, wire)])
-        case .RECORD:
+        case .Record:
             return call(classes.record, [new_string(value.name()), _tuple_of_pairs(value, wire)])
-        case .ENUM:
+        case .Enum:
             return call(classes.enum, [new_string(value.name()), new_string(value.text())])
-        case .HANDLE:
+        case .Handle:
             return call(classes.handle, [new_u64(value.handle_id()), new_string(value.name())])
-        case .ERROR:
+        case .Error:
             return call(
                 classes.error,
                 [new_string(value.name()), _tuple_of_items(value, wire), new_string(value.text())],
             )
-        case .INVALID | .REAL | .QERR:
+        case .Invalid | .Real | .Qerr:
             raise Error(t"TypeError: a {value.kind} value has no wire form")
 
 

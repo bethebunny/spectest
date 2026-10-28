@@ -92,40 +92,40 @@ def _format_qerr(value: Value) -> String:
 
 def format_value(value: Value) raises -> String:
     match value.kind:
-        case .BOOL:
+        case .Bool:
             return "true" if value.as_bool() else "false"
-        case .INT:
+        case .Int:
             return String(value.as_bigint())
-        case .FLOAT:
+        case .Float:
             return float_text(value.float_format_id(), value.float_bits())
-        case .STRING:
+        case .String:
             return _quote(value.text())
-        case .BYTES:
+        case .Bytes:
             return _quote_bytes(value.data())
-        case .LIST:
+        case .List:
             return String("[", ", ".join([format_value(item) for item in value.items()]), "]")
-        case .TUPLE:
+        case .Tuple:
             var items = ", ".join([format_value(item) for item in value.items()])
             return String("(", items, "," if value.count() == 1 else "", ")")
-        case .MAP:
+        case .Map:
             var pairs = [String(format_value(k), ": ", format_value(v)) for k, v in value.pairs()]
             return String("{", ", ".join(pairs), "}")
-        case .OPTION:
+        case .Option:
             return String("some(", format_value(value.item(0)), ")") if value.count() > 0 else "none"
-        case .RECORD:
+        case .Record:
             if value.count() == 0:
                 return String(value.name(), " {}")
             var fields = [String(k.text(), ": ", format_value(v)) for k, v in value.pairs()]
             return String(value.name(), " { ", ", ".join(fields), " }")
-        case .ENUM:
+        case .Enum:
             return value.text().copy()
-        case .HANDLE:
+        case .Handle:
             return String("<", value.name(), " #", value.handle_id(), ">")
-        case .ERROR:
+        case .Error:
             return value.error_text()
-        case .REAL:
+        case .Real:
             return _format_real(value)
-        case .QERR:
+        case .Qerr:
             return _format_qerr(value)
-        case .INVALID:
+        case .Invalid:
             raise Error("cannot format an invalid value")

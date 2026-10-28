@@ -15,16 +15,16 @@ from value.value import Kind, Value
 
 
 def _check_canonical(value: Value) raises:
-    if value.kind in [Kind.FLOAT, Kind.HANDLE, Kind.ERROR]:
+    if value.kind in [Kind.Float, Kind.Handle, Kind.Error]:
         raise Error(t"a {value.kind} has no canonical equality")
-    if value.kind in [Kind.LIST, Kind.TUPLE, Kind.MAP, Kind.OPTION, Kind.RECORD]:
+    if value.kind in [Kind.List, Kind.Tuple, Kind.Map, Kind.Option, Kind.Record]:
         for item in value.items():
             _check_canonical(item)
 
 
 def _eq(a: Value, b: Value, *, canonical: Bool) -> Bool:
     if a.kind != b.kind:
-        var numbers = a.kind in [Kind.INT, Kind.REAL] and b.kind in [Kind.INT, Kind.REAL]
+        var numbers = a.kind in [Kind.Int, Kind.Real] and b.kind in [Kind.Int, Kind.Real]
         return canonical and numbers and a.as_real() == b.as_real()
     if not a.has_equal_parts(b):
         return False

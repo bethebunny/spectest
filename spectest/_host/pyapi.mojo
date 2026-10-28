@@ -40,7 +40,7 @@ def _text(o: PyObjectPtr, what: String) raises -> String:
 
 def _int(o: PyObjectPtr, what: String) raises -> Int:
     var v = from_python(o)
-    if v.kind != .INT or v.small_int() is None:
+    if v.kind != .Int or v.small_int() is None:
         raise Error(t"TypeError: {what} must be an int")
     return v.small_int().value()
 
@@ -111,7 +111,7 @@ def result_to_python(v: Value) raises -> PyObjectPtr:
     """A result `Value` tree as Python: MAP with string keys as dict, LIST as list,
     an empty OPTION as None, an f64 FLOAT as float; scalars as themselves."""
     match v.kind:
-        case .MAP:
+        case .Map:
             var d = checked(PyDict_New())
             for key, value in v.pairs():
                 var item: PyObjectPtr
@@ -126,7 +126,7 @@ def result_to_python(v: Value) raises -> PyObjectPtr:
                     Py_DecRef(d)
                     raise python_error()
             return d
-        case .LIST:
+        case .List:
             var out = checked(PyList_New(v.count()))
             for i, value in enumerate(v.items()):
                 var item: PyObjectPtr
@@ -137,7 +137,7 @@ def result_to_python(v: Value) raises -> PyObjectPtr:
                     raise e^
                 _ = PyList_SetItem(out, i, item)
             return out
-        case .FLOAT:
+        case .Float:
             return checked(PyFloat_FromDouble(bitcast[DType.float64](v.float_bits())))
         case _:
             return to_python(v)

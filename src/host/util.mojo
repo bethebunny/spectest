@@ -64,17 +64,17 @@ def handles_of(types: ty.Types, v: Value, t: Int, model: String) -> List[Value]:
     # TODO: each guarded case returns, since a guarded case on an __enum that runs off
     # its end goes on matching the cases after it (Mojo 1.2).
     match info.kind, v.kind:
-        case .MODEL, .HANDLE if info.name == model:
+        case .MODEL, .Handle if info.name == model:
             out.append(v.copy())
             return out^
-        case (.LIST, .LIST) | (.OPTION, .OPTION):
+        case (.LIST, .List) | (.OPTION, .Option):
             for item in v.items():
                 out += handles_of(types, item, info.args[0], model)
-        case .TUPLE, .TUPLE if v.count() == len(info.args):
+        case .TUPLE, .Tuple if v.count() == len(info.args):
             for i, arg in enumerate(info.args):
                 out += handles_of(types, v.item(i), arg, model)
             return out^
-        case .MAP, .MAP:
+        case .MAP, .Map:
             for key, value in v.pairs():
                 out += handles_of(types, key, info.args[0], model)
                 out += handles_of(types, value, info.args[1], model)

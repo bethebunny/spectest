@@ -27,7 +27,7 @@ def fits_float(x: Value, f: FloatFormat) raises -> Value:
 
 
 def le_uint(b: Value) raises -> Value:
-    if b.kind != .BYTES:
+    if b.kind != .Bytes:
         raise fail("le_uint", t"expected bytes, got {b}")
     return Value.int(BigInt(negative=False, magnitude=magnitude_of_fields(b.data(), width=8)))
 

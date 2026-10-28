@@ -231,7 +231,7 @@ struct Call(Movable):
     """A note per raise that was due when the call returned."""
 
     def __init__(out self, var reply: Value, var conditions: List[Judgment]):
-        self.raised = reply.kind == .ERROR
+        self.raised = reply.kind == .Error
         self.reply = reply^
         self.mapped = ""
         self.result = Value.none()
@@ -506,7 +506,7 @@ struct Prop[D: Driver](Movable, Property):
         """A value for a counterexample: a handle by its observed fields."""
         try:
             ref spec = self.loaded[].spec
-            if v.kind == .HANDLE and spec.types.kind(t) == .MODEL:
+            if v.kind == .Handle and spec.types.kind(t) == .MODEL:
                 if case .Some(m) = spec.model_named(spec.types.info(t).name):
                     var fields: List[String] = []
                     for o in self._fields(m):
@@ -525,7 +525,7 @@ struct Prop[D: Driver](Movable, Property):
         """The observed fields of a handle, to tell whether a call changed it."""
         ref spec = self.loaded[].spec
         var items: List[Value] = []
-        if v.kind == .HANDLE:
+        if v.kind == .Handle:
             if case .Some(m) = spec.model_named(spec.types.info(t).name):
                 for o in self._fields(m):
                     items.append(self.host.observe(v, m, o, []))
@@ -608,7 +608,7 @@ struct Prop[D: Driver](Movable, Property):
         for c in self.plan.conditions:
             conditions.append(judge(spec, c, env, self.host))
         var reply = self.host.call(self.f, args)
-        if reply.kind == .ERROR and reply.name() == TIMEOUT:
+        if reply.kind == .Error and reply.name() == TIMEOUT:
             return self._inconclusive_all(counting, args)
         var call = Call(reply^, conditions^)
         self.last = Reply(call.reply.copy(), None)
@@ -656,7 +656,7 @@ struct Prop[D: Driver](Movable, Property):
         var frame = Frame()
         for i in self.plan.checked:
             var digest = Value.none()
-            if i < len(args) and args[i].kind == .HANDLE:
+            if i < len(args) and args[i].kind == .Handle:
                 try:
                     digest = self.digest(args[i], self.param_types[i])
                 except e:
@@ -670,7 +670,7 @@ struct Prop[D: Driver](Movable, Property):
         var own = "self" in self.plan.modified
         for k in range(len(self.live)):
             var handle = self.live[k].handle.copy()
-            if own and args and args[0].kind == .HANDLE and handle.handle_id() == args[0].handle_id():
+            if own and args and args[0].kind == .Handle and handle.handle_id() == args[0].handle_id():
                 continue
             frame.live.append(k)
             var digest = Value.none()
@@ -691,7 +691,7 @@ struct Prop[D: Driver](Movable, Property):
             return out^
         ref func = self.loaded[].spec.fns[self.f]
         for i, before in zip(self.plan.checked, frame.params):
-            if i >= len(args) or args[i].kind != .HANDLE:
+            if i >= len(args) or args[i].kind != .Handle:
                 continue
             try:
                 if self.digest(args[i], self.param_types[i]) != before:
@@ -897,7 +897,7 @@ struct Prop[D: Driver](Movable, Property):
         var afters = String()
         if not call.raised:
             for p in range(len(func.params)):
-                if func.params[p].name in self.plan.modified and args[p].kind == .HANDLE:
+                if func.params[p].name in self.plan.modified and args[p].kind == .Handle:
                     afters += String("\n", func.params[p].name, " after = ", self.show(args[p], self.param_types[p]))
         if afters:
             if spec.types.kind(self.result_type) == .UNIT:
@@ -1032,7 +1032,7 @@ def _declaration(spec: Spec, decl: String) raises -> Int:
 def _given(example: Value, name: String) -> Optional[Value]:
     """The value an example map gives the parameter `name`."""
     for key, value in example.pairs():
-        if key.kind == .STRING and key.text() == name:
+        if key.kind == .String and key.text() == name:
             return value.copy()
     return None
 
@@ -1041,7 +1041,7 @@ def _example_args(prop: Prop[_], example: Value) raises -> List[Value]:
     """The inputs of an explicit example, read against the parameter types."""
     ref spec = prop.loaded[].spec
     ref func = spec.fns[prop.f]
-    if example.kind != .MAP:
+    if example.kind != .Map:
         raise Error("an example is a map from parameter name to value")
     var args: List[Value] = []
     var used = 0

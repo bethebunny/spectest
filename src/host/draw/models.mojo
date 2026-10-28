@@ -23,20 +23,20 @@ comptime PARAM_SPAN = 1001
 
 def default_marker() -> Value:
     """Stands in `draw_args`' result for a parameter left to its default."""
-    return Value(.INVALID, word=1)
+    return Value(.Invalid, word=1)
 
 
 def not_drawn_marker() -> Value:
     """Stands in `draw_args`' result for a receiver, which the caller supplies."""
-    return Value(.INVALID, word=0)
+    return Value(.Invalid, word=0)
 
 
 def is_default(v: Value) -> Bool:
-    return v.kind == .INVALID and v.word == 1
+    return v.kind == .Invalid and v.word == 1
 
 
 def is_not_drawn(v: Value) -> Bool:
-    return v.kind == .INVALID and v.word == 0
+    return v.kind == .Invalid and v.word == 0
 
 
 def _model_args(mut spec: Spec, model: Int, t: Int, targs: List[Int]) -> Int:

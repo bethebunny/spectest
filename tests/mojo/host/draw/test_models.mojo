@@ -88,7 +88,7 @@ def test_both_builds_are_used() raises:
     for _ in range(200):
         src.reset_generate()
         var v = draw_model(src, spec, 0, rec, sizes)
-        assert_true(v.kind == .HANDLE)
+        assert_true(v.kind == .Handle)
     var first = 0
     var second = 0
     for i in range(len(rec.builds)):
@@ -97,14 +97,14 @@ def test_both_builds_are_used() raises:
         if rec.builds[i] == 0:
             first += 1
             assert_equal(len(rec.args[i]), 2)
-            assert_true(rec.args[i][0].kind == .INT)
-            assert_true(rec.args[i][1].kind == .STRING)
+            assert_true(rec.args[i][0].kind == .Int)
+            assert_true(rec.args[i][1].kind == .String)
         else:
             second += 1
             assert_equal(len(rec.args[i]), 2)
-            assert_true(rec.args[i][0].kind == .LIST)
+            assert_true(rec.args[i][0].kind == .List)
             # The model-typed argument is the handle the builder returned for the box.
-            assert_true(rec.args[i][1].kind == .HANDLE)
+            assert_true(rec.args[i][1].kind == .Handle)
     assert_equal(first + second, 200)
     assert_true(first > 60 and second > 60)
     # Each from_rows call was preceded by a Box build.
@@ -175,12 +175,12 @@ def test_draw_args() raises:
         var args = draw_args(src, spec, 0, sizes, rec)
         assert_equal(len(args), 4)
         assert_true(is_not_drawn(args[0]))
-        assert_true(args[1].kind == .INT)
+        assert_true(args[1].kind == .Int)
         if is_default(args[2]):
             defaults += 1
         else:
-            assert_true(args[2].kind == .STRING)
-        assert_true(args[3].kind == .HANDLE)
+            assert_true(args[2].kind == .String)
+        assert_true(args[3].kind == .Handle)
         var param_spans = 0
         for s in src.rec.spans:
             if s.label == PARAM_SPAN:

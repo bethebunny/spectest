@@ -356,7 +356,7 @@ struct Machine[D: Driver](Property):
             return stop
         var reply = self.props[c].last.value().copy()
         var name = String()
-        if c < self.constructors and reply.result is not None and reply.result.value().kind == .HANDLE:
+        if c < self.constructors and reply.result is not None and reply.result.value().kind == .Handle:
             name = String(self.prefix, len(live) + 1)
         if want_log:
             self.log.append(self._call_text(step, receiver, name))
@@ -386,7 +386,7 @@ struct Machine[D: Driver](Property):
         var reply = self.props[step.callable].last.value().copy()
         if is_ctor and name:
             return String(name, " = ", call)
-        if reply.value.kind == .ERROR:
+        if reply.value.kind == .Error:
             return String(call, " raised ", reply.value.error_text())
         ref prop = self.props[step.callable]
         if not is_ctor and reply.result is not None and self.loaded[].spec.types.kind(prop.result_type) != .UNIT:
@@ -524,7 +524,7 @@ struct Machine[D: Driver](Property):
                 continue
             var dependents = [other.sid for other in program if other.target == step.sid]
             for j in range(len(step.args)):
-                var small = step.args[j].small_int() if step.args[j].kind == .INT else None
+                var small = step.args[j].small_int() if step.args[j].kind == .Int else None
                 if small is None or small.value() == 0:
                     continue
                 var v = small.value()

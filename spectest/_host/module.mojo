@@ -144,7 +144,7 @@ def _one_argument[
 
 def _values(list: PyObjectPtr) raises -> List[Value]:
     var value = from_python(list)
-    if value.kind != .LIST:
+    if value.kind != .List:
         raise Error("TypeError: args must be a list of wire objects")
     return value.items()
 

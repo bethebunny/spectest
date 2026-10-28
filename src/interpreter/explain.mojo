@@ -39,7 +39,7 @@ struct Outcome(Copyable):
         return self.is_any_bool() and self.value.as_bool() == want
 
     def is_any_bool(self) -> Bool:
-        return self.ok and self.value.kind == .BOOL
+        return self.ok and self.value.kind == .Bool
 
     def text(self) -> String:
         return show(self.value) if self.ok else self.note.copy()
