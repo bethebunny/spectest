@@ -64,7 +64,7 @@ def test_f16_matches_brute_force() raises:
                 if j < n and v >= floats[j]:
                     continue
                 want.append(UInt64(b))
-            assert_true(c.equal(s, c.exactly(want^, 16)))
+            assert_true(c.equal(s, c.exactly(want, 16)))
             checked += 1
     assert_equal(checked, (n + 1) * (n + 1))
 

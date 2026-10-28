@@ -27,8 +27,8 @@ from eval.numbers import (
 )
 from eval.text import located, source_text
 from mcheck.rand import Rng
-from partitions.compile import compile_set_aliased
-from sets import BitSet, SetContext
+from partitions.compile import compiled_set
+from sets import SetContext
 from syntax import ast
 from wire.format import format_value
 from wire.value import Value
@@ -69,10 +69,7 @@ def _members(
 ) raises -> List[Value]:
     """The members of a partition set: all of them when there are at most `limit`,
     else a seeded sample."""
-    var elem = spec.types.info(spec.node_types[iterable]).args[0]
-    var s = compile_set_aliased(
-        ctx, spec.ast, spec.types, elem, iterable, Dict[String, BitSet](), spec.aliases
-    )
+    var elem, s = compiled_set(ctx, spec, iterable)
     var count = ctx.count(s)
     if count <= UInt128(limit):
         total_out = Int(count)

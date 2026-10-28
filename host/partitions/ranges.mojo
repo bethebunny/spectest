@@ -34,37 +34,30 @@ def float_range(
     """The non-NaN values v with lo <= v < hi by numeric value, so both zeros count as 0.
     An absent bound leaves that end open, including its infinity."""
     var top = format.exponent_mask() + 1
-    var pos_lo = UInt64(0)
-    var pos_hi = top
-    var neg_lo = UInt64(0)
-    var neg_hi = top
+    var positive_lo = UInt64(0)
+    var positive_hi = top
+    var negative_lo = UInt64(0)
+    var negative_hi = top
     try:
-        if lo is not None:
-            var bound = lo.value().copy()
-            if bound > Real():
-                pos_lo = _at_least(format, bound)
-            neg_hi = _above(format, -bound) if bound <= Real() else 0
-        if hi is not None:
-            var bound = hi.value().copy()
-            pos_hi = _at_least(format, bound) if bound > Real() else 0
-            if bound <= Real():
-                neg_lo = _above(format, -bound)
+        if case .Some(bound) = lo:
+            if bound.sign() > 0:
+                positive_lo = _at_least(format, bound)
+            negative_hi = _above(format, -bound) if bound.sign() <= 0 else 0
+        if case .Some(bound) = hi:
+            positive_hi = _at_least(format, bound) if bound.sign() > 0 else 0
+            if bound.sign() <= 0:
+                negative_lo = _above(format, -bound)
     except:
         abort("float_range: a bound is not a finite real")
     var sign = format.sign_mask()
-    var positive = ctx.interval(pos_lo, pos_hi, format.width())
-    var negative = ctx.interval(sign + neg_lo, sign + neg_hi, format.width())
+    var positive = ctx.interval(positive_lo, positive_hi, format.width())
+    var negative = ctx.interval(sign + negative_lo, sign + negative_hi, format.width())
     return ctx.union(positive, negative)
 
 
-def float_equal(mut ctx: SetContext, format: FloatFormat, c: Real) -> BitSet:
+def float_equal(mut ctx: SetContext, format: FloatFormat, c: Real) raises -> BitSet:
     """The values numerically equal to c: both zeros for 0."""
     if c.is_zero():
-        try:
-            return ctx.float_named(format, "zero")
-        except:
-            abort("float_equal: no zero set")
+        return ctx.float_named(format, "zero")
     var bits = exactly(format, c)
-    if bits is None:
-        return ctx.empty(format.width())
-    return ctx.exactly([bits.value()], format.width())
+    return ctx.empty(format.width()) if bits is None else ctx.exactly([bits.value()], format.width())

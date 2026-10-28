@@ -1,16 +1,13 @@
 """Partitions of a checked spec compiled to sets, with the checks that their classes are
 disjoint and cover the values `requires` admits."""
 
-from std.collections import Dict
+from std.bit import count_trailing_zeros, pop_count
+from std.collections import Set
 from std.math import log2
 
-import check.types as ty
-import syntax.ast as sx
-from check.spec import Partition, Spec
+from check.spec import Spec
 from numeric.digits import hex_digits
 from numeric.fixed import low_mask, signed_of
-from numeric.floats import is_nan
-from numeric.formats import format_by_id
 from numeric.text import float_text
 from sets import BitSet, SetContext
 from syntax.ast import Ast, Diagnostic
@@ -19,75 +16,65 @@ from .compile import Elem, SetCompiler, alias_elems, elem_of
 from .requires import admitted
 
 
-struct PartitionSets(Movable):
+@fieldwise_init
+struct ClassSets(Copyable):
+    """The sets of one partition's classes. A partition over a parameter that isn't
+    fixed-width has predicates for classes, and empty sets."""
+
+    var sets: List[BitSet]
+    var predicates: Bool
+
+
+struct PartitionSets(Defaultable, Movable):
     """The compiled classes of every partition, and the warnings found on the way."""
 
-    var starts: List[List[Int]]
-    """Per function, per partition: index of its first class in `sets`."""
-    var counts: List[List[Int]]
-    var sets: List[BitSet]
-    var predicates: List[Bool]
+    var partitions: List[List[ClassSets]]
+    """Per function, per partition."""
     var warnings: List[Diagnostic]
 
-    def __init__(out self):
-        self.starts = List[List[Int]]()
-        self.counts = List[List[Int]]()
-        self.sets = List[BitSet]()
-        self.predicates = List[Bool]()
-        self.warnings = List[Diagnostic]()
-
     def class_count(self, f: Int, p: Int) -> Int:
-        return self.counts[f][p]
+        return len(self.partitions[f][p].sets)
 
     def set_of(self, f: Int, p: Int, k: Int) -> BitSet:
         """The set of class `k` of partition `p` of function `f` (empty for a predicate)."""
-        return self.sets[self.starts[f][p] + k]
+        return self.partitions[f][p].sets[k]
 
     def is_predicate(self, f: Int, p: Int, k: Int) -> Bool:
         """Whether the class is on a parameter that isn't fixed-width."""
-        return self.predicates[self.starts[f][p] + k]
+        return self.partitions[f][p].predicates
 
 
-def _count_text(small: UInt128) -> String:
-    var noun = " value" if small == 1 else " values"
-    if small < UInt128(1 << 20):
-        var digits = String(Int(small))
-        var out = String()
-        var len = digits.byte_length()
-        for i in range(len):
-            if i > 0 and (len - i) % 3 == 0:
-                out += ","
-            out += digits[byte=i : i + 1]
-        return out + noun
-    if small & (small - 1) == 0:
-        var k = 0
-        while (small >> UInt128(k)) > 1:
-            k += 1
-        return String("2^", k, noun)
-    var tenths = Int(log2(Float64(small)) * 10.0 + 0.5)
+def _count_text(n: UInt128) -> String:
+    var noun = " value" if n == 1 else " values"
+    if n < UInt128(1 << 20):
+        var digits = String(n)
+        var head = (digits.byte_length() - 1) % 3 + 1  # the digits before the first comma
+        var groups: List[String] = [String(digits[byte=0:head])]
+        groups += [String(digits[byte=i : i + 3]) for i in range(head, digits.byte_length(), 3)]
+        return String(",".join(groups), noun)
+    if pop_count(n) == 1:
+        return String("2^", Int(count_trailing_zeros(n)), noun)
+    var tenths = Int(log2(Float64(n)) * 10.0 + 0.5)
     return String("about 2^", tenths // 10, ".", tenths % 10, noun)
 
 
 def value_text(elem: Elem, bits: UInt64) raises -> String:
     """A pattern as a value: `0.0 (0x0000000000000000)`, `-3`, `true`."""
-    if elem.kind == ty.BOOL:
+    if elem.is_bool():
         return "true" if bits != 0 else "false"
     if elem.is_float():
-        return String(float_text(elem.format_id, bits), " (0x", hex_digits(bits, width=elem.width // 4), ")")
-    if elem.signed:
-        return String(signed_of(bits, elem.width))
-    return String(bits)
+        return String(float_text(elem.format.id, bits), " (0x", hex_digits(bits, width=elem.width // 4), ")")
+    return String(signed_of(bits, elem.width)) if elem.signed else String(bits)
 
 
-def _example(mut ctx: SetContext, elem: Elem, s: BitSet) raises -> String:
+def _example(ctx: SetContext, elem: Elem, s: BitSet) raises -> String:
     """A member of `s`, preferring simple values: 0, 1 and -1."""
     var candidates: List[UInt64] = [0]
     if elem.is_float():
-        var format = elem.format()
-        var one = UInt64(format.bias()) << UInt64(format.fraction_bits)
-        candidates.extend([one, one | format.sign_mask()])
+        var one = UInt64(elem.format.bias()) << UInt64(elem.format.fraction_bits)
+        candidates += [one, one | elem.format.sign_mask()]
     elif elem.is_int():
-        candidates.extend([1, low_mask(elem.width)])
+        candidates += [1, low_mask(elem.width)]
     else:
         candidates.append(1)
     for c in candidates:
@@ -96,7 +83,7 @@ def _example(mut ctx: SetContext, elem: Elem, s: BitSet) raises -> String:
     return value_text(elem, ctx.nth(s, 0))
 
 
-def _uses(ast: Ast, e: Int, names: Dict[String, Bool]) -> Bool:
+def _uses(ast: Ast, e: Int, names: Set[String]) -> Bool:
     ref n = ast.nodes[e]
     return (n.kind == .NAME and n.text in names) or any([_uses(ast, k, names) for k in n.children])
 
@@ -108,131 +95,98 @@ def compile_partitions(mut ctx: SetContext, spec: Spec) raises -> PartitionSets:
     predicates. Errors are raised together, one `path:line:col: message` per line;
     warnings are returned with the sets."""
     var out = PartitionSets()
-    var errors = List[String]()
+    var errors: List[Diagnostic] = []
     var aliases = alias_elems(spec.types, spec.aliases)
     for f in range(len(spec.fns)):
         ref func = spec.fns[f]
-        var starts = List[Int]()
-        var counts = List[Int]()
+        var partitions: List[ClassSets] = []
         for p in range(len(func.partitions)):
             ref part = func.partitions[p]
-            starts.append(len(out.sets))
-            counts.append(len(part.classes))
             var elem = elem_of(spec.types, func.params[part.param].type)
             if elem is None:
-                for _ in range(len(part.classes)):
-                    out.sets.append(ctx.empty(1))
-                    out.predicates.append(True)
-                continue
-            var found = _check_partition(
-                ctx, spec, f, p, elem.value(), aliases.copy(), out.sets, out.warnings
-            )
-            for _ in range(len(part.classes)):
-                out.predicates.append(False)
-            errors.extend(found^)
-        out.starts.append(starts^)
-        out.counts.append(counts^)
-    if len(errors) > 0:
+                partitions.append(ClassSets([ctx.empty(1) for _ in part.classes], predicates=True))
+            else:
+                var sets = _class_sets(ctx, spec, f, p, elem.value(), aliases.copy(), errors, out.warnings)
+                partitions.append(ClassSets(sets^, predicates=False))
+        out.partitions.append(partitions^)
+    if errors:
         raise Error("\n".join(errors))
     return out^
 
 
-def _diag(ast: Ast, node: Int, message: Some[Writable]) -> String:
-    return String(ast.location(node), ": ", message)
-
-
-def _check_partition(
+def _class_sets(
     mut ctx: SetContext,
     spec: Spec,
     f: Int,
     p: Int,
     elem: Elem,
     var aliases: Dict[String, Elem],
-    mut sets: List[BitSet],
+    mut errors: List[Diagnostic],
     mut warnings: List[Diagnostic],
-) raises -> List[String]:
-    """Compiles one partition, appending its classes' sets (empty ones where a class
-    failed), and returns its errors."""
+) raises -> List[BitSet]:
+    """The sets of one partition's classes (empty where a class failed), checked to be
+    disjoint and to cover what `requires` admits."""
     ref ast = spec.ast
-    ref func = spec.fns[f]
-    ref part = func.partitions[p]
-    var pname = func.params[part.param].name
-    var label = String("partition ", pname, " of ", func.decl_id)
-    var errors = List[String]()
-    var comp = SetCompiler(elem, aliases^, Dict[String, BitSet]())
-    var failed = Dict[String, Bool]()
-    var compiled = List[Int]()  # positions of the classes that compiled
-    var results = List[BitSet]()
+    ref part = spec.fns[f].partitions[p]
+    var param = spec.fns[f].params[part.param].name
+    var label = String("partition ", param, " of ", spec.fns[f].decl_id)
+    var compiler = SetCompiler(elem, aliases^, {})
+    var failed: Set[String] = {}
+    var results = [ctx.empty(elem.width) for _ in part.classes]
     for k, cls in enumerate(part.classes):
-        results.append(ctx.empty(elem.width))
-        if cls.name in comp.classes or cls.name in failed:
-            errors.append(_diag(ast, cls.node, t"{label}: class {cls.name} is defined twice"))
-            failed[cls.name] = True
+        if cls.name in compiler.classes or cls.name in failed:
+            errors.append(ast.diagnostic(cls.node, t"{label}: class {cls.name} is defined twice"))
+            failed.add(cls.name)
         elif _uses(ast, cls.expr, failed):
-            failed[cls.name] = True
+            failed.add(cls.name)
         else:
             try:
-                results[k] = comp.compile(ctx, ast, cls.expr)
-                comp.classes[cls.name] = results[k]
-                compiled.append(k)
-            except:
-                errors.append(comp.diagnostic(ast, String(label, ": class ", cls.name, ": ")))
-                failed[cls.name] = True
-    sets.extend(results.copy())
-    if len(errors) > 0:
-        return errors^
+                results[k] = compiler.compile(ctx, ast, cls.expr)
+                compiler.classes[cls.name] = results[k]
+            except err:
+                errors.append(ast.diagnostic(err.node, t"{label}: class {cls.name}: {err.message}"))
+                failed.add(cls.name)
+    if failed:
+        return results^
 
     var union = ctx.empty(elem.width)
-    for i, k in enumerate(compiled):
-        ref cls = part.classes[k]
+    for k, cls in enumerate(part.classes):
         if ctx.is_empty(results[k]):
             warnings.append(ast.diagnostic(cls.node, t"{label}: class {cls.name} is empty"))
-        for earlier in compiled[:i]:
-            var common = ctx.intersection(results[earlier], results[k])
-            if not ctx.is_empty(common):
+        for earlier in range(k):
+            if not ctx.disjoint(results[earlier], results[k]):
+                var common = ctx.intersection(results[earlier], results[k])
                 errors.append(
-                    _diag(
-                        ast,
+                    ast.diagnostic(
                         cls.node,
                         t"{label}: classes {part.classes[earlier].name} and {cls.name} overlap on"
-                        t" {_count_text(ctx.count(common))}, e.g. {pname} = {_example(ctx, elem, common)}",
+                        t" {_count_text(ctx.count(common))}, e.g. {param} = {_example(ctx, elem, common)}",
                     )
                 )
         union = ctx.union(union, results[k])
 
-    var target = admitted(ctx, spec, f, part.param)
-    if target is None:
-        var missing = ctx.difference(ctx.full(elem.width), union)
-        if not ctx.is_empty(missing):
-            errors.append(
-                _diag(
-                    ast,
-                    part.node,
-                    t"{label} does not cover every {elem.name()}: {_count_text(ctx.count(missing))}"
-                    t" in no class, e.g. {pname} = {_example(ctx, elem, missing)}",
-                )
-            )
-        return errors^
-    var missing = ctx.difference(target.value(), union)
-    if not ctx.is_empty(missing):
+    var admits = admitted(ctx, spec, f, part.param)
+    var target = admits.or_else(ctx.full(elem.width))
+    if not ctx.subset(target, union):
+        var missing = ctx.difference(target, union)
+        var what = String("every ", elem.name()) if admits is None else String("the values requires admits")
         errors.append(
-            _diag(
-                ast,
+            ast.diagnostic(
                 part.node,
-                t"{label} does not cover the values requires admits:"
-                t" {_count_text(ctx.count(missing))} in no class, e.g. {pname} ="
-                t" {_example(ctx, elem, missing)}",
+                t"{label} does not cover {what}: {_count_text(ctx.count(missing))} in no class,"
+                t" e.g. {param} = {_example(ctx, elem, missing)}",
             )
         )
-    for k in compiled:
-        ref cls = part.classes[k]
-        var outside = ctx.difference(results[k], target.value())
-        if not ctx.is_empty(results[k]) and not ctx.is_empty(outside):
+    if admits is None:
+        return results^
+    for k, cls in enumerate(part.classes):
+        if not ctx.subset(results[k], target):
+            var outside = ctx.difference(results[k], target)
             warnings.append(
                 ast.diagnostic(
                     cls.node,
                     t"{label}: class {cls.name} has {_count_text(ctx.count(outside))} that"
-                    t" requires rejects, e.g. {pname} = {_example(ctx, elem, outside)}",
+                    t" requires rejects, e.g. {param} = {_example(ctx, elem, outside)}",
                 )
             )
-    return errors^
+    return results^

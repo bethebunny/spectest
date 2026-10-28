@@ -11,10 +11,10 @@ from check.spec import Spec, Param
 from numeric.fixed import int_max, int_min
 from numeric.formats import format_by_id
 from numeric.literal import is_integer_literal, parse_number
-from partitions.compile import compile_set_aliased
+from partitions.compile import compiled_set
 from prelude import api
 from prelude.collections import eq as prelude_eq
-from sets import BitSet, SetContext
+from sets import SetContext
 from syntax import ast
 from wire.equality import same
 from wire.value import Value
@@ -357,17 +357,15 @@ def ev_binary[
 
 
 def set_members(spec: Spec, iterable: Int) raises -> List[Value]:
-    var elem = spec.types.info(spec.node_types[iterable]).args[0]
     var ctx = SetContext()
-    var s = compile_set_aliased(ctx, spec.ast, spec.types, elem, iterable, {}, spec.aliases)
+    var elem, s = compiled_set(ctx, spec, iterable)
     return [value_from_bits(spec.types, elem, bits) for bits in ctx.members(s, SET_LIMIT)]
 
 
 def set_contains(spec: Spec, set_node: Int, x: Value) raises -> Bool:
     """Is the fixed-width value `x` a member of the partition set at `set_node`?"""
-    var elem = spec.types.info(spec.node_types[set_node]).args[0]
     var ctx = SetContext()
-    var s = compile_set_aliased(ctx, spec.ast, spec.types, elem, set_node, {}, spec.aliases)
+    var elem, s = compiled_set(ctx, spec, set_node)
     return ctx.contains(s, bits_of_value(spec.types, elem, x))
 
 

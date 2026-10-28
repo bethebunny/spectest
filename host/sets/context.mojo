@@ -70,8 +70,8 @@ struct SetContext(Movable):
             return self.empty(width)
         return self.interval_inclusive(lo, hi - 1, width)
 
-    def exactly(mut self, var values: List[UInt64], width: Int) -> BitSet:
-        var members = [UInt128(v) for v in Set(values^)]
+    def exactly(mut self, values: List[UInt64], width: Int) -> BitSet:
+        var members = [UInt128(v) for v in Set(values)]
         sort(members)
         try:
             return BitSet(Int32(width), exactly_these[narrow_bit](self.arena, members, Int32(width)))
