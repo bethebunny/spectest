@@ -4,9 +4,10 @@ identity questions, and the builder that makes values of models."""
 from interpreter.api import judge, observe_with
 from interpreter.env import Env
 from interpreter.host import EvalHost
-from host.draw.models import Builder
 from value.text import format_value
 from value.value import Value
+
+from host.draw.models import Builder
 
 from .decode import decode
 from .driver import Driver

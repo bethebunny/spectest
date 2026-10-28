@@ -8,10 +8,7 @@ a failure but never invents one."""
 
 from std.time import perf_counter_ns
 
-from spec import types as ty
-from spec.spec import Spec
 from interpreter.api import evaluate
-from spec.bits import value_from_bits
 from interpreter.core import type_kind, value_of
 from interpreter.env import Env, Run
 from interpreter.numbers import (
@@ -29,13 +26,16 @@ from interpreter.text import located, source_text
 from mcheck.rand import Rng
 from partition.compile import compiled_set
 from partition.sets import SetContext
+from spec import types as ty
 from spec import ast
+from spec.bits import value_from_bits
+from spec.spec import Spec
 from value.text import format_value
 from value.value import Value
 
-from .run_host import RunHost
 from .options import RunOptions
 from .results import AggregateSummary, ClauseResult, Counterexample
+from .run_host import RunHost
 
 comptime WORST_LIMIT = 5
 

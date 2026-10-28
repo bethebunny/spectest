@@ -7,8 +7,8 @@ that to the `#type` clause."""
 from spec import types as ty
 from spec.types import Types
 from value.fixed import int_max, int_min, low_mask
-from value.floats import converted, is_nan, signbit
 from value.float_formats import FloatFormat, format_by_id
+from value.floats import converted, is_nan, signbit
 from value.text import format_value
 from value.value import Kind, Value
 

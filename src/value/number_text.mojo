@@ -10,8 +10,8 @@ from bigint import BigUInt
 from value.bigint import BigInt
 from value.biguint import floor_log10, pow10, rounded_quotient, trailing_zeros
 from value.digits import hex_digits
-from value.floats import is_inf, is_nan, is_zero, round_ratio, signbit, significand_and_exponent
 from value.float_formats import FloatFormat, format_by_id
+from value.floats import is_inf, is_nan, is_zero, round_ratio, signbit, significand_and_exponent
 from value.real import Real
 
 

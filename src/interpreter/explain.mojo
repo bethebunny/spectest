@@ -2,8 +2,8 @@
 subexpressions that matter, following the failing structure."""
 
 from spec import types as ty
-from spec.spec import Spec
 from spec.ast import Op
+from spec.spec import Spec
 from value.value import Value
 
 from .core import is_old_call, set_members, type_kind, value_of

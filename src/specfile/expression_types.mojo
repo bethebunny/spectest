@@ -6,14 +6,14 @@ Errors go to the checker's diagnostics; an expression that already has an error 
 the poison type, which silences follow-on errors.
 """
 
+from spec.prelude_signatures import Arg, CallInfo, TypingError
+from spec.spec import Param, ResolutionKind
+from spec.types import ANY_TYPE, Types
 from value.literal import is_integer_literal
 from value.real import Real
 
-from spec.prelude_signatures import Arg, CallInfo, TypingError
-from specfile.sigs import prelude_type
-from spec.spec import Param, ResolutionKind
 from specfile.checker_state import Checker, Ctx, NO_TYPE, Var, classifier_hint, is_reserved, last_index_of
-from spec.types import ANY_TYPE, Types
+from specfile.sigs import prelude_type
 from specfile.typesyn import ensure_const, resolve_type
 
 comptime _NAMESPACE_FUNCTIONS: Array[StaticString, 7] = ["sqrt", "exp", "log", "sin", "cos", "tan", "atan"]

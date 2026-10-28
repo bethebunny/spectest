@@ -1,10 +1,10 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from spec.spec import Spec
 from partition.coverage import PartitionSets, compile_partitions
 from partition.requires import admitted
-from partitions_testing import build_spec
 from partition.sets import SetContext
+from partitions_testing import build_spec
+from spec.spec import Spec
 
 
 def errors_of(source: String) raises -> String:

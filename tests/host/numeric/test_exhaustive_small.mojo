@@ -1,10 +1,10 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from value.floats import is_inf, is_nan, is_zero, round_to, signbit, to_real
 from value.float_formats import BF16, F16, F32, F64, FloatFormat
+from value.floats import is_inf, is_nan, is_zero, round_to, signbit, to_real
 from value.literal import parse_number
-from value.real import Real
 from value.number_text import float_text, shortest_digits
+from value.real import Real
 
 
 def pow10_real(k: Int) raises -> Real:

@@ -2,11 +2,11 @@ from std.pathlib import Path
 from std.testing import assert_equal, assert_true, TestSuite
 from std.time import perf_counter_ns
 
-from specfile.checker import check_source
+from eval_testkit import f64v
 from interpreter.api import judge
 from interpreter.env import Env
 from interpreter.host import EvalHost
-from eval_testkit import f64v
+from specfile.checker import check_source
 from value.value import Value
 
 

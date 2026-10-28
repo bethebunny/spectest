@@ -1,10 +1,10 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
+from eval_testkit import *
 from interpreter.api import observe_with, old_calls, snapshot_olds
 from interpreter.core import scalar_type_id
 from interpreter.env import Failure, Old
 from value.float_formats import F16
-from eval_testkit import *
 from value.value import Value
 
 

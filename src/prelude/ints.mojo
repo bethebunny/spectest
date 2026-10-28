@@ -5,8 +5,9 @@ from value.digits import magnitude_of_fields
 from value.fixed import int_max, int_min, wrapped
 from value.float_formats import FloatFormat
 from value.floats import exactly
-from prelude.util import fail, int_of, real_of
 from value.value import Value
+
+from prelude.util import fail, int_of, real_of
 
 
 def wrap(n: Value, bits: Int, signed: Bool) raises -> Value:

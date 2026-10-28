@@ -12,23 +12,24 @@ stored for the next run."""
 
 from std.time import perf_counter_ns
 
-from spec import types as ty
 from interpreter.api import explain, judge
 from interpreter.env import Env
 from interpreter.text import source_text
-from host.draw.models import is_default, is_not_drawn
-from mcheck.choices import Choices
 from mcheck import property as mcheck
+from mcheck.choices import Choices
 from mcheck.property import FAILED, PASSED, SKIPPED, Outcome, Property
 from mcheck.search import search
 from mcheck.source import Many, Source
+from spec import types as ty
 from value.value import Value
 
+from host.draw.models import is_default, is_not_drawn
+
 from .driver import Driver
-from .run_host import RunHost
 from .load import Loaded
 from .options import RunOptions
 from .results import ClauseResult, Counterexample, RunResult
+from .run_host import RunHost
 from .runner import KEPT_SPEC_ERRORS, SHRINK_SOURCE, Live, Prop
 from .runner import run as run_function
 from .stateful_store import ArgEdit, Stored, load_stored, save_stored

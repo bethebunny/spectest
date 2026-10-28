@@ -2,13 +2,13 @@ from std.memory import bitcast
 from std.testing import assert_equal, assert_true, TestSuite
 from std.time import perf_counter_ns
 
-from spec.types import Types
 from host.draw.sizes import Sizes
 from host.draw.value import draw_value
 from mcheck.property import Property, Outcome, PASSED, FAILED
 from mcheck.search import search
 from mcheck.settings import Settings
 from mcheck.source import Source
+from spec.types import Types
 from value.value import Value
 
 

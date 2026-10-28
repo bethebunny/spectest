@@ -10,6 +10,7 @@ lines. `perf` takes the rest of its line raw.
 """
 
 from spec.ast import Diagnostic, Span
+
 from specfile.chars import is_digit, is_word_char, is_word_start
 
 

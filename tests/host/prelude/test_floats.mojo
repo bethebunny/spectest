@@ -1,12 +1,12 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
+from prelude.util import real_of, real_value
+from prelude_testkit import Lcg, bi, error_of, fl, formats, rat, run, run_typed, samples
 from spec.types import Types
 from value.bigint import BigInt
 from value.float_formats import FloatFormat, F16, BF16, F32, F64
-from value.real import Real
-from prelude_testkit import Lcg, bi, error_of, fl, formats, rat, run, run_typed, samples
-from prelude.util import real_of, real_value
 from value.order import compare
+from value.real import Real
 from value.value import Value
 
 

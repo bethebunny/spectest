@@ -1,10 +1,10 @@
 from std.pathlib import Path
 from std.testing import assert_equal, assert_true, TestSuite
 
-from specfile.checker import check_source
-from spec.spec import Spec
-from interpreter.api import class_holds, explain, snapshot_olds
 from eval_testkit import *
+from interpreter.api import class_holds, explain, snapshot_olds
+from spec.spec import Spec
+from specfile.checker import check_source
 from value.float_formats import F64
 from value.value import Value
 

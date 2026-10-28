@@ -24,6 +24,9 @@ from std.python._cpython import (
 )
 from std.time import perf_counter_ns
 
+from host.items import items_of
+from host.load import Loaded, load as load_spec
+from host.stateful import run_declaration
 from value.value import Value
 
 from _host.capi import (
@@ -44,12 +47,8 @@ from _host.capi import (
 )
 from _host.client import DriverClient
 from _host.convert import from_python, to_python
-from _host.pyutil import string_of, wire
-
-from host.items import items_of
-from host.load import Loaded, load as load_spec
 from _host.pyapi import parse_options, result_to_python
-from host.stateful import run_declaration
+from _host.pyutil import string_of, wire
 
 comptime VERSION = "0.1.0.dev0"
 

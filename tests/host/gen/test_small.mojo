@@ -1,16 +1,16 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from spec.types import Types
 from host.draw.classes import draw_in_classes
 from host.draw.domain import domain_size, value_at
 from mcheck.property import Property, Outcome, PASSED
 from mcheck.search import enumerate_all
 from mcheck.settings import Settings
 from mcheck.source import Source
-from value.bigint import BigInt
-from value.floats import is_nan, is_zero, is_normal
-from value.float_formats import F64
 from partition.sets import SetContext, BitSet
+from spec.types import Types
+from value.bigint import BigInt
+from value.float_formats import F64
+from value.floats import is_nan, is_zero, is_normal
 from value.value import Value
 
 

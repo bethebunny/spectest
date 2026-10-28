@@ -1,7 +1,7 @@
 """Models through their `build` calls, and the arguments of a call."""
 
-from spec.spec import Spec
 from mcheck.source import Source
+from spec.spec import Spec
 from value.value import Value
 
 from .sizes import Sizes

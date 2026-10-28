@@ -10,8 +10,8 @@ Declarations keep source order. Lists of declarations refer to each other by pos
 
 from value.literal import parse_number
 from value.real import Real
-from spec.ast import Ast, NodeKind, Op
 
+from spec.ast import Ast, NodeKind, Op
 from spec.types import ANY_TYPE, Types
 
 

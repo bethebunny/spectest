@@ -2,14 +2,13 @@
 and the type relations (join, equality and order rules) the expression rules use.
 """
 
-from value.real import Real
-from spec.prelude_names import prelude_count, prelude_name
 from spec import ast
-from spec.ast import Diagnostic
-
 from spec import types as ty
+from spec.ast import Diagnostic
+from spec.prelude_names import prelude_count, prelude_name
 from spec.prelude_signatures import PreludeSig, prelude_sig
 from spec.spec import Resolution, ResolutionKind, Spec, literal_value
+from value.real import Real
 
 
 comptime NO_TYPE = -1

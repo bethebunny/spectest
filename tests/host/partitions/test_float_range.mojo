@@ -2,11 +2,11 @@ from std.memory import bitcast
 from std.os import getenv
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from value.floats import round_to, to_real
-from value.float_formats import BF16, F16, F32, F64, FloatFormat
-from value.real import Real
 from partition.ranges import float_equal, float_range
 from partition.sets import SetContext
+from value.float_formats import BF16, F16, F32, F64, FloatFormat
+from value.floats import round_to, to_real
+from value.real import Real
 
 
 def _some(r: Real) -> Optional[Real]:

@@ -1,8 +1,8 @@
 from std.testing import assert_equal, assert_true, TestSuite
 from std.time import perf_counter_ns
 
-from value.float_formats import BF16, F16, F32, F64, FloatFormat
 from partition.sets import SetContext
+from value.float_formats import BF16, F16, F32, F64, FloatFormat
 
 comptime NAMES = ["nan", "inf", "zero", "subnormal", "normal", "finite", "positive", "negative"]
 

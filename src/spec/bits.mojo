@@ -1,10 +1,11 @@
 """Values of fixed-width types from their bit patterns."""
 
-from spec import types as ty
 from value.bigint import BigInt
 from value.fixed import signed_of
 from value.float_formats import format_by_id
 from value.value import Value
+
+from spec import types as ty
 
 
 def int_from_bits(bits: UInt64, width: Int, signed: Bool) -> Value:

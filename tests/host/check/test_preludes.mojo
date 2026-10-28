@@ -2,11 +2,11 @@
 
 from std.testing import assert_equal, assert_true, TestSuite
 
-from specfile.checker import check_source_with
-from specfile.files import Files
+from spec.ast import Op
 from spec.spec import ResolutionKind
 from spec.spec import Spec
-from spec.ast import Op
+from specfile.checker import check_source_with
+from specfile.files import Files
 
 comptime MATH = "fn twice(x: int) -> int = x + x\nfn quad(x: int) -> int = twice(twice(x))\n"
 comptime SPEC_A = 'spec a\nprelude "math.prelude"\nfn f(x: int) -> int\n  requires twice(x) > 0\n  ensures big: quad(x) >= x\n'

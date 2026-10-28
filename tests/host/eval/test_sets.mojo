@@ -1,9 +1,9 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from spec.spec import Spec
+from eval_testkit import *
 from interpreter.api import class_holds
 from interpreter.core import set_contains
-from eval_testkit import *
+from spec.spec import Spec
 from value.float_formats import F16
 from value.value import Value
 

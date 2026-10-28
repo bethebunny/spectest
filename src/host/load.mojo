@@ -2,13 +2,14 @@
 
 from std.pathlib import Path
 
-from specfile.checker import check_source_with
-from specfile.files import Files
-from spec.spec import Spec
-from host.draw.sizes import Sizes
-from value.digits import hex_digits
 from partition.coverage import PartitionSets, compile_partitions
 from partition.sets import SetContext
+from spec.spec import Spec
+from specfile.checker import check_source_with
+from specfile.files import Files
+from value.digits import hex_digits
+
+from host.draw.sizes import Sizes
 
 
 def fnv(text: String, seed: UInt64 = 0xCBF29CE484222325) -> UInt64:

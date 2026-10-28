@@ -2,9 +2,10 @@
 
 from std.os import abort
 
-from value.floats import exactly, round_to, to_real
 from value.float_formats import FloatFormat
+from value.floats import exactly, round_to, to_real
 from value.real import Real
+
 from partition.sets import BitSet, SetContext
 
 

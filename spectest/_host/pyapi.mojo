@@ -8,6 +8,9 @@ from std.python._cpython import (
     PyObjectPtr,
 )
 
+from host.options import RunOptions
+from value.value import Value
+
 from _host.capi import (
     Py_DecRef,
     PyDict_New,
@@ -23,9 +26,6 @@ from _host.capi import (
 )
 from _host.convert import from_python, to_python
 from _host.pyutil import checked, python_error, string_of, wire
-from value.value import Value
-
-from host.options import RunOptions
 
 
 def _is_dict(o: PyObjectPtr) -> Bool:

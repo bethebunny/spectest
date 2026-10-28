@@ -3,9 +3,9 @@
 from std.pathlib import Path
 from std.testing import assert_equal, assert_true, TestSuite
 
-from specfile.checker import check_source
 from partition.coverage import compile_partitions
 from partition.sets import SetContext
+from specfile.checker import check_source
 
 
 def load(path: String) raises -> Tuple[Int, Int, Int]:

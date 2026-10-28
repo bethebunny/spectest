@@ -1,8 +1,8 @@
 """The items a spec has: one per clause a run judges, and the built-in clauses."""
 
-from spec.spec import Fn, Model, Spec
 from interpreter.text import source_text
 from spec import ast
+from spec.spec import Fn, Model, Spec
 from value.value import Value
 
 from .load import Loaded

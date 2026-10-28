@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from interpreter.numbers import contains
 from eval_testkit import *
+from interpreter.numbers import contains
 from value.value import Value
 
 

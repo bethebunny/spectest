@@ -2,12 +2,7 @@
 rules of functions, models and interfaces, then the whole-file `run`.
 """
 
-from value.fixed import int_max, int_min
-from value.floats import exactly
-from value.real import Real
 from spec.ast import Op
-
-from specfile.expression_types import assignable, infer_in, literal_member, poison_subtree, want_bool
 from spec.spec import (
     Build,
     Clause,
@@ -21,9 +16,14 @@ from spec.spec import (
     PartitionClass,
     aggregate_shape,
 )
-from specfile.checker_state import Checker, Ctx, Var, Visit, cycle_text, is_builtin_type_name, is_reserved, qualify_error
-from specfile.typesyn import alias_type, ensure_const, record_type, resolve_type
 from spec.types import Types
+from value.fixed import int_max, int_min
+from value.floats import exactly
+from value.real import Real
+
+from specfile.checker_state import Checker, Ctx, Var, Visit, cycle_text, is_builtin_type_name, is_reserved, qualify_error
+from specfile.expression_types import assignable, infer_in, literal_member, poison_subtree, want_bool
+from specfile.typesyn import alias_type, ensure_const, record_type, resolve_type
 
 
 # -- names ----------------------------------------------------------------------

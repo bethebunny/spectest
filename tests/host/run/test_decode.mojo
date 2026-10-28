@@ -1,8 +1,5 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from spec.types import Types
-from value.bigint import BigInt
-from value.float_formats import BF16, F16, F32, F64
 from host.decode import decode, encode
 from host.util import (
     collect_models,
@@ -14,6 +11,9 @@ from host.util import (
     type_has_model,
 )
 from host.verdict import CAUSE_COUNT, CAUSE_NAMES, Cause
+from spec.types import Types
+from value.bigint import BigInt
+from value.float_formats import BF16, F16, F32, F64
 from value.text import format_value
 from value.value import Value
 

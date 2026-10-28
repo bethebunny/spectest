@@ -1,7 +1,5 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from spec.spec import Spec, Model, Build, Param, Fn, Observer, Partition
-from spec.types import Types
 from host.draw.models import (
     Builder,
     PARAM_SPAN,
@@ -14,6 +12,8 @@ from host.draw.models import (
 from host.draw.sizes import Sizes
 from mcheck.source import Source
 from spec.ast import Ast, NodeKind
+from spec.spec import Spec, Model, Build, Param, Fn, Observer, Partition
+from spec.types import Types
 from value.value import Value
 
 

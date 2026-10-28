@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from value.bigint import BigInt
 from partition.sets import SetContext
+from value.bigint import BigInt
 
 
 def _big(text: StringSlice) raises -> Optional[BigInt]:

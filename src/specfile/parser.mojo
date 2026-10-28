@@ -10,6 +10,7 @@ covers its continuation lines.
 """
 
 from spec.ast import Ast, File, NIL, Node, NodeKind, Op, Span
+
 from specfile.lexer import Token, TokenKind, syntax_error, tokens
 
 

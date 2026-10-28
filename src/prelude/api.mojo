@@ -5,8 +5,12 @@
 """
 
 from spec import types as ty
+from spec.prelude_names import prelude_id, prelude_name
 from spec.prelude_signatures import prelude_sig
+from value.equality import same
 from value.float_formats import FloatFormat, format_by_id
+from value.value import Value
+
 from prelude.collections import (
     EqMode,
     distinct,
@@ -41,11 +45,8 @@ from prelude.floatfns import (
     ulp,
 )
 from prelude.ints import bit_length, fits_float, fits_int, le_uint, wrap
-from spec.prelude_names import prelude_id, prelude_name
 from prelude.text import codepoints, from_codepoints, valid_utf8
 from prelude.util import fail
-from value.equality import same
-from value.value import Value
 
 
 @fieldwise_init

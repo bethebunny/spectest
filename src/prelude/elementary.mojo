@@ -3,12 +3,13 @@ the argument's format, with IEEE 754's special cases)."""
 
 from std.memory import bitcast
 
-from value.floats import is_nan, round_to
 from value.float_formats import FloatFormat, F16, F32, F64
+from value.floats import is_nan, round_to
 from value.real import Real
+from value.value import Value
+
 from prelude.mpfr import ARGUMENT, RESULT, ExponentRange, Mpfr
 from prelude.util import fail, float_of, real_of, real_value
-from value.value import Value
 
 comptime PRECISION = 256
 comptime EXP_LIMIT = 1 << 18

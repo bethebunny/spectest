@@ -3,8 +3,8 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.time import perf_counter_ns
 
 from partition.coverage import compile_partitions
-from partitions_testing import build_spec
 from partition.sets import SetContext
+from partitions_testing import build_spec
 
 
 def _fixed_classes(spec_path: String) raises -> Int:

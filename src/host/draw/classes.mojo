@@ -1,9 +1,9 @@
 """Steering by partition classes."""
 
-from spec.types import Types
-from spec.bits import value_from_bits
 from mcheck.source import Source
 from partition.sets import BitSet, SetContext
+from spec.bits import value_from_bits
+from spec.types import Types
 from value.value import Value
 
 

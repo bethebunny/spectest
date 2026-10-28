@@ -3,8 +3,8 @@
 from std.memory import bitcast
 from std.testing import assert_true
 
-from specfile.checker import check_source
 from spec.spec import Spec
+from specfile.checker import check_source
 from value.bigint import BigInt
 from value.float_formats import F32, F64, FloatFormat
 from value.text import format_value

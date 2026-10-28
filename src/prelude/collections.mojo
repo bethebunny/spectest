@@ -8,12 +8,13 @@ from std.collections import Counter, Set
 from std.hash import Hasher
 
 from value.bigint import BigInt
-from value.floats import is_nan
-from prelude.floatfns import ieee_equal
-from prelude.util import fail, int_of, list_items
 from value.equality import hash_same, same
+from value.floats import is_nan
 from value.order import compare, is_ord
 from value.value import Kind, Value
+
+from prelude.floatfns import ieee_equal
+from prelude.util import fail, int_of, list_items
 
 comptime RANGE_LIMIT = 10_000_000
 

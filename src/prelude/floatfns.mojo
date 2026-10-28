@@ -6,8 +6,9 @@ from value import floats
 from value.bigint import BigInt
 from value.float_formats import FloatFormat
 from value.real import Real
-from prelude.util import fail, float_of, real_of, real_value
 from value.value import Value
+
+from prelude.util import fail, float_of, real_of, real_value
 
 
 def classify(who: String, v: Value) raises -> Value:

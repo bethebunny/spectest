@@ -4,15 +4,15 @@ Every function raises an `Error` whose message says what went wrong; the evaluat
 attaches the location.
 """
 
-from value.bigint import BigInt
-from value.fixed import wrapped
-from value.floats import is_nan, to_real
-from value.real import Real
 from prelude.util import real_value
 from spec.ast import Op
+from value.bigint import BigInt
 from value.equality import canonical_eq
-from value.text import format_value
+from value.fixed import wrapped
+from value.floats import is_nan, to_real
 from value.order import compare
+from value.real import Real
+from value.text import format_value
 from value.value import Kind, Value
 
 

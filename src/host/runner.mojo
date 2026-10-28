@@ -9,8 +9,6 @@ the stored failures, generates, and shrinks each failing clause on its own."""
 from std.collections import Set
 from std.time import perf_counter_ns
 
-from spec import types as ty
-from spec.spec import Spec
 from interpreter.api import (
     Judgment,
     class_holds,
@@ -23,6 +21,18 @@ from interpreter.api import (
 from interpreter.coerce import bits_of_value, coerce_arg
 from interpreter.env import Env
 from interpreter.text import source_text
+from mcheck.choices import Choices
+from mcheck.property import FAILED, PASSED, Outcome, Property, run_example
+from mcheck.search import SearchResult, enumerate_all, search
+from mcheck.settings import Settings
+from mcheck.shrink import shrink
+from mcheck.source import Source
+from spec import types as ty
+from spec.spec import Spec
+from specfile.chars import is_digit, is_word_char
+from value.text import format_value
+from value.value import Value
+
 from host.draw.classes import draw_in_classes
 from host.draw.domain import product_size, values_at
 from host.draw.models import (
@@ -33,23 +43,14 @@ from host.draw.models import (
     is_not_drawn,
 )
 from host.draw.value import draw_value
-from mcheck.choices import Choices
-from mcheck.property import FAILED, PASSED, Outcome, Property, run_example
-from mcheck.search import SearchResult, enumerate_all, search
-from mcheck.settings import Settings
-from mcheck.shrink import shrink
-from mcheck.source import Source
-from specfile.chars import is_digit, is_word_char
-from value.text import format_value
-from value.value import Value
 
 from .aggregate import run_aggregate
 from .decode import decode, describe
 from .driver import Driver
-from .run_host import TIMEOUT, RunHost
 from .load import Loaded
 from .options import RunOptions
 from .results import ClauseResult, Counterexample, RunResult
+from .run_host import TIMEOUT, RunHost
 from .util import (
     collect_models,
     contains_name,

@@ -3,8 +3,8 @@
 from std.math import clamp
 from std.memory import bitcast
 
-from spec.bits import int_from_bits
 from mcheck.source import MANY_LABEL, Many, Source, index_to_int
+from spec.bits import int_from_bits
 from value.bigint import BigInt
 from value.fixed import low_mask, signed_of
 from value.float_formats import BF16, F16, F32, F64, FloatFormat

@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, assert_false, assert_raises, TestSuite
 
-from value.floats import *
 from value.float_formats import F16, BF16, F32, F64
+from value.floats import *
 from value.literal import parse_number
 from value.real import Real
 

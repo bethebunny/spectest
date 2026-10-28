@@ -1,7 +1,5 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from spec import types as ty
-from spec.spec import ResolutionKind, Spec
 from check_testkit import (
     error_lines,
     clause_expr,
@@ -15,8 +13,10 @@ from check_testkit import (
     parents,
     type_text,
 )
-from spec.prelude_names import prelude_id
+from spec import types as ty
 from spec import ast
+from spec.prelude_names import prelude_id
+from spec.spec import ResolutionKind, Spec
 
 
 def test_spec_tables() raises:

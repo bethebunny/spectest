@@ -1,7 +1,5 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from spec.spec import Spec
-from value.digits import hex_digits
 from host.items import items_of
 from host.load import fnv, load, load_source
 from host.options import RunOptions
@@ -12,6 +10,8 @@ from host.results import (
     Obj,
     RunResult,
 )
+from spec.spec import Spec
+from value.digits import hex_digits
 from value.text import format_value
 from value.value import Value
 

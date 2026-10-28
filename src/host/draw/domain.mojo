@@ -1,7 +1,7 @@
 """Small domains: types with at most 2**16 values, enumerated by index."""
 
-from spec.types import Types
 from spec.bits import value_from_bits
+from spec.types import Types
 from value.value import Value
 
 comptime MAX_DOMAIN: UInt64 = 65536

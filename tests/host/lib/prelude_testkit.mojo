@@ -3,13 +3,13 @@
 from std.memory import bitcast
 from std.os import getenv
 
+from prelude.api import call, CallArgs, Keyword
+from prelude.util import real_value
+from spec.prelude_names import prelude_id
 from spec.types import Types
 from value.bigint import BigInt
 from value.float_formats import FloatFormat, F16, BF16, F32, F64
 from value.real import Real
-from prelude.api import call, CallArgs, Keyword
-from spec.prelude_names import prelude_id
-from prelude.util import real_value
 from value.value import Value
 
 

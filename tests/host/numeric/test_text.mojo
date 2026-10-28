@@ -2,8 +2,8 @@ from std.testing import assert_equal, TestSuite
 
 from value.bigint import BigInt
 from value.literal import parse_number
-from value.real import Real
 from value.number_text import approximate_decimal, exact_decimal, float_text
+from value.real import Real
 
 
 def q(n: String, d: String = "1") raises -> Real:

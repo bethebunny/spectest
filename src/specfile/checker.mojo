@@ -8,13 +8,13 @@ that fail are skipped, so one mistake reports once.
 """
 
 from spec.ast import Ast, Diagnostic, NodeKind
-from specfile.parser import parse_spec
+from spec.spec import Spec
+from spec.types import ANY_TYPE, Types
 
+from specfile.checker_state import Checker
 from specfile.declaration_checks import run
 from specfile.files import Files, resolve_files
-from spec.spec import Spec
-from specfile.checker_state import Checker
-from spec.types import ANY_TYPE, Types
+from specfile.parser import parse_spec
 
 
 def check(var ast: Ast) raises -> Spec:

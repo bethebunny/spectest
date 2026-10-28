@@ -1,10 +1,10 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from value.bigint import BigInt
-from value.float_formats import F32, F64, FloatFormat
 from prelude_testkit import (
     Lcg, bi, error_of, fl, int_list, rat, run, run_kw, samples,
 )
+from value.bigint import BigInt
+from value.float_formats import F32, F64, FloatFormat
 from value.value import Value
 
 
