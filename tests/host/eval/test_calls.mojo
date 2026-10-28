@@ -3,9 +3,9 @@ from std.testing import assert_equal, assert_true, TestSuite
 from eval.api import observe_with, old_calls, snapshot_olds
 from eval.core import scalar_type_id
 from eval.env import Failure, Old
-from numeric.formats import F16
+from value.float_formats import F16
 from eval_testkit import *
-from wire.value import Value
+from value.value import Value
 
 
 def has(message: String, fragment: String) raises:

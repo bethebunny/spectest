@@ -14,7 +14,7 @@ from gen.models import (
 from gen.sizes import Sizes
 from mcheck.source import Source
 from syntax.ast import Ast, NodeKind
-from wire.value import Value
+from value.value import Value
 
 
 struct Recorder(Builder):

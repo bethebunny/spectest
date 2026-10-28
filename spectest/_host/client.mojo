@@ -4,7 +4,7 @@ converts arguments and results (docs/v2/protocol.md)."""
 from std.python._cpython import PyObjectPtr
 
 from run.driver import Driver
-from wire.value import Value
+from value.value import Value
 
 from .capi import Py_NewRef, PyDict_New
 from .convert import from_python, to_python

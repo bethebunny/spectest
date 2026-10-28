@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, assert_false, assert_raises, TestSuite
 
-from numeric.bigint import BigInt
+from value.bigint import BigInt
 
 
 def test_text() raises:

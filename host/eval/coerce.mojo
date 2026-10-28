@@ -2,11 +2,11 @@
 patterns of fixed-width values."""
 
 from check import types as ty
-from numeric.bigint import BigInt
-from numeric.fixed import int_max, int_min, pattern_of, signed_of
-from numeric.floats import converted, exactly, is_nan
-from numeric.formats import FloatFormat, format_by_id
-from wire.value import Value
+from value.bigint import BigInt
+from value.fixed import int_max, int_min, pattern_of, signed_of
+from value.floats import converted, exactly, is_nan
+from value.float_formats import FloatFormat, format_by_id
+from value.value import Value
 
 from .numbers import integer_of, real_of, show, to_real_kind
 

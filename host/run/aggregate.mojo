@@ -30,8 +30,8 @@ from mcheck.rand import Rng
 from partitions.compile import compiled_set
 from sets import SetContext
 from syntax import ast
-from wire.format import format_value
-from wire.value import Value
+from value.text import format_value
+from value.value import Value
 
 from .host import RunHost
 from .options import RunOptions

@@ -3,7 +3,7 @@
 from check.spec import Fn, Model, Spec
 from eval.text import source_text
 from syntax import ast
-from wire.value import Value
+from value.value import Value
 
 from .load import Loaded
 from .results import Obj, strings

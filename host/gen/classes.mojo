@@ -4,7 +4,7 @@ from check.types import Types
 from eval.coerce import value_from_bits
 from mcheck.source import Source
 from sets import BitSet, SetContext
-from wire.value import Value
+from value.value import Value
 
 
 def draw_in_classes(

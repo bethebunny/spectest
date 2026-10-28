@@ -16,9 +16,9 @@ from std.python._cpython import (
     PyObjectPtr,
 )
 
-from numeric.bigint import BigInt
-from numeric.formats import format_by_name
-from wire.value import Value
+from value.bigint import BigInt
+from value.float_formats import format_by_name
+from value.value import Value
 
 from .capi import (
     Py_NewRef,

@@ -11,9 +11,9 @@ from std.math import ceildiv
 from std.os import getenv
 from std.pathlib import Path
 
-from numeric.bigint import BigInt
-from numeric.digits import magnitude_of_fields
-from numeric.real import Real
+from value.bigint import BigInt
+from value.digits import magnitude_of_fields
+from value.real import Real
 
 comptime RNDN = Int32(0)
 comptime ARGUMENT = 0

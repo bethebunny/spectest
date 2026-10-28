@@ -1,11 +1,11 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from numeric.bigint import BigInt
-from numeric.formats import F32, F64, FloatFormat
+from value.bigint import BigInt
+from value.float_formats import F32, F64, FloatFormat
 from prelude_testkit import (
     Lcg, bi, error_of, fl, int_list, rat, run, run_kw, samples,
 )
-from wire.value import Value
+from value.value import Value
 
 
 def b(v: Value) -> Bool:

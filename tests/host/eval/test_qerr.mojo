@@ -1,8 +1,8 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
 from eval_testkit import *
-from numeric.bigint import BigInt
-from wire.value import Value
+from value.bigint import BigInt
+from value.value import Value
 
 
 def is_(got: Value, want: Value) raises:

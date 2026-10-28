@@ -4,9 +4,9 @@ Decimal integers, decimals and exponents (`1.5`, `1e-3`, `2.5E+10`), hex integer
 (`0xff`) and hex floats (`0x1p-26`, `0x1.8p3`); a single `_` may separate two digits.
 """
 
-from numeric.decimal import pow10
-from numeric.digits import digit_value, magnitude_of_digits
-from numeric.real import Real
+from value.biguint import pow10
+from value.digits import digit_value, magnitude_of_digits
+from value.real import Real
 
 
 comptime _MAX_EXPONENT = 1_000_000

@@ -1,7 +1,7 @@
 """The options of a run (docs/v2/host-api.md, Options)."""
 
 from mcheck.settings import Settings
-from wire.value import Value
+from value.value import Value
 
 from .load import fnv
 

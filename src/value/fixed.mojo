@@ -5,7 +5,7 @@ A pattern is a `UInt64` holding a value's low `width` bits, for widths 1 to 64.
 
 from std.memory import bitcast
 
-from numeric.bigint import BigInt
+from value.bigint import BigInt
 
 
 def int_min(width: Int, signed: Bool) -> BigInt:

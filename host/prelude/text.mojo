@@ -1,7 +1,7 @@
 """Bytes and text: `valid_utf8`, `codepoints`, `from_codepoints`."""
 
 from prelude.util import fail, list_items
-from wire.value import Value
+from value.value import Value
 
 
 def valid_utf8(b: Value) raises -> Value:

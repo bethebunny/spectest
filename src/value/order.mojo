@@ -6,7 +6,7 @@ point, which is the byte order of their UTF-8; bytes by unsigned byte. Tuples an
 lists compare lexicographically, a proper prefix first. Every other kind raises.
 """
 
-from wire.value import Kind, Value
+from value.value import Kind, Value
 
 
 def is_ord(value: Value) -> Bool:

@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
 from eval_testkit import *
-from wire.value import Value
+from value.value import Value
 
 
 def v(expr: String) raises -> String:

@@ -4,13 +4,13 @@ from std.memory import bitcast
 from std.os import getenv
 
 from check.types import Types
-from numeric.bigint import BigInt
-from numeric.formats import FloatFormat, F16, BF16, F32, F64
-from numeric.real import Real
+from value.bigint import BigInt
+from value.float_formats import FloatFormat, F16, BF16, F32, F64
+from value.real import Real
 from prelude.api import call, CallArgs, Keyword
 from prelude.names import prelude_id
 from prelude.util import real_value
-from wire.value import Value
+from value.value import Value
 
 
 def is_full() -> Bool:

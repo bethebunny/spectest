@@ -2,7 +2,7 @@
 
 from check.types import Types
 from eval.coerce import value_from_bits
-from wire.value import Value
+from value.value import Value
 
 comptime MAX_DOMAIN: UInt64 = 65536
 

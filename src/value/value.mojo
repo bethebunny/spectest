@@ -42,9 +42,9 @@ structural identity is never fooled by two spellings of one value.
 from std.hash import Hasher
 from std.memory import ArcPointer, bitcast
 
-from numeric.bigint import BigInt
-from numeric.formats import FORMATS, FloatFormat
-from numeric.real import Real
+from value.bigint import BigInt
+from value.float_formats import FORMATS, FloatFormat
+from value.real import Real
 
 
 __enum Kind(Equatable, Hashable, ImplicitlyCopyable, Writable):

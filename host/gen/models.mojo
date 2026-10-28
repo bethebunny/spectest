@@ -2,7 +2,7 @@
 
 from check.spec import Spec
 from mcheck.source import Source
-from wire.value import Value
+from value.value import Value
 
 from .sizes import Sizes
 from .value import draw_value

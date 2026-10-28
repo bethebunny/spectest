@@ -2,7 +2,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 
 from eval.numbers import contains
 from eval_testkit import *
-from wire.value import Value
+from value.value import Value
 
 
 def v(params: String, expr: String, var args: List[Value]) raises -> Value:

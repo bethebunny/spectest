@@ -24,7 +24,7 @@ from std.python._cpython import (
 )
 from std.time import perf_counter_ns
 
-from wire.value import Value
+from value.value import Value
 
 from _host.capi import (
     METH_NOARGS,

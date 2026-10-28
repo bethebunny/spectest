@@ -1,10 +1,10 @@
 from std.testing import assert_equal, TestSuite
 
-from numeric.bigint import BigInt
-from numeric.formats import F32, F64
-from numeric.text import float_text
-from wire.format import format_value
-from wire.value import Value
+from value.bigint import BigInt
+from value.float_formats import F32, F64
+from value.number_text import float_text
+from value.text import format_value
+from value.value import Value
 
 
 def real(n: Int, d: Int) -> Value:

@@ -7,11 +7,11 @@ from mcheck.property import Property, Outcome, PASSED
 from mcheck.search import enumerate_all
 from mcheck.settings import Settings
 from mcheck.source import Source
-from numeric.bigint import BigInt
-from numeric.floats import is_nan, is_zero, is_normal
-from numeric.formats import F64
+from value.bigint import BigInt
+from value.floats import is_nan, is_zero, is_normal
+from value.float_formats import F64
 from sets import SetContext, BitSet
-from wire.value import Value
+from value.value import Value
 
 
 struct Visit(Property):

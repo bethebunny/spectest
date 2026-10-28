@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, assert_false, assert_raises, TestSuite
 
-from numeric.bigint import BigInt
-from numeric.real import Real
+from value.bigint import BigInt
+from value.real import Real
 
 
 def frac(n: Int, d: Int) raises -> Real:

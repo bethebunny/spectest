@@ -1,6 +1,6 @@
 """What the evaluator asks of the runner, and what it answers."""
 
-from wire.value import Value
+from value.value import Value
 
 
 trait EvalHost:

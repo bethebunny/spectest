@@ -7,9 +7,9 @@ from check.checker import check_source
 from check.spec import Spec
 from eval.api import explain, snapshot_olds
 from eval_testkit import *
-from numeric.formats import F32
+from value.float_formats import F32
 from syntax.ast import Op
-from wire.value import Value
+from value.value import Value
 
 
 def example(name: String) raises -> Spec:

@@ -6,11 +6,11 @@ that to the `#type` clause."""
 
 from check import types as ty
 from check.types import Types
-from numeric.fixed import int_max, int_min, low_mask
-from numeric.floats import converted, is_nan, signbit
-from numeric.formats import FloatFormat, format_by_id
-from wire.format import format_value
-from wire.value import Kind, Value
+from value.fixed import int_max, int_min, low_mask
+from value.floats import converted, is_nan, signbit
+from value.float_formats import FloatFormat, format_by_id
+from value.text import format_value
+from value.value import Kind, Value
 
 from .util import norm_name
 

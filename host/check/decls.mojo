@@ -2,9 +2,9 @@
 rules of functions, models and interfaces, then the whole-file `run`.
 """
 
-from numeric.fixed import int_max, int_min
-from numeric.floats import exactly
-from numeric.real import Real
+from value.fixed import int_max, int_min
+from value.floats import exactly
+from value.real import Real
 from syntax.ast import Op
 
 from check.exprs import assignable, infer_in, literal_member, poison_subtree, want_bool

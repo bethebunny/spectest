@@ -23,7 +23,7 @@ from _host.capi import (
 )
 from _host.convert import from_python, to_python
 from _host.pyutil import checked, python_error, string_of, wire
-from wire.value import Value
+from value.value import Value
 
 from run.options import RunOptions
 

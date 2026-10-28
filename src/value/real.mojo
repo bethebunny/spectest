@@ -6,8 +6,8 @@ numerator 1 or -1. The numerator and denominator are what `Value.real` stores.
 
 from bigint import BigUInt
 
-from numeric.bigint import BigInt
-from numeric.decimal import gcd, trailing_zeros
+from value.bigint import BigInt
+from value.biguint import gcd, trailing_zeros
 
 
 struct Real(Absable, Comparable, Copyable, Defaultable, Movable, Writable):

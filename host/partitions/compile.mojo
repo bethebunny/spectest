@@ -8,12 +8,12 @@ type name is one of the scalar names or an alias of the spec).
 import check.types as ty
 import syntax.ast as sx
 from check.spec import Spec
-from numeric.bigint import BigInt
-from numeric.fixed import int_max, int_min, pattern_of
-from numeric.floats import exactly, to_real
-from numeric.formats import FORMATS, FloatFormat, format_by_id
-from numeric.literal import parse_number
-from numeric.real import Real
+from value.bigint import BigInt
+from value.fixed import int_max, int_min, pattern_of
+from value.floats import exactly, to_real
+from value.float_formats import FORMATS, FloatFormat, format_by_id
+from value.literal import parse_number
+from value.real import Real
 from sets import BitSet, SetContext
 from syntax.ast import Ast, Node
 

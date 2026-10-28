@@ -6,7 +6,7 @@ from check.checker import check_source_with
 from check.files import Files
 from check.spec import Spec
 from gen.sizes import Sizes
-from numeric.digits import hex_digits
+from value.digits import hex_digits
 from partitions.check import PartitionSets, compile_partitions
 from sets import SetContext
 

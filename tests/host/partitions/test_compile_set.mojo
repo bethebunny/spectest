@@ -2,7 +2,7 @@ from std.memory import bitcast
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from check.types import Types
-from numeric.formats import BF16, F16, F32, F64, FloatFormat
+from value.float_formats import BF16, F16, F32, F64, FloatFormat
 from partitions.compile import compile_set_aliased
 from partitions_testing import compile_set, parse_set_expr, set_expr_node
 from sets import BitSet, SetContext

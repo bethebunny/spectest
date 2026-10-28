@@ -7,13 +7,13 @@ Element equality in `is_permutation`, `is_subsequence`, `distinct` and `index_of
 from std.collections import Counter, Set
 from std.hash import Hasher
 
-from numeric.bigint import BigInt
-from numeric.floats import is_nan
+from value.bigint import BigInt
+from value.floats import is_nan
 from prelude.floatfns import ieee_equal
 from prelude.util import fail, int_of, list_items
-from wire.equality import hash_same, same
-from wire.order import compare, is_ord
-from wire.value import Kind, Value
+from value.equality import hash_same, same
+from value.order import compare, is_ord
+from value.value import Kind, Value
 
 comptime RANGE_LIMIT = 10_000_000
 

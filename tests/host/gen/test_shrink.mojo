@@ -9,7 +9,7 @@ from mcheck.property import Property, Outcome, PASSED, FAILED
 from mcheck.search import search
 from mcheck.settings import Settings
 from mcheck.source import Source
-from wire.value import Value
+from value.value import Value
 
 
 struct Drawn(Property):

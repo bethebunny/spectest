@@ -8,8 +8,8 @@ from std.memory import bitcast
 
 from bigint import BigUInt
 
-from numeric.decimal import power
-from numeric.digits import digit_value, hex_digits, magnitude_of_digits
+from value.biguint import power
+from value.digits import digit_value, hex_digits, magnitude_of_digits
 
 
 comptime _TEN19 = UInt64(10_000_000_000_000_000_000)

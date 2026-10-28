@@ -1,6 +1,6 @@
 """What the runner asks of the driver (docs/v2/protocol.md)."""
 
-from wire.value import Value
+from value.value import Value
 
 
 trait Driver:

@@ -1,9 +1,9 @@
 from std.testing import assert_equal, assert_true, assert_false, assert_raises, TestSuite
 
-from numeric.floats import *
-from numeric.formats import F16, BF16, F32, F64
-from numeric.literal import parse_number
-from numeric.real import Real
+from value.floats import *
+from value.float_formats import F16, BF16, F32, F64
+from value.literal import parse_number
+from value.real import Real
 
 
 def r(text: String) raises -> Real:

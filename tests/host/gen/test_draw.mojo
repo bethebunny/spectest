@@ -4,10 +4,10 @@ from check.types import Types
 from gen.sizes import Sizes
 from gen.value import draw_value
 from mcheck.source import Source
-from numeric.bigint import BigInt
-from numeric.floats import is_nan, is_inf, is_zero, is_subnormal, is_normal
-from numeric.formats import format_by_id
-from wire.value import Value
+from value.bigint import BigInt
+from value.floats import is_nan, is_inf, is_zero, is_subnormal, is_normal
+from value.float_formats import format_by_id
+from value.value import Value
 
 comptime N = 3000
 

@@ -5,10 +5,10 @@ from std.testing import assert_true
 
 from check.checker import check_source
 from check.spec import Spec
-from numeric.bigint import BigInt
-from numeric.formats import F32, F64, FloatFormat
-from wire.format import format_value
-from wire.value import Value
+from value.bigint import BigInt
+from value.float_formats import F32, F64, FloatFormat
+from value.text import format_value
+from value.value import Value
 
 from eval.api import Judgment, evaluate, judge
 from eval.env import Env

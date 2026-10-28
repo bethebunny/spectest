@@ -7,7 +7,7 @@ from eval.api import judge
 from eval.env import Env
 from eval.host import EvalHost
 from eval_testkit import f64v
-from wire.value import Value
+from value.value import Value
 
 
 struct Lean(EvalHost):

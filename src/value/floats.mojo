@@ -5,9 +5,9 @@ A pattern is a `UInt64` holding the format's bits, zero-extended.
 
 from bigint import BigUInt
 
-from numeric.decimal import rounded_quotient
-from numeric.formats import FloatFormat
-from numeric.real import Real
+from value.biguint import rounded_quotient
+from value.float_formats import FloatFormat
+from value.real import Real
 
 
 def is_nan(format: FloatFormat, bits: UInt64) -> Bool:

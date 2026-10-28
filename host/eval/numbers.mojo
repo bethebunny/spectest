@@ -4,16 +4,16 @@ Every function raises an `Error` whose message says what went wrong; the evaluat
 attaches the location.
 """
 
-from numeric.bigint import BigInt
-from numeric.fixed import wrapped
-from numeric.floats import is_nan, to_real
-from numeric.real import Real
+from value.bigint import BigInt
+from value.fixed import wrapped
+from value.floats import is_nan, to_real
+from value.real import Real
 from prelude.util import real_value
 from syntax.ast import Op
-from wire.equality import canonical_eq
-from wire.format import format_value
-from wire.order import compare
-from wire.value import Kind, Value
+from value.equality import canonical_eq
+from value.text import format_value
+from value.order import compare
+from value.value import Kind, Value
 
 
 comptime MAX_SHIFT = 1 << 24

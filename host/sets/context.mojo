@@ -10,9 +10,9 @@ from arena.build import diagram, exactly_these, interval, narrow_bit
 from arena.compare import disjoint, subset
 from arena.members import accepts, bits_between, nth_narrow, rank_narrow
 from arena.walk import Narrow, Walk
-from numeric.bigint import BigInt
-from numeric.fixed import int_max, int_min, low_mask, pattern_of
-from numeric.formats import FloatFormat
+from value.bigint import BigInt
+from value.fixed import int_max, int_min, low_mask, pattern_of
+from value.float_formats import FloatFormat
 
 from .pattern import expand_pattern
 

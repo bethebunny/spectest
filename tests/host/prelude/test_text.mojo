@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from prelude_testkit import Lcg, error_of, int_list, run, samples
-from wire.value import Value
+from value.value import Value
 
 
 def valid(data: List[UInt8]) raises -> Bool:

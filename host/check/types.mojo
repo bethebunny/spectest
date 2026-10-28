@@ -29,7 +29,7 @@ ENUM, RECORD and MODEL are nominal: interned by name, so declare each once.
 
 from std.hash import Hasher
 
-from numeric.formats import FORMATS, FloatFormat
+from value.float_formats import FORMATS, FloatFormat
 
 comptime ANY_TYPE = 0
 """The id of ANY."""

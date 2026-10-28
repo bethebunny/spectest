@@ -22,7 +22,7 @@ from mcheck import property as mcheck
 from mcheck.property import FAILED, PASSED, SKIPPED, Outcome, Property
 from mcheck.search import search
 from mcheck.source import Many, Source
-from wire.value import Value
+from value.value import Value
 
 from .driver import Driver
 from .host import RunHost

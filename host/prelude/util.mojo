@@ -1,10 +1,10 @@
 """Shared helpers of the prelude functions: errors, and numbers as `Real`."""
 
-from numeric.bigint import BigInt
-from numeric.floats import is_nan, to_real
-from numeric.formats import FloatFormat
-from numeric.real import Real
-from wire.value import Kind, Value
+from value.bigint import BigInt
+from value.floats import is_nan, to_real
+from value.float_formats import FloatFormat
+from value.real import Real
+from value.value import Kind, Value
 
 
 def fail(who: String, message: Some[Writable]) -> Error:

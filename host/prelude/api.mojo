@@ -6,7 +6,7 @@
 
 from check import types as ty
 from check.psig import prelude_sig
-from numeric.formats import FloatFormat, format_by_id
+from value.float_formats import FloatFormat, format_by_id
 from prelude.collections import (
     EqMode,
     distinct,
@@ -44,8 +44,8 @@ from prelude.ints import bit_length, fits_float, fits_int, le_uint, wrap
 from prelude.names import prelude_id, prelude_name
 from prelude.text import codepoints, from_codepoints, valid_utf8
 from prelude.util import fail
-from wire.equality import same
-from wire.value import Value
+from value.equality import same
+from value.value import Value
 
 
 @fieldwise_init

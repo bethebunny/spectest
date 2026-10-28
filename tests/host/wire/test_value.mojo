@@ -1,9 +1,9 @@
 from std.hash import hash
 from std.testing import assert_equal, assert_true, assert_false, assert_raises, TestSuite
 
-from numeric.bigint import BigInt
-from numeric.formats import F32, F64
-from wire.value import Value
+from value.bigint import BigInt
+from value.float_formats import F32, F64
+from value.value import Value
 
 
 def test_ints_are_canonical() raises:

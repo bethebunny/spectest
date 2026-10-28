@@ -40,8 +40,8 @@ from mcheck.settings import Settings
 from mcheck.shrink import shrink
 from mcheck.source import Source
 from syntax.chars import is_digit, is_word_char
-from wire.format import format_value
-from wire.value import Value
+from value.text import format_value
+from value.value import Value
 
 from .aggregate import run_aggregate
 from .decode import decode, describe

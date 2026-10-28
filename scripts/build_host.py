@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "spectest" / "_host" / "module.mojo"
 MODULE = SOURCE.with_name("__init__.abi3.so")
 SOURCES = [ROOT / "src", ROOT / "host", SOURCE.parent]
-INCLUDES = [ROOT / "src", ROOT / "host", ROOT / "host" / "vendor" / "bitpattern", ROOT / "spectest"]
+INCLUDES = [ROOT / "src", ROOT / "host", ROOT / "src" / "vendor" / "bitpattern", ROOT / "spectest"]
 RUNTIME = ["libKGENCompilerRTShared", "libAsyncRTRuntimeGlobals", "libMSupportGlobals"]
 SUFFIX = ".dylib" if sys.platform == "darwin" else ".so"
 ORIGIN = "@loader_path" if sys.platform == "darwin" else "$ORIGIN"

@@ -5,7 +5,7 @@ from std.collections import Set
 
 from check import types as ty
 from check.spec import Fn, Spec
-from wire.value import Value
+from value.value import Value
 
 
 def norm_name(name: String) -> String:

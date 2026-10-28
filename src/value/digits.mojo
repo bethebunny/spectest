@@ -4,7 +4,7 @@ from std.math import ceildiv
 
 from bigint import BigUInt, Limbs
 
-from numeric.decimal import pow10
+from value.biguint import pow10
 
 
 def digit_value(c: Int, *, hex: Bool) -> Int:

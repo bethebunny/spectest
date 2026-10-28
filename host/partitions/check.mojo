@@ -6,9 +6,9 @@ from std.collections import Set
 from std.math import log2
 
 from check.spec import Spec
-from numeric.digits import hex_digits
-from numeric.fixed import low_mask, signed_of
-from numeric.text import float_text
+from value.digits import hex_digits
+from value.fixed import low_mask, signed_of
+from value.number_text import float_text
 from sets import BitSet, SetContext
 from syntax.ast import Ast, Diagnostic
 

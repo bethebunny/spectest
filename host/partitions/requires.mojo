@@ -2,7 +2,7 @@
 
 import syntax.ast as sx
 from check.spec import Spec
-from numeric.real import Real
+from value.real import Real
 from sets import BitSet, SetContext
 from syntax.ast import Ast
 

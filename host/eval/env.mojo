@@ -1,6 +1,6 @@
 """The values a clause sees, and the state of one evaluation."""
 
-from wire.value import Value
+from value.value import Value
 
 
 @fieldwise_init

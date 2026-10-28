@@ -8,8 +8,8 @@ Declarations keep source order. Lists of declarations refer to each other by pos
 (`Fn.owner` is a position in `Spec.models`, `Fn.clauses` positions in `Spec.clauses`).
 """
 
-from numeric.literal import parse_number
-from numeric.real import Real
+from value.literal import parse_number
+from value.real import Real
 from syntax.ast import Ast, NodeKind, Op
 
 from check.types import ANY_TYPE, Types

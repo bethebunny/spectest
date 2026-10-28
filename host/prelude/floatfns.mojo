@@ -2,12 +2,12 @@
 
 from std.math import clamp
 
-from numeric import floats
-from numeric.bigint import BigInt
-from numeric.formats import FloatFormat
-from numeric.real import Real
+from value import floats
+from value.bigint import BigInt
+from value.float_formats import FloatFormat
+from value.real import Real
 from prelude.util import fail, float_of, real_of, real_value
-from wire.value import Value
+from value.value import Value
 
 
 def classify(who: String, v: Value) raises -> Value:

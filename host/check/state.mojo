@@ -2,7 +2,7 @@
 and the type relations (join, equality and order rules) the expression rules use.
 """
 
-from numeric.real import Real
+from value.real import Real
 from prelude.names import prelude_count, prelude_name
 from syntax import ast
 from syntax.ast import Diagnostic

@@ -6,8 +6,8 @@ Errors go to the checker's diagnostics; an expression that already has an error 
 the poison type, which silences follow-on errors.
 """
 
-from numeric.literal import is_integer_literal
-from numeric.real import Real
+from value.literal import is_integer_literal
+from value.real import Real
 
 from check.psig import Arg, CallInfo, TypingError
 from check.sigs import prelude_type

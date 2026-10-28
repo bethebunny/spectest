@@ -6,7 +6,7 @@ from check.spec import Fn, Partition, Spec
 from partitions.compile import compile_set_aliased
 from sets import BitSet, SetContext
 from syntax.ast import Op
-from wire.value import Value
+from value.value import Value
 
 from .coerce import bits_of_value, fit
 from .core import is_old_call, type_kind, value_of

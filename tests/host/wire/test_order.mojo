@@ -1,9 +1,9 @@
 from std.testing import assert_equal, assert_true, assert_false, assert_raises, TestSuite
 
-from numeric.bigint import BigInt
-from numeric.formats import F64
-from wire.order import compare, is_ord
-from wire.value import Value
+from value.bigint import BigInt
+from value.float_formats import F64
+from value.order import compare, is_ord
+from value.value import Value
 
 
 def real(n: Int, d: Int) -> Value:

@@ -1,10 +1,10 @@
 from std.hash import default_hasher
 from std.testing import assert_equal, assert_true, assert_false, assert_raises, TestSuite
 
-from numeric.bigint import BigInt
-from numeric.formats import F32, F64
-from wire.equality import canonical_eq, same, hash_same
-from wire.value import Value
+from value.bigint import BigInt
+from value.float_formats import F32, F64
+from value.equality import canonical_eq, same, hash_same
+from value.value import Value
 
 
 def same_hash(v: Value) -> UInt64:

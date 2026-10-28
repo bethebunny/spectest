@@ -2,9 +2,9 @@ from std.memory import bitcast
 from std.os import getenv
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from numeric.floats import round_to, to_real
-from numeric.formats import BF16, F16, F32, F64, FloatFormat
-from numeric.real import Real
+from value.floats import round_to, to_real
+from value.float_formats import BF16, F16, F32, F64, FloatFormat
+from value.real import Real
 from partitions.ranges import float_equal, float_range
 from sets import SetContext
 

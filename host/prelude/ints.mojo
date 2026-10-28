@@ -1,12 +1,12 @@
 """Fixed-width integers and bytes: `wrap`, `fits`, `le_uint`, `bit_length`."""
 
-from numeric.bigint import BigInt
-from numeric.digits import magnitude_of_fields
-from numeric.fixed import int_max, int_min, wrapped
-from numeric.formats import FloatFormat
-from numeric.floats import exactly
+from value.bigint import BigInt
+from value.digits import magnitude_of_fields
+from value.fixed import int_max, int_min, wrapped
+from value.float_formats import FloatFormat
+from value.floats import exactly
 from prelude.util import fail, int_of, real_of
-from wire.value import Value
+from value.value import Value
 
 
 def wrap(n: Value, bits: Int, signed: Bool) raises -> Value:

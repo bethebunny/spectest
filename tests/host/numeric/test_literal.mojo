@@ -1,8 +1,8 @@
 from std.testing import assert_equal, assert_true, assert_false, assert_raises, TestSuite
 
-from numeric.bigint import BigInt
-from numeric.literal import is_integer_literal, parse_number
-from numeric.real import Real
+from value.bigint import BigInt
+from value.literal import is_integer_literal, parse_number
+from value.real import Real
 
 
 def q(n: Int, d: Int = 1) raises -> Real:

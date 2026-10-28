@@ -4,8 +4,8 @@ that the bridge turns into Python dicts and lists."""
 
 from std.memory import bitcast
 
-from numeric.formats import F64
-from wire.value import Value
+from value.float_formats import F64
+from value.value import Value
 
 
 struct Obj(Defaultable, Movable):

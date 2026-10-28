@@ -7,9 +7,9 @@ as exact decimals when short and terminating, else as a ratio with an approximat
 A qerr prints as `3`, `2nan` or `3 + 2nan`.
 """
 
-from numeric.digits import hex_digits
-from numeric.text import approximate_decimal, exact_decimal, float_text
-from wire.value import Value
+from value.digits import hex_digits
+from value.number_text import approximate_decimal, exact_decimal, float_text
+from value.value import Value
 
 
 def _escape_ascii(c: Int) -> String:

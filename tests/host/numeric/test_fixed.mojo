@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from numeric.bigint import BigInt
-from numeric.fixed import int_max, int_min, low_mask, pattern_of, signed_of, wrapped
+from value.bigint import BigInt
+from value.fixed import int_max, int_min, low_mask, pattern_of, signed_of, wrapped
 
 
 def test_bounds() raises:

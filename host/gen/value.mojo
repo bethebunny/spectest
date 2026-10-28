@@ -2,8 +2,8 @@
 
 from check.types import TypeKind, Types
 from mcheck.source import MANY_LABEL, Source
-from numeric.formats import format_by_id
-from wire.value import Value
+from value.float_formats import format_by_id
+from value.value import Value
 
 from .scalars import (
     Seq,

@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 from check.spec import Spec
-from numeric.digits import hex_digits
+from value.digits import hex_digits
 from run.items import items_of
 from run.load import fnv, load, load_source
 from run.options import RunOptions
@@ -12,8 +12,8 @@ from run.results import (
     Obj,
     RunResult,
 )
-from wire.format import format_value
-from wire.value import Value
+from value.text import format_value
+from value.value import Value
 
 comptime SPEC = """spec t
 

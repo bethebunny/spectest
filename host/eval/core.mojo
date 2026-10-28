@@ -7,17 +7,17 @@ planned call that raised in the library) rather than an error.
 
 from check import types as ty
 from check.spec import Spec, Param
-from numeric.fixed import int_max, int_min
-from numeric.formats import format_by_id
-from numeric.literal import is_integer_literal, parse_number
+from value.fixed import int_max, int_min
+from value.float_formats import format_by_id
+from value.literal import is_integer_literal, parse_number
 from partitions.compile import compiled_set
 from prelude import api
 from prelude.collections import EqMode, equal
 from prelude.util import real_value
 from sets import SetContext
 from syntax.ast import Op
-from wire.equality import same
-from wire.value import Kind, Value
+from value.equality import same
+from value.value import Kind, Value
 
 from .coerce import bits_of_value, coerce_arg, fit, value_from_bits
 from .env import Env, Failure, Run

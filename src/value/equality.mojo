@@ -11,7 +11,7 @@ the int's value, so promotion never changes the answer.
 
 from std.hash import Hasher, default_hasher
 
-from wire.value import Kind, Value
+from value.value import Kind, Value
 
 
 def _check_canonical(value: Value) raises:

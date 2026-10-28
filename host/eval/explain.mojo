@@ -4,7 +4,7 @@ subexpressions that matter, following the failing structure."""
 from check import types as ty
 from check.spec import Spec
 from syntax.ast import Op
-from wire.value import Value
+from value.value import Value
 
 from .core import is_old_call, set_members, type_kind, value_of
 from .env import Env, Run

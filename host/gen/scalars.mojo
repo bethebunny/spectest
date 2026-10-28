@@ -5,10 +5,10 @@ from std.memory import bitcast
 
 from eval.coerce import int_from_bits
 from mcheck.source import MANY_LABEL, Many, Source, index_to_int
-from numeric.bigint import BigInt
-from numeric.fixed import low_mask, signed_of
-from numeric.formats import BF16, F16, F32, F64, FloatFormat
-from wire.value import Value
+from value.bigint import BigInt
+from value.fixed import low_mask, signed_of
+from value.float_formats import BF16, F16, F32, F64, FloatFormat
+from value.value import Value
 
 from .sizes import Sizes
 

@@ -5,8 +5,8 @@ from eval.api import judge, observe_with
 from eval.env import Env
 from eval.host import EvalHost
 from gen.models import Builder
-from wire.format import format_value
-from wire.value import Value
+from value.text import format_value
+from value.value import Value
 
 from .decode import decode
 from .driver import Driver
