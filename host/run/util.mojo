@@ -4,6 +4,7 @@ types."""
 from std.collections import Set
 
 from check import types as ty
+from check.spec import Fn, Spec
 from wire.value import Value
 
 
@@ -39,6 +40,21 @@ def collect_models(types: ty.Types, t: Int, mut out: List[String]):
     elif _has_parts(info.kind):
         for a in info.args:
             collect_models(types, a, out)
+
+
+def invariant_models(spec: Spec, func: Fn, param_types: List[Int], result_type: Int, modified: List[String]) -> List[Int]:
+    """The models whose invariants a call of `func` is judged on: those of its result and
+    of the parameters it modifies."""
+    var names: List[String] = []
+    collect_models(spec.types, result_type, names)
+    for param, t in zip(func.params, param_types):
+        if param.name in modified:
+            collect_models(spec.types, t, names)
+    var models: List[Int] = []
+    for name in names:
+        if case .Some(m) = spec.model_named(name):
+            models.append(m)
+    return models^
 
 
 def handles_of(types: ty.Types, v: Value, t: Int, model: String) -> List[Value]:

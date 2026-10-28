@@ -54,6 +54,7 @@ from .util import (
     collect_models,
     contains_name,
     handles_of,
+    invariant_models,
     is_handle,
     names_text,
     norm_name,
@@ -164,17 +165,11 @@ def _plan(spec: Spec, f: Int, param_types: List[Int], result_type: Int, *, state
     # Invariants of the models the function returns or modifies; an interface's are
     # judged after every step instead.
     if not stateful:
-        var models: List[String] = []
-        collect_models(spec.types, result_type, models)
-        for param, t in zip(func.params, param_types):
-            if param.name in plan.modified:
-                collect_models(spec.types, t, models)
-        for name in models:
-            if case .Some(m) = spec.model_named(name):
-                for c in spec.models[m].clauses:
-                    ref cl = spec.clauses[c]
-                    if cl.kind == .INVARIANT:
-                        plan.infos.append(ClauseInfo(.INVARIANT, c, decl + ":" + cl.id, source_text(spec, cl.node), "invariant", m))
+        for m in invariant_models(spec, func, param_types, result_type, plan.modified):
+            for c in spec.models[m].clauses:
+                ref cl = spec.clauses[c]
+                if cl.kind == .INVARIANT:
+                    plan.infos.append(ClauseInfo(.INVARIANT, c, decl + ":" + cl.id, source_text(spec, cl.node), "invariant", m))
     plan.result_has_model = type_has_model(spec.types, result_type)
     for part in func.partitions:
         plan.coverage_starts.append(len(plan.coverage_names))
