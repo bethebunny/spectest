@@ -207,29 +207,29 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
     """The result type of a prelude call."""
     var first = info.args[0].type if info.args else c.poison
     match sig.rule:
-        case .FLOAT_PRED:
+        case .FloatPredicate:
             _float(c, info, 0)
             return c.bool_
-        case .BITS:
+        case .Bits:
             _float(c, info, 0)
             return c.int_
-        case .SAME_FLOAT:
+        case .SameFloat:
             _float(c, info, 0)
             return first
-        case .ULP:
+        case .Ulp:
             _ = _float_type_arg(c, info)
             _real_like(c, info, 0)
             return c.real_
-        case .QE:
+        case .Qe:
             return _qe(c, info)
-        case .QERR_PART:
+        case .QerrPart:
             var k = c.tkind(first)
             if k != .QERR and k != .ANY:
                 raise TypingError(
                     t"{info.name} takes a qerr (the value of qe(a, b)), but argument 1 is {c.text(first)}", arg=0
                 )
             return c.int_
-        case .CR:
+        case .Cr:
             var k = c.tkind(first)
             if k == .FLOAT or k == .ANY:
                 return first
@@ -239,32 +239,32 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
                 t"{c.text(first)}{hint}",
                 arg=0,
             )
-        case .SAME:
+        case .Same:
             _ = _same_type(c, info)
             return c.bool_
-        case .IEEE_EQ:
+        case .IeeeEq:
             _float(c, info, 0)
             _float(c, info, 1)
             return c.bool_
-        case .REAL | .MP:
+        case .Real | .Mp:
             _real_like(c, info, 0)
             return c.real_
-        case .ROUND:
+        case .Round:
             var t = _float_type_arg(c, info)
             _real_like(c, info, 0)
             return t
-        case .WRAP:
+        case .Wrap:
             var t = _type_arg(c, info, [.FIXED_INT], "a fixed-width integer type (i8 ... u64)")
             _integer(c, info, 0)
             return t
-        case .FITS:
+        case .Fits:
             _ = _type_arg(c, info, [.FIXED_INT, .FLOAT], "a fixed-width integer or float type")
             _real_like(c, info, 0)
             return c.bool_
-        case .LE_UINT:
+        case .LeUint:
             _bytes(c, info, 0)
             return c.int_
-        case .LEN:
+        case .Len:
             match c.tkind(first):
                 case .LIST | .STRING | .LITERAL | .BYTES | .MAP | .ANY:
                     return c.int_
@@ -272,14 +272,14 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
                     raise TypingError(
                         t"len takes a list, string, bytes or map, but argument 1 is {c.text(first)}", arg=0
                     )
-        case .SORTED:
+        case .Sorted:
             var elem = _list_elem(c, info, 0)
             _ordered_elems(c, info, elem)
             return first if c.tkind(first) == .LIST else c.spec.types.list_of(elem)
-        case .IS_SORTED:
+        case .IsSorted:
             _ordered_elems(c, info, _list_elem(c, info, 0))
             return c.bool_
-        case .TWO_LISTS:
+        case .TwoLists:
             var a = _list_elem(c, info, 0)
             var b = _list_elem(c, info, 1)
             var elem = c.join(a, b)
@@ -291,10 +291,10 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
                 )
             _eq_elems(c, info, elem)
             return c.bool_
-        case .DISTINCT:
+        case .Distinct:
             _eq_elems(c, info, _list_elem(c, info, 0))
             return c.bool_
-        case .INDEX_OF:
+        case .IndexOf:
             var elem = _list_elem(c, info, 0)
             var x = info.args[1].type
             var t = c.join(elem, x)
@@ -304,45 +304,45 @@ def prelude_type(mut c: Checker, sig: PreludeSig, info: CallInfo) raises TypingE
                 )
             _eq_elems(c, info, t)
             return c.int_
-        case .KEYS | .VALUES:
+        case .Keys | .Values:
             match c.tkind(first):
                 case .MAP:
-                    return c.spec.types.list_of(c.arg(first, 0 if sig.rule == .KEYS else 1))
+                    return c.spec.types.list_of(c.arg(first, 0 if sig.rule == .Keys else 1))
                 case .ANY:
                     return c.spec.types.list_of(first)
                 case _:
                     raise TypingError(t"{info.name} takes a map, but argument 1 is {c.text(first)}", arg=0)
-        case .RANGE:
+        case .Range:
             _integer(c, info, 0)
             _integer(c, info, 1)
             return c.spec.types.list_of(c.int_)
-        case .SOME:
+        case .Some:
             return c.spec.types.option_of(first)
-        case .OPT_PRED:
+        case .OptionPredicate:
             _ = _option_elem(c, info, 0)
             return c.bool_
-        case .UNWRAP:
+        case .Unwrap:
             return _option_elem(c, info, 0)
-        case .VALID_UTF8:
+        case .ValidUtf8:
             _bytes(c, info, 0)
             return c.bool_
-        case .CODEPOINTS:
+        case .Codepoints:
             if not (c.is_stringish(first) or c.is_any(first)):
                 raise TypingError(t"codepoints takes a string, but {_argument(0)} is {c.text(first)}", arg=0)
             return c.spec.types.list_of(c.int_)
-        case .FRESH:
+        case .Fresh:
             _model(c, info, 0)
             return c.bool_
-        case .TWO_MODELS:
+        case .TwoModels:
             _model(c, info, 0)
             _model(c, info, 1)
             return c.bool_
-        case .EQ:
+        case .Eq:
             return _eq(c, info)
-        case .BIT_LENGTH:
+        case .BitLength:
             _integer(c, info, 0)
             return c.int_
-        case .FROM_CODEPOINTS:
+        case .FromCodepoints:
             var elem = _list_elem(c, info, 0)
             if not (c.is_integer(elem) or c.is_any(elem)):
                 raise TypingError(
