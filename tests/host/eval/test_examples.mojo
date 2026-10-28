@@ -5,7 +5,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 
 from specfile.checker import check_source
 from spec.spec import Spec
-from eval.api import explain, snapshot_olds
+from interpreter.api import explain, snapshot_olds
 from eval_testkit import *
 from value.float_formats import F32
 from spec.ast import Op

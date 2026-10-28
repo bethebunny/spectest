@@ -13,9 +13,9 @@ stored for the next run."""
 from std.time import perf_counter_ns
 
 from spec import types as ty
-from eval.api import explain, judge
-from eval.env import Env
-from eval.text import source_text
+from interpreter.api import explain, judge
+from interpreter.env import Env
+from interpreter.text import source_text
 from gen.models import is_default, is_not_drawn
 from mcheck.choices import Choices
 from mcheck import property as mcheck

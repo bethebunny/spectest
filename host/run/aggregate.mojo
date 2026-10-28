@@ -10,11 +10,11 @@ from std.time import perf_counter_ns
 
 from spec import types as ty
 from spec.spec import Spec
-from eval.api import evaluate
+from interpreter.api import evaluate
 from spec.bits import value_from_bits
-from eval.core import type_kind, value_of
-from eval.env import Env, Run
-from eval.numbers import (
+from interpreter.core import type_kind, value_of
+from interpreter.env import Env, Run
+from interpreter.numbers import (
     add_term,
     compare_values,
     elements,
@@ -25,7 +25,7 @@ from eval.numbers import (
     show,
     term_of,
 )
-from eval.text import located, source_text
+from interpreter.text import located, source_text
 from mcheck.rand import Rng
 from partition.compile import compiled_set
 from partition.sets import SetContext

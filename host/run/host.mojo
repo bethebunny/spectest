@@ -1,9 +1,9 @@
 """The evaluator's host over the driver: observers, planned calls, constants and
 identity questions, and the builder that makes values of models."""
 
-from eval.api import judge, observe_with
-from eval.env import Env
-from eval.host import EvalHost
+from interpreter.api import judge, observe_with
+from interpreter.env import Env
+from interpreter.host import EvalHost
 from gen.models import Builder
 from value.text import format_value
 from value.value import Value

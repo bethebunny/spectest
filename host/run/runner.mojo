@@ -11,7 +11,7 @@ from std.time import perf_counter_ns
 
 from spec import types as ty
 from spec.spec import Spec
-from eval.api import (
+from interpreter.api import (
     Judgment,
     class_holds,
     evaluate,
@@ -20,9 +20,9 @@ from eval.api import (
     old_calls,
     snapshot_olds,
 )
-from eval.coerce import bits_of_value, coerce_arg
-from eval.env import Env
-from eval.text import source_text
+from interpreter.coerce import bits_of_value, coerce_arg
+from interpreter.env import Env
+from interpreter.text import source_text
 from gen.classes import draw_in_classes
 from gen.domain import product_size, values_at
 from gen.models import (
