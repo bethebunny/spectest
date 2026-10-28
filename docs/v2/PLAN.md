@@ -7,8 +7,9 @@ store and writes reports. The driver calls the code under test. Both run in one
 process: pytest loads the host as an extension module, `spectest._host`, and the host
 calls back into the driver.
 
-v1 stays in `src/spectest` and keeps working until v2 replaces it. v2's Python parts
-are new subpackages of `spectest`; its Mojo parts live under `host/`.
+v1 stays in `spectest` and keeps working until v2 replaces it. v2's Python parts
+are new subpackages of `spectest`; its Mojo parts live under `src/` and
+`spectest/_host/`.
 
 The work is split into packages that can be built at the same time. Each one has a
 brief in `docs/v2/briefs/`, owns its own directories, and depends on the others only
@@ -17,36 +18,41 @@ through the contracts below.
 ## Layout
 
 ```
-host/                        Mojo sources; one include root
-  wire/value.mojo            contract: Value, every value the host computes with
-  wire/                      value semantics: equalities, order, formatting
-  numeric/bigint.mojo        contract: BigInt
-  numeric/formats.mojo       contract: FloatFormat, F16 BF16 F32 F64
-  numeric/                   exact reals, float conversions, literals, number text
-  syntax/ast.mojo            contract: the flat syntax tree
-  syntax/                    lexer, parser, tree dump
-  mcheck/                    the input engine
-  sets/                      partition sets on bitpattern's diagrams
-  bridge/                    the CPython extension module and the driver client
+spectest/                    the Python package
+  driver/                    the Python driver; wire.py is a contract
+  _host/                     the extension module: the C API, Values to Python and back,
+                             the driver client, the host's Python API
+src/                         Mojo packages; one include root
   vendor/bitpattern/         bitpattern's Mojo core at v0.3.0 (arena, bigint), unchanged
-src/spectest/driver/         the Python driver; wire.py is a contract
-tests/host/<package>/        Mojo tests, test_*.mojo, collected by tests/host/conftest.py
+  value/                     Value and the exact numbers in it, its equalities, order and text
+  spec/                      the checked spec, the type table, the syntax tree, prelude names
+  specfile/                  spec files to a Spec: lexer, parser, checker
+  partition/                 partition sets on bitpattern's diagrams, and a spec's partitions
+  prelude/                   the system prelude's functions on Values
+  interpreter/               checked expressions and clauses on Values
+  mcheck/                    the input engine
+  host/                      loading a spec and running it through the driver
+    draw/                    values of spec types drawn from mcheck
+tests/mojo/<package>/        Mojo tests mirroring src/, collected by tests/mojo/conftest.py
 tests/driver/ tests/bridge/  Python tests
 scripts/                     build scripts
 docs/v2/                     this plan, the protocol, v2 syntax, Mojo notes, briefs
 ```
 
+Nothing under `src/` imports `std.python` or `spectest/_host`, which builds on `src/`.
+The Mojo tests build without `spectest/` on the include path, so they hold to that.
+
 ## Dev loop
 
-- One Mojo package's tests: `uv run pytest tests/host/wire`. Each `test_*.mojo` file
-  is one pytest item: it compiles with `host/` and `host/vendor/bitpattern` on the
+- One Mojo package's tests: `uv run pytest tests/mojo/value`. Each `test_*.mojo` file
+  is one pytest item: it compiles with `src/` and `src/vendor/bitpattern` on the
   include path and runs its `TestSuite`. A cached rerun takes about a second; a cold
   compile several.
 - One file without pytest:
-  `.venv/bin/mojo run -I host -I host/vendor/bitpattern tests/host/wire/test_value.mojo`.
+  `.venv/bin/mojo run -I src -I src/vendor/bitpattern tests/mojo/value/test_value.mojo`.
 - Python tests: `uv run pytest tests/driver`.
-- The extension module: `uv run python scripts/build_host.py` (from the bridge
-  package), which rebuilds only when a `.mojo` file changed.
+- The extension module: `uv run python scripts/build_host.py` (from
+  `spectest/_host/module.mojo`), which rebuilds only when a `.mojo` file changed.
 - Run the narrowest selection that answers the question, and at most one Mojo
   compile at a time per package: compiles take several cores and about a gigabyte.
 
@@ -57,12 +63,12 @@ far, and where to find reference code.
 
 | Contract | File | What it fixes |
 | --- | --- | --- |
-| Value | `host/wire/value.mojo` | Kinds, layout, constructors, accessors, structural identity |
-| BigInt | `host/numeric/bigint.mojo` | Signed integers of any size, floored division, decimal and hex text |
-| Float formats | `host/numeric/formats.mojo` | Format ids (1 f16, 2 bf16, 3 f32, 4 f64) and bit layouts |
-| Number text | `host/numeric/text.mojo` | `float_text(format_id, bits)`; a placeholder until numeric lands |
-| Syntax tree | `host/syntax/ast.mojo` | Node kinds, ops, child layout per kind, spans, diagnostics |
-| Python wire objects | `src/spectest/driver/wire.py` | The Python form of each wire kind |
+| Value | `src/value/value.mojo` | Kinds, layout, constructors, accessors, structural identity |
+| BigInt | `src/value/bigint.mojo` | Signed integers of any size, floored division, decimal and hex text |
+| Float formats | `src/value/float_formats.mojo` | Format ids (1 f16, 2 bf16, 3 f32, 4 f64) and bit layouts |
+| Number text | `src/value/number_text.mojo` | `float_text(format_id, bits)`; a placeholder until numeric lands |
+| Syntax tree | `src/spec/ast.mojo` | Node kinds, ops, child layout per kind, spans, diagnostics |
+| Python wire objects | `spectest/driver/wire.py` | The Python form of each wire kind |
 | Protocol | `docs/v2/protocol.md` | The driver's methods and the conversions on both sides |
 | v2 syntax | `docs/v2/syntax.md` | The grammar the parser accepts |
 
@@ -86,8 +92,8 @@ integration, where every user of it is updated at once.
 
 ### Wave 2a: on wave 1, independent of each other
 
-Contracts added for it: `host/check/types.mojo` (the type table),
-`host/check/spec.mojo` (the checked spec) and `host/prelude/names.mojo` (prelude ids).
+Contracts added for it: `src/spec/types.mojo` (the type table),
+`src/spec/spec.mojo` (the checked spec) and `src/spec/prelude_names.mojo` (prelude ids).
 
 | Package | Brief | Builds |
 | --- | --- | --- |
@@ -140,8 +146,8 @@ The design doc's open questions stay open. The packages work around them:
 Each package is built in its own jj workspace started from `main`, and committed in
 small steps as its tests pass. When its brief's acceptance list is met, it goes to the
 merge queue, which rebases it onto `main`, runs its tests and the contract tests
-(`uv run pytest tests/host/wire/test_value.mojo tests/host/numeric/test_bigint.mojo
-tests/host/syntax/test_ast.mojo tests/host/check/test_contracts.mojo tests/host/vendor`), and moves `main`. Packages own
+(`uv run pytest tests/mojo/value/test_value.mojo tests/mojo/value/test_bigint.mojo
+tests/mojo/spec/test_ast.mojo tests/mojo/spec/test_contracts.mojo tests/mojo/vendor`), and moves `main`. Packages own
 disjoint directories, so rebases rarely conflict; one that does goes back to its
 author.
 

@@ -3,19 +3,19 @@
 Runs a spec's declarations against the code under test: load, generate, call, judge,
 shrink, store and report results. This is where every earlier package meets.
 
-**Owns:** `host/run/`, `tests/host/run/`, `tests/run/` (Python end-to-end tests), and
-the new functions of `host/bridge/module.mojo` and `scripts/build_host.py` (the bridge
+**Owns:** `src/host/`, `tests/mojo/host/`, `tests/run/` (Python end-to-end tests), and
+the new functions of `spectest/_host/module.mojo` and `scripts/build_host.py` (the bridge
 package has landed, and this package extends its module).
 
 **Read first:** `docs/language.md` (Clauses, Verdicts: the rules this package
 enforces), `docs/v2/host-api.md` (the API to implement), `docs/v2/protocol.md`, and
-the landed packages: `host/check` (`check_source`, `Spec`), `host/partitions`
-(`compile_partitions`), `host/gen` (`draw_args`, `draw_in_classes`, `domain_size`,
-`value_at`, `Builder`), `host/mcheck` (`search`, `enumerate_all`, `Store`),
-`host/eval` (`EvalHost`, `Env`, `judge`, `explain`, `class_holds`, `snapshot_olds`,
-`observe_with`), `host/bridge` (`DriverClient`, `to_python`, `from_python`),
-`host/wire` (`format_value`). Also `docs/v2/mojo.md`. v1 is the reference for every
-verdict rule: `src/spectest/runtime/runner.py`, `plans.py`, `binding.py`,
+the landed packages: `src/specfile` (`check_source`, `Spec`), `src/partition`
+(`compile_partitions`), `src/host/draw` (`draw_args`, `draw_in_classes`, `domain_size`,
+`value_at`, `Builder`), `src/mcheck` (`search`, `enumerate_all`, `Store`),
+`src/interpreter` (`EvalHost`, `Env`, `judge`, `explain`, `class_holds`, `snapshot_olds`,
+`observe_with`), `spectest/_host` (`DriverClient`, `to_python`, `from_python`),
+`src/value` (`format_value`). Also `docs/v2/mojo.md`. v1 is the reference for every
+verdict rule: `spectest/runtime/runner.py`, `plans.py`, `binding.py`,
 `context.py`, `stateful.py` (the parts for functions), and `tests/runtime/`.
 
 ## Deliver
@@ -65,20 +65,20 @@ verdict rule: `src/spectest/runtime/runner.py`, `plans.py`, `binding.py`,
    coverage by partition class, and the counterexample (inputs and observation
    through `format_value`, partitions, explanation through `explain`, seed and a
    reproduce string).
-6. **The Python API** of `docs/v2/host-api.md` in `bridge/module.mojo`: `load`,
+6. **The Python API** of `docs/v2/host-api.md` in `spectest/_host/module.mojo`: `load`,
    `items`, `run`, `unload`.
 
 ## What wave 2b settled
 
-- `host/eval/api.mojo` is the evaluator's surface:
+- `src/interpreter/api.mojo` is the evaluator's surface:
   - `evaluate` and `judge(spec, clause_pos, env, mut host) -> Judgment`, where
     `clause_pos` is a position in `Spec.clauses` and a Judgment has a kind, a message
     and a node;
   - `snapshot_olds(..., mut env)`, which writes into the env;
   - `observe_with`, `explain` (with a default limit of 16) and `class_holds`.
-  `EvalHost` is in `host/eval/host.mojo`. Its parameters are named `fn_pos` and
+  `EvalHost` is in `src/interpreter/host.mojo`. Its parameters are named `fn_pos` and
   `const_pos`, because `fn` is reserved in Mojo.
-- `host/eval/coerce.mojo` has `coerce_arg`, which checks that an argument is exactly
+- `src/interpreter/coerce.mojo` has `coerce_arg`, which checks that an argument is exactly
   representable in its parameter's type. Use it for planned calls and for explicit
   examples.
 - Aggregate bookkeeping is this package's job. The evaluator judges an aggregate
@@ -91,7 +91,7 @@ verdict rule: `src/spectest/runtime/runner.py`, `plans.py`, `binding.py`,
 
 ## Acceptance
 
-`uv run pytest tests/host/run tests/run` passes. End-to-end tests in `tests/run/` use
+`uv run pytest tests/mojo/host tests/run` passes. End-to-end tests in `tests/run/` use
 small specs written for them in v2 syntax (qualified names), Python implementations
 beside them, and the real `spectest.driver.Driver`. They cover:
 

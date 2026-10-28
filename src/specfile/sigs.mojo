@@ -1,8 +1,8 @@
 """Typing of the system prelude's functions.
 
-`prelude_type` applies a prelude function's typing rule (see psig.mojo) to a call whose
-arguments are already typed. A rule that finds the call ill-typed raises a
-`TypingError` that names the argument to point at.
+`prelude_type` applies a prelude function's typing rule (see
+spec/prelude_signatures.mojo) to a call whose arguments are already typed. A rule that
+finds the call ill-typed raises a `TypingError` that names the argument to point at.
 """
 
 from spec.prelude_signatures import CallInfo, PreludeSig, TypingError

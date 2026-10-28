@@ -10,7 +10,7 @@ show is real), and every seeded bug fails with a counterexample that names the
 right clause.
 
 Sources of truth, in order: `docs/language.md` (semantics), the contract
-modules `src/spectest/{ast,types,values}.py` (data shapes), this plan
+modules `spectest/{ast,types,values}.py` (data shapes), this plan
 (module boundaries). Change a contract module only by adding to it; if a
 change is unavoidable, note it in `docs/CHANGES.md` with the reason.
 
@@ -25,7 +25,7 @@ change is still a child of `main` may move `main` to it directly.
 ## Package layout
 
 ```
-src/spectest/
+spectest/
   __init__.py        public API: load, conformance, Conformance, ConformanceError, ModelBinding,
                      InterfaceBinding, Unrepresentable, NotAValue
   ast.py types.py values.py            contracts (given)

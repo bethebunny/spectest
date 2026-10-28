@@ -3,13 +3,13 @@
 Counterexamples that reach the minimal input in the cases where they now stop short.
 The builders of gen, runner and stateful each found one.
 
-**Owns:** `host/mcheck/shrink.mojo`, list drawing in `host/gen/value.mojo`, spec-error
-shrinking in `host/run/` (`runner.mojo` and its helpers), and the tests:
-`tests/host/mcheck/test_shrink*.mojo`, `tests/host/gen/test_shrink*.mojo` and
+**Owns:** `src/mcheck/shrink.mojo`, list drawing in `src/host/draw/value.mojo`, spec-error
+shrinking in `src/host/` (`runner.mojo` and its helpers), and the tests:
+`tests/mojo/mcheck/test_shrink*.mojo`, `tests/mojo/host/draw/test_shrink*.mojo` and
 `tests/run/test_shrinking.py`.
 
-**Read first:** `host/mcheck/` (choices, spans, the shrink passes, `smaller`),
-`host/gen/value.mojo` (`_draw_list`, the long-list path), `host/run/runner.mojo`
+**Read first:** `src/mcheck/` (choices, spans, the shrink passes, `smaller`),
+`src/host/draw/value.mojo` (`_draw_list`, the long-list path), `src/host/runner.mojo`
 (how a failure is shrunk and how spec errors are reported), `docs/language.md`
 (Shrinking), `docs/v2/mojo.md`. Hypothesis's shrinker is the model for the new passes.
 
@@ -35,7 +35,7 @@ shrinking in `host/run/` (`runner.mojo` and its helpers), and the tests:
 
 ## Acceptance
 
-`uv run pytest tests/host/mcheck tests/host/gen tests/run` passes, with new tests
+`uv run pytest tests/mojo/mcheck tests/mojo/host/draw tests/run` passes, with new tests
 showing:
 
 - `x == hi and lo < x` over ints in [0, 1000] shrinking to `lo = 0, x = hi = 1`;

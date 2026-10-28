@@ -1,6 +1,6 @@
 """The results of a run, in the shape of docs/v2/host-api.md, and their conversion to
 a `Value` tree (maps with string keys, lists, ints, strings, bools and f64 floats)
-that the bridge turns into Python dicts and lists."""
+that the extension module turns into Python dicts and lists."""
 
 from std.memory import bitcast
 

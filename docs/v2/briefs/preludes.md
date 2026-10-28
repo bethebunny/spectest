@@ -4,14 +4,14 @@ Specs in more than one file: a user prelude attached with `prelude "x.prelude"`,
 `use "other.spec"`. A diagnostic or a quoted clause from any file names that file and
 its own line.
 
-**Owns:** additions to `host/syntax/` (a multi-file tree), `host/check/` (resolving
-across files), `host/run/load.mojo` (reading the files), and their tests:
-`tests/host/syntax/test_files*.mojo`, `tests/host/check/test_preludes.mojo` and
+**Owns:** additions to `src/specfile/` (a multi-file tree), `src/specfile/` (resolving
+across files), `src/host/load.mojo` (reading the files), and their tests:
+`tests/mojo/specfile/test_parser_files*.mojo`, `tests/mojo/specfile/test_checker_preludes.mojo` and
 `tests/run/test_preludes.py`. Contract files change only by addition.
 
 **Read first:** `docs/v2/syntax.md` (user prelude files, `def`), the design doc's
-"User preludes" paragraph (summarized below), `host/syntax/ast.mojo`,
-`host/syntax/parser.mojo`, `host/check/`, `host/run/load.mojo`, `docs/v2/mojo.md`.
+"User preludes" paragraph (summarized below), `src/spec/ast.mojo`,
+`src/specfile/parser.mojo`, `src/specfile/`, `src/host/load.mojo`, `docs/v2/mojo.md`.
 
 ## How user preludes work
 
@@ -45,7 +45,7 @@ across files), `host/run/load.mojo` (reading the files), and their tests:
 
 ## Acceptance
 
-`uv run pytest tests/host/syntax tests/host/check tests/run` passes. New tests
+`uv run pytest tests/mojo/specfile tests/mojo/specfile tests/run` passes. New tests
 cover:
 
 - a spec attaching a prelude whose definitions its clauses and `requires` use;

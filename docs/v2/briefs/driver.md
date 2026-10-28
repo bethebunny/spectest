@@ -3,11 +3,11 @@
 The Python driver, `spectest.driver`: the only part of v2 that touches the objects of
 the code under test.
 
-**Owns:** `src/spectest/driver/` (`wire.py` is a contract: add to it only),
-`tests/driver/`, and the `marshal` entry of `_EXPORTS` in `src/spectest/__init__.py`.
+**Owns:** `spectest/driver/` (`wire.py` is a contract: add to it only),
+`tests/driver/`, and the `marshal` entry of `_EXPORTS` in `spectest/__init__.py`.
 
 **Read first:** `docs/v2/protocol.md` (the spec for this package),
-`src/spectest/driver/wire.py`, and v1's `src/spectest/runtime/binding.py` for how v1
+`spectest/driver/wire.py`, and v1's `spectest/runtime/binding.py` for how v1
 called Python code.
 
 ## Deliver

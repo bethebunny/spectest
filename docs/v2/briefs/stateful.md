@@ -4,15 +4,15 @@ Runs interfaces: generated sequences of constructor and method calls on live
 objects, each call judged like a function call, and the interface's invariants
 checked after every call.
 
-**Owns:** `host/run/stateful*.mojo` (new modules in the runner's package; change
+**Owns:** `src/host/stateful*.mojo` (new modules in the runner's package; change
 existing runner modules only where an interface needs a hook, and say so in the commit
 message), `tests/run/test_stateful*.py` and the Python modules those tests drive.
 
 **Read first:** `docs/language.md` (Declarations: interfaces; Verdicts),
-`docs/v2/host-api.md`, `host/run/` (the runner: `run`, the host over the driver, how a
-call is judged, results), `host/check/spec.mojo` (`Model.ctors`, `Model.methods`,
-`Fn.target`), `host/gen/`, `host/mcheck/`, `docs/v2/mojo.md`. v1 is the reference for
-every rule: `src/spectest/runtime/stateful.py`, `examples/deque/` and
+`docs/v2/host-api.md`, `src/host/` (the runner: `run`, the host over the driver, how a
+call is judged, results), `src/spec/spec.mojo` (`Model.ctors`, `Model.methods`,
+`Fn.target`), `src/host/draw/`, `src/mcheck/`, `docs/v2/mojo.md`. v1 is the reference for
+every rule: `spectest/runtime/stateful.py`, `examples/deque/` and
 `tests/runtime/` (its stateful tests).
 
 ## Deliver
@@ -55,7 +55,7 @@ interface over a small Python class written for the tests, modeled on
 - store replay;
 - `collections.deque` itself against the spec, which passes.
 
-The runner's existing tests (`tests/run`, `tests/host/run`) still pass.
+The runner's existing tests (`tests/run`, `tests/mojo/host`) still pass.
 
 ## Out of scope
 

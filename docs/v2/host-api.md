@@ -1,7 +1,7 @@
 # The host's Python API
 
 What the pytest plugin calls in `spectest._host`, and what comes back. The runner
-package implements it in Mojo (`host/bridge/module.mojo` and `host/run/`). The
+package implements it in Mojo (`spectest/_host/module.mojo` and `src/host/`). The
 plugin package uses it, and tests the plugin against a fake with the same API.
 
 ## Functions

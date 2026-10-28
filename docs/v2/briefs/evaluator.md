@@ -4,14 +4,14 @@ Evaluates checked expressions and clauses on `Value`s: the host's operators, pre
 calls, definitions, and, through a host interface, observers, constants, planned
 calls and identity questions.
 
-**Owns:** `host/eval/`, `tests/host/eval/`.
+**Owns:** `src/interpreter/`, `tests/mojo/interpreter/`.
 
 **Read first:** `docs/language.md` (Types and values, Clauses, Expressions, Verdicts),
-`docs/v2/syntax.md`, `host/check/spec.mojo` (resolutions by node, types by node),
-`host/check/` (`check_source`), `host/prelude/api.mojo` (`call`, `CallArgs`),
-`host/wire/` (equalities, order, `format_value`), `host/numeric/` (BigInt, Real,
-float conversions, literals), `host/partitions/` (`compile_set` for set expressions
-in clauses), `docs/v2/mojo.md`. v1 is the reference: `src/spectest/eval.py` and
+`docs/v2/syntax.md`, `src/spec/spec.mojo` (resolutions by node, types by node),
+`src/specfile/` (`check_source`), `src/prelude/api.mojo` (`call`, `CallArgs`),
+`src/value/` (equalities, order, `format_value`), `src/value/` (BigInt, Real,
+float conversions, literals), `src/partition/` (`compile_set` for set expressions
+in clauses), `docs/v2/mojo.md`. v1 is the reference: `spectest/eval.py` and
 `tests/eval/`.
 
 ## Deliver
@@ -71,7 +71,7 @@ in clauses), `docs/v2/mojo.md`. v1 is the reference: `src/spectest/eval.py` and
 
 ## What wave 2a settled
 
-- `check_source(source, path) -> Spec` is in `check/checker.mojo`. For a function
+- `check_source(source, path) -> Spec` is in `specfile/checker.mojo`. For a function
   with a receiver, `Fn.params[0]` is `self`: `R_PARAM` indices count from it, and
   `self` itself resolves as `R_SELF`.
 - `prelude.api.call(id, CallArgs, types)` evaluates the prelude, except the identity
@@ -88,7 +88,7 @@ in clauses), `docs/v2/mojo.md`. v1 is the reference: `src/spectest/eval.py` and
 
 ## Acceptance
 
-`uv run pytest tests/host/eval` passes, covering:
+`uv run pytest tests/mojo/interpreter` passes, covering:
 
 - v1's evaluator tests (`tests/eval/`), ported, with specs checked by
   `check_source` and a mock host;

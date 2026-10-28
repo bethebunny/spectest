@@ -2,7 +2,7 @@
 
 The host and the Python driver run in one process. The host calls the driver's
 methods through the CPython C API, passing and receiving wire objects: the Python form
-of wire values, defined in `src/spectest/driver/wire.py`. The protocol is defined
+of wire values, defined in `spectest/driver/wire.py`. The protocol is defined
 apart from this transport, so a transport across processes could carry the same
 messages later.
 
@@ -101,7 +101,7 @@ The return annotation of the converter names its wire kind (`int`, `str`, `bytes
 
 ## In the host
 
-`host/bridge` converts between `Value` and wire objects. Untyped, a wire object
+`spectest/_host` converts between `Value` and wire objects. Untyped, a wire object
 becomes the Value of its own kind (`None` becomes an empty OPTION); typed reading
 against a declared type comes with the checker. Every target id and handle id is a
 plain integer on the Mojo side.

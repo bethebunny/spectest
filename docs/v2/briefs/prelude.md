@@ -3,19 +3,19 @@
 The system prelude's functions, evaluated on `Value`s. The checker types them; this
 package computes them.
 
-**Owns:** `host/prelude/` (`names.mojo` is a contract: append only),
-`tests/host/prelude/`.
+**Owns:** `src/prelude/` (`src/spec/prelude_names.mojo` is a contract: append only),
+`tests/mojo/prelude/`.
 
 **Read first:** `docs/language.md` (Expressions, the prelude list),
-`host/prelude/names.mojo`, `host/wire/` (Value, equalities, order),
-`host/numeric/` (BigInt, Real, float conversions), `host/check/types.mojo`,
-`docs/v2/mojo.md`. v1 is the reference for every function: `src/spectest/prelude/`
+`src/spec/prelude_names.mojo`, `src/value/` (Value, equalities, order),
+`src/value/` (BigInt, Real, float conversions), `src/spec/types.mojo`,
+`docs/v2/mojo.md`. v1 is the reference for every function: `spectest/prelude/`
 (`floats.py`, `reals.py`, `ints.py`, `collections.py`, `cr.py`, `mp.py`) and
 `tests/prelude/`.
 
 ## Deliver
 
-1. `host/prelude/api.mojo`:
+1. `src/prelude/api.mojo`:
 
    ```mojo
    struct CallArgs(Movable):
@@ -28,7 +28,7 @@ package computes them.
    def call(id: Int, args: CallArgs, types: Types) raises -> Value
    ```
 
-   `call` evaluates every function in `names.mojo` by id, except `fresh`,
+   `call` evaluates every function in `prelude_names.mojo` by id, except `fresh`,
    `same_object` and `shares_memory`. Those ask the host about identity, so the
    evaluator answers them; `call` raises for them. An evaluation error (an index out
    of range, promoting a NaN, `unwrap` of none, a malformed call) raises an `Error`
@@ -53,7 +53,7 @@ package computes them.
 
 ## Acceptance
 
-`uv run pytest tests/host/prelude` passes, covering v1's prelude tests
+`uv run pytest tests/mojo/prelude` passes, covering v1's prelude tests
 (`tests/prelude/`), ported, and v2's two new functions. Keep test files small enough
 to compile fast. Split by area (floats, ints, collections, text, cr and mp), and scale
 large sample counts with `SPECTEST_STRENGTH` (see `docs/v2/mojo.md`).

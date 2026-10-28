@@ -276,7 +276,7 @@ struct Prop[D: Driver](Movable, Property):
     var seed: Int
     var stateful: Bool
     """A constructor or method of an interface, judged against the objects live at its
-    step (run/stateful.mojo)."""
+    step (host/stateful.mojo)."""
     var iface: Int
     """The handle type of the interface, in a stateful run."""
     var type_args: List[Int]

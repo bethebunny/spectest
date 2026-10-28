@@ -4,12 +4,12 @@ Compiles partition classes and other set expressions to partition sets, and prov
 what the language promises about them: classes are disjoint and cover the domain
 that `requires` admits.
 
-**Owns:** `host/partitions/`, `tests/host/partitions/`.
+**Owns:** `src/partition/`, `tests/mojo/partition/`.
 
 **Read first:** `docs/language.md` (Declarations: partitions; the partition sets in
-the prelude list), `host/sets/` (the landed set library), `host/numeric/` (`Real`,
-`round_to`, `exactly`, `next_up`, `parse_number`), `host/syntax/`, `host/check/types.mojo`,
-`host/check/spec.mojo`, `docs/v2/mojo.md`. v1 is the reference: `src/spectest/sets.py`
+the prelude list), `src/partition/` (the landed set library), `src/value/` (`Real`,
+`round_to`, `exactly`, `next_up`, `parse_number`), `src/specfile/`, `src/spec/types.mojo`,
+`src/spec/spec.mojo`, `docs/v2/mojo.md`. v1 is the reference: `spectest/sets.py`
 (compiling set expressions, `float_range`, `int_range`, `admitted`, and the checks)
 and `tests/sets/`.
 
@@ -47,11 +47,11 @@ and `tests/sets/`.
 The checker that builds `Spec` is written at the same time. For tests, build the
 `Spec`s you need by hand from `parse_spec` output: functions, parameter types from the
 TYPE nodes, partitions with their node ids, and `requires` clauses. Put that helper in
-`host/partitions/testing.mojo`. Test files can only import from the include roots.
+`src/partition/testing.mojo`. Test files can only import from the include roots.
 
 ## Acceptance
 
-`uv run pytest tests/host/partitions` passes, covering:
+`uv run pytest tests/mojo/partition` passes, covering:
 
 - v1's set compilation tests (`tests/sets/`), ported;
 - `float_range` on every format at zeros, infinities, subnormal edges and open ends,

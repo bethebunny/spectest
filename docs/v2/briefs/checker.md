@@ -3,14 +3,14 @@
 Turns a parsed spec into a `Spec`: every name resolved, every expression typed, every
 clause given its id, and every static rule of the language enforced.
 
-**Owns:** `host/check/` except `types.mojo` and `spec.mojo`, which are contracts (add
-only), and `tests/host/check/` (add to `test_contracts.mojo` only). The typing rules
+**Owns:** `src/specfile/` except `types.mojo` and `spec.mojo`, which are contracts (add
+only), and `tests/mojo/specfile/` (add to `test_contracts.mojo` only). The typing rules
 of prelude functions are this package's: the prelude package evaluates them.
 
 **Read first:** `docs/language.md` (all of it), `docs/v2/syntax.md`,
-`host/check/types.mojo`, `host/check/spec.mojo`, `host/prelude/names.mojo`,
-`host/syntax/` (`parse_spec`, the tree), `docs/v2/mojo.md`. v1 is the reference for
-every rule it already has: `src/spectest/lang/checker.py`, `signatures.py` and their
+`src/spec/types.mojo`, `src/spec/spec.mojo`, `src/spec/prelude_names.mojo`,
+`src/specfile/` (`parse_spec`, the tree), `docs/v2/mojo.md`. v1 is the reference for
+every rule it already has: `spectest/lang/checker.py`, `signatures.py` and their
 tests in `tests/lang/`.
 
 ## Deliver
@@ -24,7 +24,7 @@ tests in `tests/lang/`.
    models, interfaces, functions, observers, type parameters and bounds, types of
    every expression, the equality and order rules, what each clause kind may
    reference, `old`, comprehensions, `let`, clause ids and labels, freedoms, and the
-   typing of every prelude function in `prelude/names.mojo`. `use` and `prelude`
+   typing of every prelude function in `spec/prelude_names.mojo`. `use` and `prelude`
    declarations get a diagnostic, "not supported yet": only one file is checked for
    now.
 3. v2's rules:
@@ -70,7 +70,7 @@ tests in `tests/lang/`.
 
 ## Acceptance
 
-`uv run pytest tests/host/check` passes, covering:
+`uv run pytest tests/mojo/specfile` passes, covering:
 
 - v1's checker, diagnostics and signature tests (`tests/lang/test_lang_checker.py`,
   `test_lang_diagnostics.py`, `test_lang_signatures.py`), ported where the rule
@@ -78,7 +78,7 @@ tests in `tests/lang/`.
 - every existing spec checks without errors: `examples/*/*.spec` and
   `trials/bitpattern/bitpattern.spec`. If one doesn't because a v2 rule differs from
   v1's, report it rather than loosen the rule;
-- a v2 sample, `tests/host/check/data/v2.spec`, using every v2 form above, checks;
+- a v2 sample, `tests/mojo/specfile/data/v2.spec`, using every v2 form above, checks;
   and an error case for each v2 rule, with its message and position;
 - resolutions and types of a sample of nodes, read back from the `Spec`;
 - speed: checking `bitpattern.spec` takes under 50 ms (print it).

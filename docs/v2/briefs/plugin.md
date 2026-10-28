@@ -5,17 +5,17 @@ runs each declaration once through the host, and reports with v1's rendering. v1
 conformance objects keep working beside it.
 
 **Owns:**
-- `src/spectest/specs.py` (the `spectest.check` API);
-- the v2 parts of `src/spectest/pytest_plugin.py`: v1's plugin, extended. v1's
+- `spectest/specs.py` (the `spectest.check` API);
+- the v2 parts of `spectest/pytest_plugin.py`: v1's plugin, extended. v1's
   behavior must not change, and every v1 test must still pass;
-- the `check` entry of `_EXPORTS` in `src/spectest/__init__.py`;
-- module mapping in `src/spectest/driver/driver.py`;
+- the `check` entry of `_EXPORTS` in `spectest/__init__.py`;
+- module mapping in `spectest/driver/driver.py`;
 - `tests/specs/` (the plugin's tests).
 
 **Read first:** `docs/v2/host-api.md` (the host API you call), `docs/v2/protocol.md`,
-`src/spectest/pytest_plugin.py` and `src/spectest/runtime/report.py` (v1's plugin and
+`spectest/pytest_plugin.py` and `spectest/runtime/report.py` (v1's plugin and
 rendering, reused), `tests/plugin/` (v1's plugin tests, the model for yours), the
-root `conftest.py` (worker counts and profiles), and `src/spectest/driver/`.
+root `conftest.py` (worker counts and profiles), and `spectest/driver/`.
 
 ## Deliver
 

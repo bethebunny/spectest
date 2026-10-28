@@ -5,7 +5,7 @@ object after each call.
 `Machine` is the mcheck property. One example is a whole step sequence: `generate`
 draws it from the choices (a program of `Step`s, which refer to the constructor step
 that made their receiver), and `execute` runs it against the code under test. Each
-constructor and method has a `Prop` (run/runner.mojo) that judges one call; the
+constructor and method has a `Prop` (host/runner.mojo) that judges one call; the
 invariants are judged here. A failing clause is shrunk by mcheck on the choices, then
 by deleting steps and lowering constructor arguments, as v1 did, and the sequence is
 stored for the next run."""

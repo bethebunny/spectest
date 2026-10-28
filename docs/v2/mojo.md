@@ -2,7 +2,7 @@
 
 The host builds with the venv's `mojo` (mojo-compiler 1.2.0). Every form below compiled
 on 1.2. Much older Mojo material describes a different language, so when in doubt
-compile a five-line probe: `uv run mojo run -I host -I host/vendor/bitpattern probe.mojo`.
+compile a five-line probe: `uv run mojo run -I src -I src/vendor/bitpattern probe.mojo`.
 A cached rerun takes about a second.
 
 ## Running code
@@ -19,15 +19,16 @@ A cached rerun takes about a second.
       TestSuite.discover_tests[__functions_in_module()]().run()
   ```
 
-  A failing test exits with 1. `tests/host/conftest.py` makes each
-  `tests/host/**/test_*.mojo` one pytest item. A run that selects several files of one
+  A failing test exits with 1. `tests/mojo/conftest.py` makes each
+  `tests/mojo/**/test_*.mojo` one pytest item. A run that selects several files of one
   directory builds one runner for all of its test files and runs each item from it (the
   runner registers each `test_` function by name, since `__functions_in_module()` sees
   only the main file). A run of one file of a directory builds that file alone.
-- Run one package or file: `uv run pytest tests/host/<dir or file> -n 0 -q -p no:cacheprovider`.
-- Include roots are `-I host -I host/vendor/bitpattern`, plus `-I tests/host/lib` for
-  test-only helpers. A package under `host/` needs an `__init__.mojo`. Import by module
-  path: `from wire.value import Value`, `from arena import Arena`, `from bigint import BigUInt`.
+- Run one package or file: `uv run pytest tests/mojo/<dir or file> -n 0 -q -p no:cacheprovider`.
+- Include roots are `-I src -I src/vendor/bitpattern`, plus `-I tests/mojo/lib` for
+  test-only helpers and `-I spectest` for the extension, whose modules import as
+  `_host`. A package under `src/` needs an `__init__.mojo`. Import by module
+  path: `from value.value import Value`, `from arena import Arena`, `from bigint import BigUInt`.
 - A file given to `mojo build` as the top-level module can't use relative imports. Use
   package paths there.
 - A cold compile of a small test takes 4 to 10 s, and `mojo run` spends 1 to 3 s even
@@ -203,13 +204,13 @@ A cached rerun takes about a second.
   field or consume the holder.
 - A Span or pointer into a `String` field of `self` is invalidated by any later
   `mut self` call. Pass such bytes down as an argument from a string outside the struct.
-- A recursive type keeps its children in flat tables indexed by id (`syntax/ast.mojo`)
-  or behind `ArcPointer[Self]` (`wire/value.mojo`). A struct `A` holding `List[B]`,
+- A recursive type keeps its children in flat tables indexed by id (`spec/ast.mojo`)
+  or behind `ArcPointer[Self]` (`value/value.mojo`). A struct `A` holding `List[B]`,
   where `B` holds `ArcPointer[A]`, compiles alone but fails with "non-'Deinitable'
   type" once another module imports it. A defaulted argument of a recursive type in a
   helper's constructor fails the same way.
-- `syntax.ast.Span` hides std's `Span` when imported. Alias one of them:
-  `from syntax.ast import Span as SourceSpan`.
+- `spec.ast.Span` hides std's `Span` when imported. Alias one of them:
+  `from spec.ast import Span as SourceSpan`.
 
 ## Control flow and patterns
 
@@ -403,7 +404,7 @@ A cached rerun takes about a second.
 - `atof(text)` and `Float64(text)` parse decimal floats, `inf` and `nan`.
 - `String(x)` on a Float64 doesn't always print the shortest text that reads back: some
   17-digit values print with 16 digits that parse as a neighbouring float. Float16 and
-  BFloat16 print with Float32 digits. Print floats with `numeric.text.float_text`.
+  BFloat16 print with Float32 digits. Print floats with `value.number_text.float_text`.
 - `std.bit` has the bit tricks: `rotate_bits_left[7](x)`, `pop_count(n) == 1` for a power
   of two, `count_trailing_zeros`, `count_leading_zeros` and `bit_width`.
 - `bitcast[DType.uint64](x)` (`from std.memory`) gives a float's bits, and back.
@@ -480,7 +481,7 @@ A cached rerun takes about a second.
   it, eg. `Int(buf.unsafe_ptr())` or an `Int` field, can run after the owner is freed.
   Pass the owner as a borrowed argument instead. A field of a non-trivial type passed
   straight to a call, eg. `owned.ptr` (a `PyObjectPtr`), borrows its owner through the
-  call. `host/bridge` relies on both.
+  call. `spectest/_host` relies on both.
 - Module-level state in the shared library is `std.ffi._Global[name, init_fn]`, whose
   `init_fn` is a non-raising `def() -> T`. `get_or_create_ptr()` raises and returns a
   `MutUntrackedOrigin` pointer.
@@ -563,11 +564,11 @@ A cached rerun takes about a second.
 
 ## bitpattern's core
 
-`host/vendor/bitpattern` holds bitpattern's `bigint.mojo` and `arena/`, copied
-unchanged. Don't edit them. A missing operation goes in `host/numeric` and upstream.
+`src/vendor/bitpattern` holds bitpattern's `bigint.mojo` and `arena/`, copied
+unchanged. Don't edit them. A missing operation goes in `src/value` and upstream.
 
 - `BigUInt` is an unsigned integer of any size, for counts, members, magnitudes and
-  exact arithmetic. `numeric.bigint.BigInt` is the signed form built on it.
+  exact arithmetic. `value.bigint.BigInt` is the signed form built on it.
   - literals convert, eg. `BigUInt(1)`, `x != 1`, `not x % five`
   - `BigUInt.mask(width)` is `2**width - 1`, eg. the largest `uN`
   - `bits()` is the bit length and `count_ones()` the popcount, so a power of two has
@@ -576,7 +577,7 @@ unchanged. Don't edit them. A missing operation goes in `host/numeric` and upstr
   - `uint64_or_none()` and `uint128_or_none()` narrow it
   - `|`, `<<`, `>>`, `+`, `-`, `*`, `//`, `%`, `==`, `<` and `hash` work
 - `BigUInt` lacks `&`, `^`, `~`, `divmod`, `pow` and a trailing-zero count. Those live
-  in `host/numeric`. `BigUInt` isn't Writable, so tests compare with
+  in `src/value`. `BigUInt` isn't Writable, so tests compare with
   `assert_true(a == b)`. `BigUInt`, `BigInt` and `Real` copy only with `.copy()`.
 - `Limbs` is the malloc'd `UInt64` array under a `BigUInt`, least significant first.
   `BigUInt(limbs=...)` takes one and drops high zero limbs, so packing bytes or hex
@@ -589,7 +590,7 @@ unchanged. Don't edit them. A missing operation goes in `host/numeric` and upstr
   return BigUInt(limbs=limbs^)
   ```
 - `arena` holds sets of integers as hash-consed decision diagrams, so two sets are
-  equal when their roots are. The host reaches it through `sets.SetContext` and
+  equal when their roots are. The host reaches it through `partition.sets.SetContext` and
   `BitSet`, for sets up to 64 bits wide.
   - `apply`: `union`, `intersection`, `difference`, `symmetric_difference`, `complement`
   - `compare`: `subset` and `disjoint`, which build no nodes

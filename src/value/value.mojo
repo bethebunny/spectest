@@ -16,7 +16,7 @@ Layout by kind:
 | BOOL     | 0 or 1                | none                                            |
 | INT      | the value, if it fits | `big` when it doesn't fit an Int64              |
 |          | an Int64              |                                                 |
-| FLOAT    | bit pattern           | none; `sub` is the format id (numeric.formats)  |
+| FLOAT    | bit pattern           | none; `sub` is the format id (float_formats)    |
 | STRING   |                       | `text`                                          |
 | BYTES    |                       | `data`                                          |
 | LIST     |                       | `items`                                         |
@@ -362,7 +362,7 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
             item.__hash__(hasher)
 
     def write_to(self, mut writer: Some[Writer]):
-        """A debugging form, `kind(...)`. Reports use the wire package's formatter."""
+        """A debugging form, `kind(...)`. Reports use `value.text.format_value`."""
         writer.write(self.kind, "(")
         match self.kind:
             case .BOOL:

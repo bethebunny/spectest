@@ -1,14 +1,14 @@
 # Brief: syntax
 
 The lexer and parser for v2 spec files and user preludes, producing the flat syntax
-tree of `host/syntax/ast.mojo`, and a text dump of the tree for tests.
+tree of `src/spec/ast.mojo`, and a text dump of the tree for tests.
 
-**Owns:** `host/syntax/` (`ast.mojo` is a contract: add node kinds or ops only at the
-end), `tests/host/syntax/`.
+**Owns:** `src/specfile/` (`ast.mojo` is a contract: add node kinds or ops only at the
+end), `tests/mojo/specfile/`.
 
 **Read first:** `docs/language.md` (Declarations, Clauses, Expressions, Grammar),
-`docs/v2/syntax.md`, `host/syntax/ast.mojo` (the tree and every node's children),
-`docs/v2/mojo.md`. v1's `src/spectest/lang/lexer.py` and `parser.py` are the
+`docs/v2/syntax.md`, `src/spec/ast.mojo` (the tree and every node's children),
+`docs/v2/mojo.md`. v1's `spectest/lang/lexer.py` and `parser.py` are the
 reference: port their behavior, including the layout rule (INDENT, DEDENT, a deeper
 line continuing a clause), `perf` lines, comments, string escapes, numbers, and their
 error messages.
@@ -27,7 +27,7 @@ error messages.
 
 ## Acceptance
 
-`uv run pytest tests/host/syntax` passes, covering:
+`uv run pytest tests/mojo/specfile` passes, covering:
 
 - a dump test for each construct of both grammars: every declaration, member and
   clause kind, every operator at its precedence and associativity (`implies` right,
@@ -42,7 +42,7 @@ error messages.
   parser tests where they apply;
 - every existing spec parses: `examples/*/*.spec` and
   `trials/bitpattern/bitpattern.spec`;
-- a sample in v2 syntax, `tests/host/syntax/data/sample.spec`, written to use every
+- a sample in v2 syntax, `tests/mojo/specfile/data/sample.spec`, written to use every
   v2 form, parses and dumps as expected;
 - speed: parsing `bitpattern.spec` (2,594 lines) takes under 50 ms, v2's target for
   loading a spec. Print the time; assert under 200 ms so the test stays robust.

@@ -1,8 +1,8 @@
 # Spike: the cost of a host-to-driver call
 
 What one call from the Mojo host to the Python driver costs, measured through
-`DriverClient` (`host/bridge/client.mojo`) and the conversions in
-`host/bridge/convert.mojo`. Reproduce with `uv run python tests/bridge/spike.py`.
+`DriverClient` (`spectest/_host/client.mojo`) and the conversions in
+`spectest/_host/convert.mojo`. Reproduce with `uv run python tests/bridge/spike.py`.
 
 Machine: 12th Gen Intel Core i7-1255U, CPython 3.13.9, Mojo 1.2.0. Each figure is the
 median of 5 runs of `_host.bench`, 20,000 calls per run, in microseconds per call. A

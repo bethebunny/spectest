@@ -4,14 +4,14 @@ Partition sets for the host, built directly on bitpattern's Mojo core: sets of
 fixed-width bit patterns, the named sets of the float and integer types, and the
 queries that generation and the checker need.
 
-**Owns:** `host/sets/`, `tests/host/sets/`. `host/vendor/bitpattern` is used as is:
+**Owns:** `src/partition/`, `tests/mojo/partition/`. `src/vendor/bitpattern` is used as is:
 don't edit it.
 
-**Read first:** `host/vendor/bitpattern/arena/*.mojo` (the decision-diagram arena:
+**Read first:** `src/vendor/bitpattern/arena/*.mojo` (the decision-diagram arena:
 `interval`, `diagram`, `exactly_these`, `union`, `intersection`, `difference`,
 `complement`, `subset`, `disjoint`, `nth`, `rank`, `accepts`, counting), `docs/v2/mojo.md`,
-`tests/host/vendor/test_arena.mojo`. Semantics come from v1 and bitpattern's Python
-layer: `src/spectest/sets.py` (named sets, `float_range`, `int_range`, patterns), and
+`tests/mojo/vendor/test_arena.mojo`. Semantics come from v1 and bitpattern's Python
+layer: `spectest/sets.py` (named sets, `float_range`, `int_range`, patterns), and
 `git -C ~/bitpattern show v0.3.0:bitpattern/codecs/float.py` (and `intset.py`,
 `pattern.py`).
 
@@ -42,7 +42,7 @@ layer: `src/spectest/sets.py` (named sets, `float_range`, `int_range`, patterns)
 
 ## Acceptance
 
-`uv run pytest tests/host/sets` passes, covering:
+`uv run pytest tests/mojo/partition` passes, covering:
 
 - the f16 named sets against a brute-force count over all 65,536 patterns done in the
   test with plain bit tests;

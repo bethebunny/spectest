@@ -4,7 +4,7 @@ Follows the grammar of docs/language.md and docs/v2/syntax.md. `let` and `if` ma
 start any operand (`a implies let y = e in b`) and then extend as far right as
 possible. Inside a `let` value, `in` ends the value unless it is bracketed.
 
-The tree is built flat into `Ast` (see `syntax/ast.mojo` for each node's children).
+The tree is built flat into `Ast` (see `spec/ast.mojo` for each node's children).
 Every node's span runs from its first token to the last token consumed, so a clause
 covers its continuation lines.
 """

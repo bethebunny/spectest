@@ -1,9 +1,9 @@
 """Builds the extension module ``spectest._host`` from ``spectest/_host/module.mojo``.
 
 Does nothing when no ``.mojo`` file under ``src/`` or ``spectest/_host/`` is newer than
-the module. The Mojo
-runtime libraries are copied next to the module and found through an ``$ORIGIN`` rpath
-(as in bitpattern's editable build), so it loads without the compiler's environment.
+the module. The Mojo runtime libraries are copied next to the module and found through
+an ``$ORIGIN`` rpath (as in bitpattern's editable build), so it loads without the
+compiler's environment.
 """
 
 from __future__ import annotations

@@ -4,14 +4,14 @@ The spectest side of input generation: values of spec types drawn from mcheck's
 `Source`, steered by partition classes, with models built through their `build`
 calls. mcheck stays free of spectest types; this package is where they meet.
 
-**Owns:** `host/gen/`, `tests/host/gen/`.
+**Owns:** `src/host/draw/`, `tests/mojo/host/draw/`.
 
 **Read first:** `docs/language.md` (Declarations: partitions, generating model values,
-sizes, shrinking), `host/mcheck/` (Source, Many, spans, Property, search),
-`host/sets/` (`nth`, `count`, named sets), `host/check/types.mojo`,
-`host/check/spec.mojo` (`Fn`, `Param`, `Model`, `Build`), `host/wire/value.mojo`,
-`host/numeric/formats.mojo`, `docs/v2/mojo.md`. v1 is the reference for
-distributions and sizes: `src/spectest/generate.py`.
+sizes, shrinking), `src/mcheck/` (Source, Many, spans, Property, search),
+`src/partition/` (`nth`, `count`, named sets), `src/spec/types.mojo`,
+`src/spec/spec.mojo` (`Fn`, `Param`, `Model`, `Build`), `src/value/value.mojo`,
+`src/value/float_formats.mojo`, `docs/v2/mojo.md`. v1 is the reference for
+distributions and sizes: `spectest/generate.py`.
 
 ## Deliver
 
@@ -47,7 +47,7 @@ distributions and sizes: `src/spectest/generate.py`.
 
 ## Acceptance
 
-`uv run pytest tests/host/gen` passes, covering:
+`uv run pytest tests/mojo/host/draw` passes, covering:
 
 - every type draws values of its kind within its bounds, over a few thousand draws
   each, with the long-value share near 1/16;

@@ -4,22 +4,22 @@ The CPython extension module `spectest._host`, built from Mojo; conversion betwe
 `Value` and wire objects; the client the host uses to call the driver; and the first
 spike's measurements.
 
-**Owns:** `host/bridge/`, `scripts/build_host.py`, `tests/bridge/`, `docs/v2/spike.md`.
+**Owns:** `spectest/_host/`, `scripts/build_host.py`, `tests/bridge/`, `docs/v2/spike.md`.
 May add the built module's name to `.gitignore`.
 
-**Read first:** `docs/v2/protocol.md`, `docs/v2/mojo.md`, `host/wire/value.mojo`,
-`host/numeric/bigint.mojo`, `host/numeric/formats.mojo`,
-`src/spectest/driver/wire.py`. For the C API and the build, bitpattern's
+**Read first:** `docs/v2/protocol.md`, `docs/v2/mojo.md`, `src/value/value.mojo`,
+`src/value/bigint.mojo`, `src/value/float_formats.mojo`,
+`spectest/driver/wire.py`. For the C API and the build, bitpattern's
 `src/python/capi.mojo`, `src/lib.mojo` and `hatch_build.py` at v0.3.0 (see
 `docs/v2/mojo.md`, Reference code).
 
 ## Deliver
 
-1. **Build.** `scripts/build_host.py` compiles `host/bridge/module.mojo` with
+1. **Build.** `scripts/build_host.py` compiles `spectest/_host/module.mojo` with
    `mojo build --emit shared-lib`, both include roots, to
-   `src/spectest/_host.abi3.so`, set up to load the Mojo runtime libraries from the
+   `spectest/_host/__init__.abi3.so`, set up to load the Mojo runtime libraries from the
    venv the way bitpattern's editable build does. It does nothing when no `.mojo`
-   file under `host/` is newer than the module, and prints how long a build took.
+   file under `src/` is newer than the module, and prints how long a build took.
    `tests/bridge/conftest.py` runs it once per session.
 2. **The module**, defined with the C API as bitpattern's is (not with
    `PythonModuleBuilder`). Functions for Python:

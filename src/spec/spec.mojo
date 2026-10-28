@@ -104,7 +104,7 @@ struct Clause(Copyable):
     var id: String
     """`<decl>.<label>` or `<decl>#<n>`, as verdicts name it."""
     var kind: Op
-    """The clause kind, an op of syntax.ast (REQUIRES, ENSURES, ...)."""
+    """The clause kind, an op of spec.ast (REQUIRES, ENSURES, ...)."""
     var label: String
     var node: Int
     var expr: Int
@@ -164,7 +164,7 @@ struct Fn(Copyable):
     var decl_id: String
     """The prefix of its clause ids: `cos`, `Deque.pop`."""
     var kind: NodeKind
-    """FN, CTOR or METHOD (node kinds of syntax.ast)."""
+    """FN, CTOR or METHOD (node kinds of spec.ast)."""
     var node: Int
     var owner: Int
     """Position in Spec.models of the enclosing interface, or of the model a qualified

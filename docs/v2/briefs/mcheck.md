@@ -4,7 +4,7 @@ The input engine: generation, search, shrinking, enumeration and replay, in the
 spirit of Hypothesis's design. It is part of spectest for now, but its API names no
 spectest type, so it can later be a property-testing library for Mojo.
 
-**Owns:** `host/mcheck/`, `tests/host/mcheck/`.
+**Owns:** `src/mcheck/`, `tests/mojo/mcheck/`.
 
 **Read first:** the design doc's mcheck section (summarized here), `docs/v2/mojo.md`.
 Hypothesis's own design is the model: every example is drawn from a recorded sequence
@@ -53,7 +53,7 @@ of choices, and replay and shrinking work on that sequence, never on values.
 
 ## Acceptance
 
-`uv run pytest tests/host/mcheck` passes, covering:
+`uv run pytest tests/mojo/mcheck` passes, covering:
 
 - determinism: the same seed gives the same examples, and another seed doesn't;
 - an int in [0, 10000] failing at x >= 1000 shrinks to exactly 1000;
