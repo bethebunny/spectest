@@ -48,17 +48,18 @@ A cached rerun takes about a second.
 
 ## Types and kinds
 
-- A closed set of kinds is an `__enum`. A value takes one byte and prints as
-  `NodeKind.STR`, and a `match` that misses a case gets a warning. An enum derives
+- A closed set of kinds is an `__enum`. Its cases are UpperCamelCase, like Rust's and
+  like the stdlib's Optional (`.Some`, `.None`). A value takes one byte and prints as
+  `NodeKind.String`, and a `match` that misses a case gets a warning. An enum derives
   neither `__eq__` nor `__hash__`, so write each over the discriminant.
 
   ```mojo
   from std.hash import Hasher
 
   __enum NodeKind(Equatable, Hashable, ImplicitlyCopyable, Writable):
-      case NUM
-      case STR
-      case CALL
+      case Number
+      case String
+      case Call
 
       def __eq__(self, other: Self) -> Bool:
           return self._get_enum_discriminant() == other._get_enum_discriminant()
@@ -68,33 +69,63 @@ A cached rerun takes about a second.
   ```
 
   `__enum` is undocumented, so a release may change it. Without `ImplicitlyCopyable`
-  `NodeKind.NUM` doesn't compile, and without `Writable` it doesn't print. Case names
-  can't be keywords (`if`, `in`, `not`), and an enum holds no `var` fields.
-- Where the type is known, a case is written `.NUM`:
-  `var kinds: List[NodeKind] = [.NUM, .CALL]`, `kind == .STR`,
-  `return .NUM if literal else .CALL`.
+  `NodeKind.Number` doesn't compile, and without `Writable` it doesn't print. `Self`,
+  `True`, `False` and `None` can't name a case (`If` and `In` can), and an enum holds
+  no `var` fields.
+- Where the type is known, a case is written `.Number`:
+  `var kinds: List[NodeKind] = [.Number, .Call]`, `kind == .String`,
+  `return .Number if literal else .Call`.
 - A case can carry a payload. Several payloads bind as one tuple.
 
   ```mojo
   __enum Token(ImplicitlyCopyable, Writable):
-      case eof
-      case name(String)
-      case span(Int, Int)
+      case Eof
+      case Name(String)
+      case Span(Int, Int)
 
   match token:
-      case .eof:
+      case .Eof:
           return "eof"
-      case .name(text):
+      case .Name(text):
           return String(text)
-      case .span(pair):
+      case .Span(pair):
           return String(pair[0], "..", pair[1])
   ```
+- A case may share its name with a type. Inside the enum's methods `Int`, `String` and
+  `List` still name the types. Alternatives bind one name, `case .List(xs) | .Tuple(xs):`.
+
+  ```mojo
+  __enum Value(Copyable, Writable):
+      case Int(Int64)
+      case String(ArcPointer[String])
+      case List(List[ArcPointer[Value]])
+      case Tuple(List[ArcPointer[Value]])
+
+      @staticmethod
+      def text(s: String) -> Value:
+          return Value.String(ArcPointer(s))
+
+      def count(self) -> Int:
+          match self:
+              case .List(xs) | .Tuple(xs):
+                  return len(xs)
+              case _:
+                  return 0
+  ```
+- A payload enum can't hold itself directly. `case List(List[Value])` and
+  `case List(ArcPointer[List[Value]])` don't compile ("non-'Deinitable' payload").
+  `case List(List[ArcPointer[Value]])` does, and so does an ArcPointer to a struct box
+  that holds that list. ArcPointer payloads keep copies cheap. With only `Int64` and
+  ArcPointer payloads a value takes 16 bytes, and with a `List` payload 32.
+- `match` and `if case` work on any type that conforms to `EnumLike`
+  (`std.builtin.enum_like`). An `__enum` conforms through the compiler. Optional
+  conforms by hand, which is why `case .Some(v):` works on it.
 - No constructor builds a case from its integer. Write a `@staticmethod` with a `match`
   or a ternary. `Int(kind._get_enum_discriminant())` gives the integer.
 - A code with an order is a newtype struct over an integer. Reflection derives `__eq__`
   and `__hash__`, `Comparable` needs only `__lt__`, and `match` compares the `comptime`
   members by value. Such a `match` isn't checked for missing cases, so it ends with
-  `case _:`.
+  `case _:`. The `comptime` members are ALL_CAPS, like every `comptime` constant.
 
   ```mojo
   @fieldwise_init
@@ -155,7 +186,7 @@ A cached rerun takes about a second.
       var kind: NodeKind
       var default: Optional[Int]
 
-  print(Param("x", .NUM, None))  # Param(name=x, kind=NodeKind.NUM, default=None)
+  print(Param("x", .Number, None))  # Param(name=x, kind=NodeKind.Number, default=None)
   ```
 
   Write the method only for other behaviour, eg. `ast.Span` compares `start` and `end`
@@ -177,7 +208,7 @@ A cached rerun takes about a second.
       self.tags = tags^
   ```
 - Several arguments of one type are keyword-only: `def span(*, start: Int, end: Int) -> Int`.
-  `@fieldwise_init` takes keywords at call sites, `Param(name="y", kind=.STR, default=3)`,
+  `@fieldwise_init` takes keywords at call sites, `Param(name="y", kind=.String, default=3)`,
   but can't require them.
 - A constructor is `def __init__(out self, ...)`. A `var` argument takes ownership, and
   the caller moves with `^`. A value that isn't `ImplicitlyCopyable` copies only with
@@ -230,8 +261,37 @@ A cached rerun takes about a second.
       case _:
           return "big"
   ```
+- A guarded case that a later case names again runs on into `case _:` when its body
+  ends without `return` or `raise`, and a later unguarded case of the same value
+  crashes (a Mojo 1.2 bug). It happens on an `__enum` member, an Int and a string, and
+  not on a struct newtype such as `Op`. Test the condition inside one unguarded case,
+  or end each guarded case with `return` or `raise`.
+
+  ```mojo
+  match kind:
+      case .Binary if op == Op.AND:
+          ands += 1  # then `others += 1` runs too
+      case .Binary if op == Op.OR:
+          ors += 1
+      case _:
+          others += 1
+
+  match kind:
+      case .Binary:
+          if op == Op.AND:
+              ands += 1
+          elif op == Op.OR:
+              ors += 1
+          else:
+              others += 1
+      case _:
+          others += 1
+  ```
 - A bare name in a case binds a new variable and matches anything, with only a warning.
   Compare with a constant as `case == NUM:` or through a dotted name, `case codes.NUM:`.
+- `std.utils.Variant` has no type patterns. In `case Int as n:` the bare `Int` binds a
+  new name that matches anything, with only a warning. Test with `v.isa[Int]()` and read
+  with `v[Int]`.
 - Struct patterns match fields. A bound name is an immutable reference, `var x` copies
   and `ref x` writes through. Each alternative binds the same names.
 
@@ -260,6 +320,7 @@ A cached rerun takes about a second.
   return "unreachable"
   ```
 - `if case` tests one pattern and `while case` loops while it matches. Neither raises.
+  `.Some(var n)` binds a copy and `.Some(ref r)` writes through.
 
   ```mojo
   if case .Some(v) = d.get("a"):
@@ -267,6 +328,14 @@ A cached rerun takes about a second.
   while case [*_, top] = stack:
       total += top
       _ = stack.pop()
+  ```
+- `if case` takes no guard and no `and`. `if case .Some(x) = o and x > 3:` reads
+  `o and x > 3` as the subject, so nest an `if`:
+
+  ```mojo
+  if case .Some(x) = o:
+      if x > 3:
+          use(x)
   ```
 - `comptime match T:` with `case == Int:` branches on a type or parameter.
 - `if xs:` and `if not xs:` test emptiness of a List, String, Dict, Set or Span. Test
@@ -304,6 +373,8 @@ A cached rerun takes about a second.
   `if case [*_, last] = xs:` binds it, and `ref last` writes through.
 - `xs[a:b]` is a Span view, and `List(xs[a:b])` copies it. Passing two slices of one
   `var` list to one call is an aliasing error.
+- `xs[1:]` on an empty List aborts, so `zip(xs, xs[1:])` walks neighbours only of a list
+  that can't be empty.
 - `sort` takes a comparator, a lambda or a nested `def` with a capture list, and
   `[stable=True]` keeps ties in order.
 
@@ -532,11 +603,12 @@ A cached rerun takes about a second.
 | `enum` | `__enum` |
 | a newtype, `type NodeKind(UInt8)` | `__enum`, or a struct over the integer (`comptime NodeKind = UInt8` is only an alias) |
 | derived `__eq__` and `__hash__` on an `__enum` | one line each over `_get_enum_discriminant()` |
-| several payload patterns, `case .span(a, b):` | `case .span(pair):` with `pair[0]` and `pair[1]` |
+| several payload patterns, `case .Span(a, b):` | `case .Span(pair):` with `pair[0]` and `pair[1]` |
 | `match` on a Variant | `v.isa[T]()` and `v[T]`, or an `__enum` |
 | struct field defaults | an `__init__` with defaulted keyword arguments |
 | named tuple fields | a `@fieldwise_init` struct |
 | a struct holding `List[Self]` | flat tables indexed by id, or `ArcPointer[Self]` children |
+| an enum case holding `List[Self]` | `List[ArcPointer[Self]]`, or an ArcPointer to a struct box |
 | f-strings | t-strings |
 | generator expressions | a list comprehension, `any([...])`, or `map[f](xs)` |
 | `filter` | a comprehension with `if` |
@@ -558,6 +630,7 @@ A cached rerun takes about a second.
 | `is_power_of_two` | `pop_count(n) == 1` |
 | `Path.parent`, `Path.stem` | `dirname(p)`, `split_extension(basename(p))[0]` |
 | `if var x := ...` | `var x: T` on an earlier line, then `if x := ...` |
+| a guard on `if case` | a nested `if` |
 | indexing a `comptime` list without a copy | `materialize[NAMES]()` once per call |
 | a raising sort comparator | sort, then check pairs |
 | `mojo test` | a test program (see Running code) |
