@@ -210,7 +210,7 @@ struct Parser:
         var decls: List[Int] = []
         while self.kind() != .EOF:
             decls.append(self.parse_decl())
-        self.ast.files[0].root = self.ast.add(.FILE, self.close(m), text=name^, children=decls^)
+        self.ast.files[0].root = self.ast.add(.File, self.close(m), text=name^, children=decls^)
         return self.ast.root()
 
     def parse_prelude_file(mut self) raises -> Int:
@@ -218,11 +218,11 @@ struct Parser:
         var decls: List[Int] = []
         while self.kind() != .EOF:
             if self.is_keyword("use"):
-                decls.append(self.parse_use(.USE, "use"))
+                decls.append(self.parse_use(.Use, "use"))
             elif self.is_keyword("fn"):
                 var at = self.mark()
                 var id = self.parse_fn()
-                if self.ast.node(id).kind != .DEF:
+                if self.ast.node(id).kind != .Def:
                     raise self.error_at(
                         at, "a prelude holds definitions: fn name(...) -> type = expression"
                     )
@@ -231,7 +231,7 @@ struct Parser:
                 raise self.error("unexpected indentation")
             else:
                 raise self.unexpected("a definition ('fn name(...) -> type = expression') or 'use'")
-        self.ast.files[0].root = self.ast.add(.PRELUDE_FILE, self.close(m), children=decls^)
+        self.ast.files[0].root = self.ast.add(.PreludeFile, self.close(m), children=decls^)
         return self.ast.root()
 
     def parse_decl(mut self) raises -> Int:
@@ -241,9 +241,9 @@ struct Parser:
             var text = self.current().text.copy()
             match text:
                 case "use":
-                    return self.parse_use(.USE, "use")
+                    return self.parse_use(.Use, "use")
                 case "prelude":
-                    return self.parse_use(.PRELUDE, "prelude")
+                    return self.parse_use(.Prelude, "prelude")
                 case "error":
                     return self.parse_error_decl()
                 case "const":
@@ -286,7 +286,7 @@ struct Parser:
         var m = self.mark()
         self.skip()
         var name = self.parse_qname_text("an error name")
-        var id = self.ast.add(.ERROR, self.close(m), text=name^)
+        var id = self.ast.add(.Error, self.close(m), text=name^)
         self.expect_newline()
         return id
 
@@ -296,7 +296,7 @@ struct Parser:
         var name = self.parse_qname_text("a constant name")
         _ = self.expect_op(":", "':' and the type of the constant")
         var type = self.parse_type()
-        var id = self.ast.add(.CONST, self.close(m), text=name^, children=[type])
+        var id = self.ast.add(.Const, self.close(m), text=name^, children=[type])
         self.expect_newline()
         return id
 
@@ -307,14 +307,14 @@ struct Parser:
         _ = self.expect_op("{")
         var members = self.separated[Self.parse_enum_member]()
         _ = self.expect_op("}", "',' or '}'")
-        var id = self.ast.add(.ENUM, self.close(m), text=name^, children=members^)
+        var id = self.ast.add(.Enum, self.close(m), text=name^, children=members^)
         self.expect_newline()
         return id
 
     def parse_enum_member(mut self) raises -> Int:
         var m = self.mark()
         var member = self.expect_name("an enum member").text.copy()
-        return self.ast.add(.NAME, self.close(m), text=member^)
+        return self.ast.add(.Name, self.close(m), text=member^)
 
     def parse_record(mut self) raises -> Int:
         var m = self.mark()
@@ -322,7 +322,7 @@ struct Parser:
         var name = self.expect_name("a record name").text.copy()
         _ = self.expect_op("{")
         var fields = self.bracketed[Self.parse_param]("}")
-        var id = self.ast.add(.RECORD, self.close(m), text=name^, children=fields^)
+        var id = self.ast.add(.Record, self.close(m), text=name^, children=fields^)
         self.expect_newline()
         return id
 
@@ -332,7 +332,7 @@ struct Parser:
         var name = self.expect_name("a type name").text.copy()
         _ = self.expect_op("=")
         var type = self.parse_type()
-        var id = self.ast.add(.ALIAS, self.close(m), text=name^, children=[type])
+        var id = self.ast.add(.Alias, self.close(m), text=name^, children=[type])
         self.expect_newline()
         return id
 
@@ -365,7 +365,7 @@ struct Parser:
                         else "'observe', 'build' or a clause such as 'invariant'"
                     )
             self.skip()
-        var kind: NodeKind = .INTERFACE if interface else .MODEL
+        var kind: NodeKind = .Interface if interface else .Model
         return self.ast.add(kind, self.close(m), text=name^, children=children^)
 
     def parse_fn(mut self) raises -> Int:
@@ -378,7 +378,7 @@ struct Parser:
         if not self.is_op("="):
             self.expect_newline()
             self.parse_body(children)
-            return self.ast.add(.FN, self.close(m), text=name^, children=children^)
+            return self.ast.add(.Fn, self.close(m), text=name^, children=children^)
         if returns == NIL:
             raise self.error("a definition needs a return type: fn name(...) -> type = expression")
         if "." in name:
@@ -394,34 +394,34 @@ struct Parser:
             if self.kind() != .DEDENT:
                 raise self.unexpected("end of block")
             self.skip()
-        return self.ast.add(.DEF, self.close(m), text=name^, children=children^)
+        return self.ast.add(.Def, self.close(m), text=name^, children=children^)
 
     def parse_ctor(mut self) raises -> Int:
         var m = self.mark()
         self.skip()
         var name = self.expect_name("a constructor name").text.copy()
-        var children: List[Int] = [self.empty_node(.TPARAMS), self.parse_params()]
+        var children: List[Int] = [self.empty_node(.TypeParams), self.parse_params()]
         _ = self.expect_op("->", "'->' and the interface name")
         children.append(self.parse_type())
         self.expect_newline()
         self.parse_body(children)
-        return self.ast.add(.CTOR, self.close(m), text=name^, children=children^)
+        return self.ast.add(.Ctor, self.close(m), text=name^, children=children^)
 
     def parse_method(mut self) raises -> Int:
         var m = self.mark()
         self.skip()
         var name = self.expect_name("a method name").text.copy()
-        var children: List[Int] = [self.empty_node(.TPARAMS)]
+        var children: List[Int] = [self.empty_node(.TypeParams)]
         var pm = self.mark()
         _ = self.expect_op("(")
         if not self.is_keyword("self"):
             raise self.unexpected("'self' as the first parameter of a method")
         var params = self.bracketed[Self.parse_param](")")
-        children.append(self.ast.add(.PARAMS, self.close(pm), children=params^))
+        children.append(self.ast.add(.Params, self.close(pm), children=params^))
         children.append(self.parse_type() if self.accept_op("->") else NIL)
         self.expect_newline()
         self.parse_body(children)
-        return self.ast.add(.METHOD, self.close(m), text=name^, children=children^)
+        return self.ast.add(.Method, self.close(m), text=name^, children=children^)
 
     def parse_body(mut self, mut children: List[Int]) raises:
         """An optional indented block of partitions and clauses."""
@@ -447,7 +447,7 @@ struct Parser:
         _ = self.expect_op(":", "':' and the observed type")
         var type = self.parse_type()
         var body = self.parse_expr() if self.accept_op("=") else NIL
-        var id = self.ast.add(.OBSERVE, self.close(m), text=name^, children=[params, type, body])
+        var id = self.ast.add(.Observe, self.close(m), text=name^, children=[params, type, body])
         self.expect_newline()
         return id
 
@@ -456,7 +456,7 @@ struct Parser:
         self.skip()
         var name = self.parse_qname_text("the name of a build call")
         var params = self.parse_params()
-        var id = self.ast.add(.BUILD, self.close(m), text=name^, children=[params])
+        var id = self.ast.add(.Build, self.close(m), text=name^, children=[params])
         self.expect_newline()
         return id
 
@@ -476,10 +476,10 @@ struct Parser:
             var class_name = self.expect_name("a partition class name").text.copy()
             _ = self.expect_op("=", "'=' and the class expression")
             var expr = self.parse_expr()
-            classes.append(self.ast.add(.CLASS, self.close(cm), text=class_name^, children=[expr]))
+            classes.append(self.ast.add(.Class, self.close(cm), text=class_name^, children=[expr]))
             self.expect_newline()
         self.skip()
-        return self.ast.add(.PARTITION, self.close(m), text=param^, children=classes^)
+        return self.ast.add(.Partition, self.close(m), text=param^, children=classes^)
 
     def parse_label(mut self) -> String:
         if (
@@ -523,8 +523,8 @@ struct Parser:
                 if not lines:
                     pm.start = self.last_end
                     pm.end = self.last_end
-                children.append(self.ast.add(.STR, self.close(pm), text=" ".join(lines)))
-        var id = self.ast.add(.CLAUSE, self.close(m), op=op, text=label^, children=children^)
+                children.append(self.ast.add(.String, self.close(pm), text=" ".join(lines)))
+        var id = self.ast.add(.Clause, self.close(m), op=op, text=label^, children=children^)
         self.expect_newline()
         return id
 
@@ -541,21 +541,21 @@ struct Parser:
     def parse_qname_node(mut self, what: String) raises -> Int:
         var m = self.mark()
         var name = self.parse_qname_text(what)
-        return self.ast.add(.QNAME, self.close(m), text=name^)
+        return self.ast.add(.QualifiedName, self.close(m), text=name^)
 
     def parse_name_node(mut self, what: String) raises -> Int:
         var m = self.mark()
         var name = self.expect_name(what).text.copy()
-        return self.ast.add(.NAME, self.close(m), text=name^)
+        return self.ast.add(.Name, self.close(m), text=name^)
 
     def parse_tparams(mut self) raises -> Int:
         if not self.is_op("<"):
-            return self.empty_node(.TPARAMS)
+            return self.empty_node(.TypeParams)
         var m = self.mark()
         self.skip()
         var items = self.separated[Self.parse_tparam]()
         self.expect_gt()
-        return self.ast.add(.TPARAMS, self.close(m), children=items^)
+        return self.ast.add(.TypeParams, self.close(m), children=items^)
 
     def parse_tparam(mut self) raises -> Int:
         var m = self.mark()
@@ -563,29 +563,29 @@ struct Parser:
         var children: List[Int] = []
         if self.accept_op(":"):
             children.append(self.parse_qname_node("a bound (Eq or Ord)"))
-        return self.ast.add(.TPARAM, self.close(m), text=name^, children=children^)
+        return self.ast.add(.TypeParam, self.close(m), text=name^, children=children^)
 
     def parse_params(mut self) raises -> Int:
         var m = self.mark()
         _ = self.expect_op("(", "'(' and the parameters")
         var items = self.bracketed[Self.parse_param](")", allow_empty=True)
-        return self.ast.add(.PARAMS, self.close(m), children=items^)
+        return self.ast.add(.Params, self.close(m), children=items^)
 
     def parse_param(mut self) raises -> Int:
         var m = self.mark()
         var name = self.expect_name("a parameter name").text.copy()
         if name == "self" and not self.is_op(":"):
-            return self.ast.add(.PARAM, self.close(m), text=name^, children=[NIL, NIL])
+            return self.ast.add(.Param, self.close(m), text=name^, children=[NIL, NIL])
         _ = self.expect_op(":", String("':' and the type of ", name))
         var type = self.parse_type()
         var default = self.parse_expr() if self.accept_op("=") else NIL
-        return self.ast.add(.PARAM, self.close(m), text=name^, children=[type, default])
+        return self.ast.add(.Param, self.close(m), text=name^, children=[type, default])
 
     def parse_choice_alternative(mut self) raises -> Int:
         var m = self.mark()
         if self.kind() == .STRING:
             var value = self.advance().text.copy()
-            return self.ast.add(.STR, self.close(m), text=value^)
+            return self.ast.add(.String, self.close(m), text=value^)
         if self.kind() == .NAME:
             return self.parse_qname_node("a constant name")
         raise self.unexpected("a string literal or a constant name in the choice")
@@ -594,23 +594,23 @@ struct Parser:
         var m = self.mark()
         if self.kind() == .STRING:
             var alternatives = self.separated[Self.parse_choice_alternative]("|")
-            return self.ast.add(.CHOICE_TYPE, self.close(m), children=alternatives^)
+            return self.ast.add(.ChoiceType, self.close(m), children=alternatives^)
         if self.accept_op("("):
             var items = self.bracketed[Self.parse_type](")")
             if len(items) < 2:
                 raise self.error_at(m, "a tuple type has at least two elements")
-            return self.ast.add(.TUPLE_TYPE, self.close(m), children=items^)
+            return self.ast.add(.TupleType, self.close(m), children=items^)
         var name = self.parse_qname_text("a type")
         if self.accept_op("<"):
             var arguments = self.separated[Self.parse_type]()
             self.expect_gt()
-            return self.ast.add(.TYPE, self.close(m), text=name^, children=arguments^)
+            return self.ast.add(.Type, self.close(m), text=name^, children=arguments^)
         if self.is_op("|"):
-            var alternatives: List[Int] = [self.ast.add(.QNAME, self.close(m), text=name^)]
+            var alternatives: List[Int] = [self.ast.add(.QualifiedName, self.close(m), text=name^)]
             while self.accept_op("|"):
                 alternatives.append(self.parse_choice_alternative())
-            return self.ast.add(.CHOICE_TYPE, self.close(m), children=alternatives^)
-        return self.ast.add(.TYPE, self.close(m), text=name^)
+            return self.ast.add(.ChoiceType, self.close(m), children=alternatives^)
+        return self.ast.add(.Type, self.close(m), text=name^)
 
     def parse_expr(mut self) raises -> Int:
         return self.parse_implies()
@@ -622,7 +622,7 @@ struct Parser:
             return left
         self.skip()
         var right = self.parse_implies()
-        return self.ast.add(.BINARY, self.close(m), op=.IMPLIES, children=[left, right])
+        return self.ast.add(.Binary, self.close(m), op=.IMPLIES, children=[left, right])
 
     def parse_or(mut self) raises -> Int:
         var m = self.mark()
@@ -630,7 +630,7 @@ struct Parser:
         while self.is_keyword("or"):
             self.skip()
             var right = self.parse_and()
-            left = self.ast.add(.BINARY, self.close(m), op=.OR, children=[left, right])
+            left = self.ast.add(.Binary, self.close(m), op=.OR, children=[left, right])
         return left
 
     def parse_and(mut self) raises -> Int:
@@ -639,7 +639,7 @@ struct Parser:
         while self.is_keyword("and"):
             self.skip()
             var right = self.parse_not()
-            left = self.ast.add(.BINARY, self.close(m), op=.AND, children=[left, right])
+            left = self.ast.add(.Binary, self.close(m), op=.AND, children=[left, right])
         return left
 
     def parse_not(mut self) raises -> Int:
@@ -648,7 +648,7 @@ struct Parser:
             return self.parse_comparison()
         self.skip()
         var operand = self.parse_not()
-        return self.ast.add(.UNARY, self.close(m), op=.NOT, children=[operand])
+        return self.ast.add(.Unary, self.close(m), op=.NOT, children=[operand])
 
     def comparison_op(self) -> Op:
         ref t = self.current()
@@ -664,7 +664,7 @@ struct Parser:
             return left
         var first = self.advance().text.copy()
         var right = self.parse_level(0)
-        var node = self.ast.add(.BINARY, self.close(m), op=op, children=[left, right])
+        var node = self.ast.add(.Binary, self.close(m), op=op, children=[left, right])
         if self.comparison_op() != .NO_OP:
             var second = self.current().text.copy()
             raise self.error(t"comparisons do not chain: write 'a {first} b and b {second} c'")
@@ -681,14 +681,14 @@ struct Parser:
                 break
             self.skip()
             var right = self.parse_level(level + 1)
-            left = self.ast.add(.BINARY, self.close(m), op=op, children=[left, right])
+            left = self.ast.add(.Binary, self.close(m), op=op, children=[left, right])
         return left
 
     def parse_unary(mut self) raises -> Int:
         var m = self.mark()
         if self.accept_op("-"):
             var operand = self.parse_unary()
-            return self.ast.add(.UNARY, self.close(m), op=.NEG, children=[operand])
+            return self.ast.add(.Unary, self.close(m), op=.NEG, children=[operand])
         if self.is_keyword("let"):
             return self.parse_let()
         if self.is_keyword("if"):
@@ -697,7 +697,7 @@ struct Parser:
         if not self.accept_op("**"):
             return base
         var exponent = self.parse_unary()
-        return self.ast.add(.BINARY, self.close(m), op=.POW, children=[base, exponent])
+        return self.ast.add(.Binary, self.close(m), op=.POW, children=[base, exponent])
 
     def parse_let(mut self) raises -> Int:
         var m = self.mark()
@@ -712,7 +712,7 @@ struct Parser:
             raise self.unexpected("'in' after the value bound by let")
         self.skip()
         var body = self.parse_expr()
-        return self.ast.add(.LET, self.close(m), text=name^, children=[value, body])
+        return self.ast.add(.Let, self.close(m), text=name^, children=[value, body])
 
     def parse_if(mut self) raises -> Int:
         var m = self.mark()
@@ -729,21 +729,21 @@ struct Parser:
             raise self.unexpected("'else' (every if has an else branch)")
         self.skip()
         var other = self.parse_expr()
-        return self.ast.add(.IF, self.close(m), children=[condition, then, other])
+        return self.ast.add(.If, self.close(m), children=[condition, then, other])
 
     def parse_post(mut self) raises -> Int:
         var m = self.mark()
         var node = self.parse_atom()
         while True:
             if self.is_op("("):
-                node = self.parse_call(node, self.empty_node(.TYPEARGS), m)
+                node = self.parse_call(node, self.empty_node(.TypeArgs), m)
             elif self.accept_op("."):
                 if self.kind() == .NUMBER:
                     var index = self.advance().text.copy()
-                    node = self.ast.add(.TUPLE_INDEX, self.close(m), text=index^, children=[node])
+                    node = self.ast.add(.TupleIndex, self.close(m), text=index^, children=[node])
                 elif self.kind() == .NAME:
                     var attribute = self.advance().text.copy()
-                    node = self.ast.add(.ATTR, self.close(m), text=attribute^, children=[node])
+                    node = self.ast.add(.Attribute, self.close(m), text=attribute^, children=[node])
                 else:
                     raise self.unexpected("a field name or tuple index after '.'")
             elif self.accept_op("["):
@@ -755,9 +755,9 @@ struct Parser:
                 _ = self.expect_op("]", "']'" if is_slice else "':' or ']'")
                 self.no_in = saved
                 if is_slice:
-                    node = self.ast.add(.SLICE, self.close(m), children=[node, first, stop])
+                    node = self.ast.add(.Slice, self.close(m), children=[node, first, stop])
                 else:
-                    node = self.ast.add(.INDEX, self.close(m), children=[node, first])
+                    node = self.ast.add(.Index, self.close(m), children=[node, first])
             else:
                 return node
 
@@ -778,43 +778,43 @@ struct Parser:
                     keywords.append(key.text.copy())
                     var value = self.parse_expr()
                     children.append(
-                        self.ast.add(.ARG, self.close(am), text=key.text.copy(), children=[value])
+                        self.ast.add(.Arg, self.close(am), text=key.text.copy(), children=[value])
                     )
                 else:
                     if keywords:
                         raise self.error("positional arguments must come before named ones")
                     var value = self.parse_expr()
-                    children.append(self.ast.add(.ARG, self.close(am), children=[value]))
+                    children.append(self.ast.add(.Arg, self.close(am), children=[value]))
                 if not self.accept_op(","):
                     break
             _ = self.expect_op(")", "',' or ')'")
         self.no_in = saved
-        return self.ast.add(.CALL, self.close(m), children=children^)
+        return self.ast.add(.Call, self.close(m), children=children^)
 
     def parse_atom(mut self) raises -> Int:
         var m = self.mark()
         match self.kind():
             case .NUMBER:
                 var literal = self.advance().text.copy()
-                return self.ast.add(.NUM, self.close(m), text=literal^)
+                return self.ast.add(.Number, self.close(m), text=literal^)
             case .STRING:
                 var literal = self.advance().text.copy()
-                return self.ast.add(.STR, self.close(m), text=literal^)
+                return self.ast.add(.String, self.close(m), text=literal^)
             case .NAME:
                 return self.parse_name_atom()
             case _:
                 pass
         if self.accept_op("["):
             var elements = self.bracketed[Self.parse_expr]("]", allow_empty=True)
-            return self.ast.add(.LIST, self.close(m), children=elements^)
+            return self.ast.add(.List, self.close(m), children=elements^)
         if self.accept_op("{"):
             var elements = self.bracketed[Self.parse_expr]("}", allow_empty=True)
-            return self.ast.add(.SET, self.close(m), children=elements^)
+            return self.ast.add(.Set, self.close(m), children=elements^)
         if self.accept_op("("):
             var elements = self.bracketed[Self.parse_expr](")")
             if len(elements) == 1:
                 return elements[0]
-            return self.ast.add(.TUPLE, self.close(m), children=elements^)
+            return self.ast.add(.Tuple, self.close(m), children=elements^)
         raise self.unexpected("an expression")
 
     def parse_name_atom(mut self) raises -> Int:
@@ -823,10 +823,10 @@ struct Parser:
         var text = self.current().text.copy()
         if text == "true" or text == "false":
             self.skip()
-            return self.ast.add(.BOOL, self.close(m), op=Op.TRUE if text == "true" else Op.FALSE)
+            return self.ast.add(.Bool, self.close(m), op=Op.TRUE if text == "true" else Op.FALSE)
         if text == "none":
             self.skip()
-            return self.ast.add(.NONE, self.close(m))
+            return self.ast.add(.NoneLiteral, self.close(m))
         if (
             _comprehension_op(text) != .NO_OP
             and self.peek(1).is_op("(")
@@ -837,13 +837,13 @@ struct Parser:
         if _is_reserved(text):
             raise self.unexpected("an expression")
         self.skip()
-        var name = self.ast.add(.NAME, self.close(m), text=text.copy())
+        var name = self.ast.add(.Name, self.close(m), text=text.copy())
         if text in ["wrap", "fits", "round", "ulp", "qe"] and self.is_op("<"):
             var tm = self.mark()
             self.skip()
             var arguments = self.separated[Self.parse_type]()
             self.expect_gt()
-            var typeargs = self.ast.add(.TYPEARGS, self.close(tm), children=arguments^)
+            var typeargs = self.ast.add(.TypeArgs, self.close(tm), children=arguments^)
             if not self.is_op("("):
                 raise self.unexpected(t"'(' and the arguments of {text}<...>")
             return self.parse_call(name, typeargs, m)
@@ -863,7 +863,7 @@ struct Parser:
         _ = self.expect_op(")", "')'")
         self.no_in = saved
         return self.ast.add(
-            .COMPREHENSION, self.close(m),
+            .Comprehension, self.close(m),
             op=_comprehension_op(word), text=variable^, children=[iterable, body],
         )
 

@@ -32,9 +32,9 @@ def ensure_const(mut c: Checker, idx: Int):
 
 def resolve_type(mut c: Checker, node: Int, self_model: Int = -1) -> Int:
     match c.kind_of(node):
-        case .CHOICE_TYPE:
+        case .ChoiceType:
             return _choice(c, node)
-        case .TUPLE_TYPE:
+        case .TupleType:
             var elems = [resolve_type(c, k, self_model) for k in c.children(node)]
             return c.spec.types.tuple_of(elems)
         case _:
@@ -43,7 +43,7 @@ def resolve_type(mut c: Checker, node: Int, self_model: Int = -1) -> Int:
 
 def _choice(mut c: Checker, node: Int) -> Int:
     var alternatives = c.children(node)
-    var literals = [c.text_of(k) for k in alternatives if c.kind_of(k) == .STR]
+    var literals = [c.text_of(k) for k in alternatives if c.kind_of(k) == .String]
     if len(literals) == len(alternatives):
         var values: List[String] = []
         for v in literals:

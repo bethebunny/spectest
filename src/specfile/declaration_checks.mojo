@@ -120,14 +120,14 @@ def collect(mut c: Checker):
     for d in c.decls.copy():
         var name = c.text_of(d)
         match c.kind_of(d):
-            case .ERROR:
+            case .Error:
                 if declare(c, name, d):
                     c.spec.errors.append(qualify_error(name))
-            case .CONST:
+            case .Const:
                 if declare(c, name, d):
                     c.spec.consts.append(Const(name.copy(), -1, d))
                     c.const_index[name] = len(c.spec.consts) - 1
-            case .ENUM:
+            case .Enum:
                 var members: List[String] = []
                 for m in c.children(d):
                     var member = c.text_of(m)
@@ -139,28 +139,28 @@ def collect(mut c: Checker):
                     var t = c.spec.types.enum_(name.copy(), members)
                     c.spec.enums.append(t)
                     c.enum_index[name] = t
-            case .RECORD:
+            case .Record:
                 if declare(c, name, d):
                     c.record_nodes[name] = d
-            case .ALIAS:
+            case .Alias:
                 if declare(c, name, d):
                     c.alias_nodes[name] = d
-            case .MODEL | .INTERFACE:
+            case .Model | .Interface:
                 _collect_model(c, d)
-            case .FN:
+            case .Fn:
                 var declared = declare(c, name, d)
                 var tparams = type_params(c, c.child(d, 0))
                 if declared:
                     c.fn_index[name] = _new_fn(c, d, name.copy(), name.copy(), -1, tparams)
-            case .DEF:
+            case .Def:
                 var tparams = type_params(c, c.child(d, 0))
                 if name in c.prelude_ids:
                     c.error(d, t"{name} is a prelude function and cannot be redefined")
                     c.duplicate[d] = True
                 elif (
                     name in c.names
-                    and c.spec.ast.kind_of_file(c.names.get(name).value()) == .FILE
-                    and c.spec.ast.kind_of_file(d) == .PRELUDE_FILE
+                    and c.spec.ast.kind_of_file(c.names.get(name).value()) == .File
+                    and c.spec.ast.kind_of_file(d) == .PreludeFile
                 ):
                     # A definition of the spec itself shadows the attached prelude's.
                     c.duplicate[d] = True
@@ -174,9 +174,9 @@ def collect(mut c: Checker):
     # Aliases and records resolve on first use; force them in declaration order.
     for d in _declared(c):
         match c.kind_of(d):
-            case .ALIAS:
+            case .Alias:
                 _ = alias_type(c, c.text_of(d), d)
-            case .RECORD:
+            case .Record:
                 var t = record_type(c, c.text_of(d), d)
                 c.spec.records.append(t)
             case _:
@@ -187,7 +187,7 @@ def collect(mut c: Checker):
 
 def _collect_model(mut c: Checker, d: Int):
     var name = c.text_of(d)
-    var is_iface = c.kind_of(d) == .INTERFACE
+    var is_iface = c.kind_of(d) == .Interface
     var tparams = type_params(c, c.child(d, 0))
     if not declare(c, name, d):
         return
@@ -201,12 +201,12 @@ def _collect_model(mut c: Checker, d: Int):
     var members = c.children(d)
     for m in members[1:]:
         var kind = c.kind_of(m)
-        if kind != .CTOR and kind != .METHOD:
+        if kind != .Ctor and kind != .Method:
             continue
         var member = c.text_of(m)
         var target = String(t"{name}.{member}")
         var at = _new_fn(c, m, member^, target^, pos, tparams)
-        if kind == .CTOR:
+        if kind == .Ctor:
             c.spec.models[pos].ctors.append(at)
         else:
             c.spec.models[pos].methods.append(at)
@@ -257,11 +257,11 @@ def _add_member(mut c: Checker, mut members: List[String], var name: String, nod
 def declare_signatures(mut c: Checker):
     for d in _declared(c):
         match c.kind_of(d):
-            case .MODEL | .INTERFACE:
+            case .Model | .Interface:
                 _declare_model(c, d)
-            case .FN:
+            case .Fn:
                 _declare_fn(c, d)
-            case .DEF:
+            case .Def:
                 _declare_def(c, d)
             case _:
                 pass
@@ -276,15 +276,15 @@ def _declare_model(mut c: Checker, d: Int):
     var children = c.children(d)
     for m in children[1:]:
         match c.kind_of(m):
-            case .OBSERVE:
+            case .Observe:
                 _add_member(c, members, c.text_of(m), m, name)
                 var params = build_params(c, c.child(m, 0), self_model=pos) if c.child(m, 0) != 0 else List[Param]()
                 var t = resolve_type(c, c.child(m, 1), pos)
                 c.spec.models[pos].observers.append(Observer(c.text_of(m), params^, t, c.child(m, 2), m))
-            case .BUILD:
+            case .Build:
                 var params = build_params(c, c.child(m, 0), self_model=pos)
                 c.spec.models[pos].builds.append(Build(c.text_of(m), params^, m))
-            case .CTOR:
+            case .Ctor:
                 var fpos = c.decl_pos[m]
                 _add_member(c, members, c.text_of(m), m, name)
                 var params = build_params(c, c.child(m, 1), self_model=pos)
@@ -297,7 +297,7 @@ def _declare_model(mut c: Checker, d: Int):
                     if not c.is_any(declared) and declared != self_t:
                         c.error(ret, t"a constructor returns its interface: -> {name}")
                 c.spec.fns[fpos].result = self_t
-            case .METHOD:
+            case .Method:
                 var fpos = c.decl_pos[m]
                 _add_member(c, members, c.text_of(m), m, name)
                 var params = build_params(c, c.child(m, 1), self_type=self_t, allow_self=True, self_model=pos)
@@ -374,7 +374,7 @@ def check_default(mut c: Checker, p: Param):
         return
     var t = p.type
     if not assignable(c, dt, t, default):
-        if c.tkind(t) == .Literal and c.kind_of(default) == .STR:
+        if c.tkind(t) == .Literal and c.kind_of(default) == .String:
             literal_member(c, t, default)
         else:
             c.error(default, t"the default of {p.name} must be a {c.text(t)}, but it is {c.text(dt)}")
@@ -404,13 +404,13 @@ def check_defaults(mut c: Checker):
         var pos = c.decl_pos[d]
         var param_lists: List[List[Param]]
         match c.kind_of(d):
-            case .FN:
+            case .Fn:
                 c.ctx = Ctx(tvars=_tvars(c.spec.types, c.spec.fns[pos].tparams, c.spec.fns[pos].bounds))
                 param_lists = [c.spec.fns[pos].params.copy()]
-            case .DEF:
+            case .Def:
                 c.ctx = Ctx(tvars=_tvars(c.spec.types, c.spec.defs[pos].tparams, c.spec.defs[pos].bounds))
                 param_lists = [c.spec.defs[pos].params.copy()]
-            case .MODEL | .INTERFACE:
+            case .Model | .Interface:
                 ref model = c.spec.models[pos]
                 c.ctx = Ctx(tvars=_tvars(c.spec.types, model.tparams, model.bounds))
                 param_lists = [o.params.copy() for o in model.observers] + [b.params.copy() for b in model.builds]
@@ -554,11 +554,11 @@ def check_model(mut c: Checker, d: Int):
     # Qualified functions named under the model are its methods and statics.
     var prefix = name + "."
     for f in c.spec.fns:
-        if f.kind == .FN and f.name.startswith(prefix):
+        if f.kind == .Fn and f.name.startswith(prefix):
             var rest = String(f.name[byte = prefix.byte_length() :])
             if "." not in rest:
                 members[rest^] = "method" if f.receiver else "function"
-    var clauses = [m for m in c.children(d) if c.kind_of(m) == .CLAUSE]
+    var clauses = [m for m in c.children(d) if c.kind_of(m) == .Clause]
     var ids = assign_ids(c, name, clauses, owner_fn=-1, owner_model=pos, members=members)
     c.spec.models[pos].clauses = ids.copy()
     for ci in ids:
@@ -624,7 +624,7 @@ def _callable_ctx(mut c: Checker, fpos: Int) -> Ctx:
     var ctx = Ctx(
         tvars=_tvars(c.spec.types, f.tparams, f.bounds),
         params=[Var(String() if receiver and i == 0 else p.name.copy(), p.type, 0) for i, p in enumerate(f.params)],
-        no_self="a constructor has no self: the new object is result" if f.kind == .CTOR else "self is only available in methods",
+        no_self="a constructor has no self: the new object is result" if f.kind == .Ctor else "self is only available in methods",
     )
     if receiver and f.params:
         ctx.self_t = f.params[0].type
@@ -640,9 +640,9 @@ def check_callable(mut c: Checker, fpos: Int, what: String):
     var children = c.children(c.spec.fns[fpos].node)
     for k in children[3:]:
         match c.kind_of(k):
-            case .CLAUSE:
+            case .Clause:
                 body.append(k)
-            case .PARTITION:
+            case .Partition:
                 parts.append(k)
             case _:
                 pass
@@ -778,17 +778,17 @@ def _check_partition(mut c: Checker, fpos: Int, part: Int, base: Ctx, decl_id: S
 
 def is_constant(c: Checker, e: Int) -> Bool:
     match c.kind_of(e):
-        case .NUM:
+        case .Number:
             return True
-        case .UNARY:
+        case .Unary:
             return c.op_of(e) == .NEG and is_constant(c, c.child(e, 0))
-        case .BINARY:
+        case .Binary:
             match c.op_of(e):
                 case .ADD | .SUB | .MUL | .DIV | .FLOORDIV | .MOD:
                     return is_constant(c, c.child(e, 0)) and is_constant(c, c.child(e, 1))
                 case _:
                     return False
-        case .ATTR:
+        case .Attribute:
             var r = c.spec.resolutions.get(e)
             return r is not None and r.value().kind == .TypeConst
         case _:
@@ -798,7 +798,7 @@ def is_constant(c: Checker, e: Int) -> Bool:
 def _check_aggregate(mut c: Checker, ci: Int, fpos: Int, decl_id: String, base: Ctx, what: String):
     var node = c.spec.clauses[ci].node
     var expr = c.spec.clauses[ci].expr
-    if c.spec.fns[fpos].kind != .FN:
+    if c.spec.fns[fpos].kind != .Fn:
         c.error(
             node,
             t"aggregate clauses belong to functions (fn), not to a {what}: a bound over a whole input "
@@ -895,11 +895,11 @@ def run(mut c: Checker):
     check_defaults(c)
     for d in _declared(c):
         match c.kind_of(d):
-            case .DEF:
+            case .Def:
                 check_def(c, d)
-            case .MODEL | .INTERFACE:
+            case .Model | .Interface:
                 check_model(c, d)
-            case .FN:
+            case .Fn:
                 check_callable(c, c.decl_pos[d], "function")
             case _:
                 pass

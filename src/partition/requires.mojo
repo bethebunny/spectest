@@ -51,7 +51,7 @@ struct Predicate(Movable):
         if case .Some(verdicts) = self.as_sets(ctx, ast, e):
             return [verdicts.true]
         ref n = ast.nodes[e]
-        if n.kind == .BINARY and n.op == .AND:
+        if n.kind == .Binary and n.op == .AND:
             return self.admitted(ctx, ast, n.children[0]) + self.admitted(ctx, ast, n.children[1])
         return []
 
@@ -59,13 +59,13 @@ struct Predicate(Movable):
         """Whether `e` is the parameter, or `real` of it."""
         ref n = ast.nodes[e]
         match n.kind:
-            case .NAME:
+            case .Name:
                 return n.text == self.param
-            case .CALL:
+            case .Call:
                 ref callee = ast.nodes[n.children[0]]
                 var arg = only_arg(ast, e)
                 return (
-                    callee.kind == .NAME
+                    callee.kind == .Name
                     and callee.text == "real"
                     and not ast.nodes[n.children[1]].children
                     and arg is not None
@@ -78,15 +78,15 @@ struct Predicate(Movable):
         ref n = ast.nodes[e]
         var elem = self.compiler.elem
         match n.kind:
-            case .BOOL:
+            case .Bool:
                 var everything = ctx.full(elem.width)
                 var nothing = ctx.empty(elem.width)
                 return Verdicts(everything, nothing) if n.op == .TRUE else Verdicts(nothing, everything)
-            case .NAME if elem.is_bool() and self.is_param(ast, e):
+            case .Name if elem.is_bool() and self.is_param(ast, e):
                 return Verdicts.true_on(ctx, ctx.exactly([UInt64(1)], 1))
-            case .UNARY if n.op == .NOT:
+            case .Unary if n.op == .NOT:
                 return self.verdicts(ctx, ast, n.children[0]).negated()
-            case .BINARY if n.op in [sx.Op.AND, sx.Op.OR, sx.Op.IMPLIES]:
+            case .Binary if n.op in [sx.Op.AND, sx.Op.OR, sx.Op.IMPLIES]:
                 var a = self.verdicts(ctx, ast, n.children[0])
                 var b = self.verdicts(ctx, ast, n.children[1])
                 match n.op:
@@ -105,7 +105,7 @@ struct Predicate(Movable):
                             ctx.union(a.false, ctx.intersection(a.true, b.true)),
                             ctx.intersection(a.true, b.false),
                         )
-            case .IF:
+            case .If:
                 var c = self.verdicts(ctx, ast, n.children[0])
                 var a = self.verdicts(ctx, ast, n.children[1])
                 var b = self.verdicts(ctx, ast, n.children[2])
@@ -118,15 +118,15 @@ struct Predicate(Movable):
                         ctx.intersection(c.false, b.false),
                     ),
                 )
-            case .CALL:
+            case .Call:
                 ref callee = ast.nodes[n.children[0]]
                 var arg = only_arg(ast, e)
-                if callee.kind == .NAME and arg is not None and self.is_param(ast, arg.value()):
+                if callee.kind == .Name and arg is not None and self.is_param(ast, arg.value()):
                     return Verdicts.true_on(ctx, self.test(ctx, ast, callee.text, e))
-            case .BINARY if n.op == .IN:
+            case .Binary if n.op == .IN:
                 ref right = ast.nodes[n.children[1]]
                 if (
-                    right.kind in [sx.NodeKind.LIST, sx.NodeKind.SET]
+                    right.kind in [sx.NodeKind.List, sx.NodeKind.Set]
                     and self.is_param(ast, n.children[0])
                     and elem.is_int()
                 ):
@@ -134,7 +134,7 @@ struct Predicate(Movable):
                     for x in right.children:
                         true = ctx.union(true, self.int_compare(ctx, sx.Op.EQ, self.compiler.const(ast, x)))
                     return Verdicts.true_on(ctx, true)
-            case .BINARY if sx.Op.EQ <= n.op <= sx.Op.GE:
+            case .Binary if sx.Op.EQ <= n.op <= sx.Op.GE:
                 if self.is_param(ast, n.children[0]):
                     return self.compare(ctx, n.op, self.compiler.const(ast, n.children[1]))
                 if self.is_param(ast, n.children[1]):
@@ -152,7 +152,7 @@ struct Predicate(Movable):
                 return ctx.float_named(elem.format, name)
         if elem.is_int() and name_of_fn == "fits" and len(typeargs) == 1:
             ref texpr = ast.nodes[typeargs[0]]
-            if texpr.kind == .TYPE and not texpr.children:
+            if texpr.kind == .Type and not texpr.children:
                 if case .Some(target) = self.compiler.type_named(texpr.text):
                     if target.is_int():
                         return ctx.int_range(elem.width, elem.signed, target.int_min(), target.int_max() + 1)

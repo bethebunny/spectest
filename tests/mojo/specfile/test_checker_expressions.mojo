@@ -189,7 +189,7 @@ def test_let_scoping() raises:
     var spec = ok("fn f(x: int)\n  ensures e: let x = [x] in len(x) == 1\n")
     var let = clause_expr(spec, "f.e")
     var inner = List[Int]()
-    for n in nodes_of(spec, let, ast.NodeKind.NAME):
+    for n in nodes_of(spec, let, ast.NodeKind.Name):
         if spec.ast.nodes[n].text == "x":
             inner.append(n)
     # let x = [x]: the value's x is the parameter, the body's x the local.
@@ -220,7 +220,7 @@ def test_comprehension_variable_is_local() raises:
     var spec = ok("fn f(xs: list<int>)\n  ensures e: all(x in xs: x > 0)\n")
     var comp = clause_expr(spec, "f.e")
     var xs = List[Int]()
-    for n in nodes_of(spec, comp, ast.NodeKind.NAME):
+    for n in nodes_of(spec, comp, ast.NodeKind.Name):
         if spec.ast.nodes[n].text == "x":
             xs.append(n)
     assert_equal(len(xs), 1)
@@ -274,9 +274,9 @@ def test_every_expression_gets_a_type() raises:
         'eq(result, m, float="bits") and len(map(x in xs: real(x))) == k\n'
     )
     var expr = clause_expr(spec, "f.a")
-    for n in nodes_of(spec, expr, ast.NodeKind.CALL):
+    for n in nodes_of(spec, expr, ast.NodeKind.Call):
         assert_true(spec.node_types[n] != 0)
-    for n in nodes_of(spec, expr, ast.NodeKind.NAME):
+    for n in nodes_of(spec, expr, ast.NodeKind.Name):
         var found = spec.resolution(n)
         assert_true(Bool(found))
         assert_true(spec.node_types[n] != 0)
@@ -549,7 +549,7 @@ def test_aggregate_resolutions_and_types() raises:
     var call = spec.ast.child(spec.ast.child(body, 2), 0)
     assert_equal(spec.resolution(call).value().kind, ResolutionKind.SpecFn)
     assert_equal(spec.resolution(call).value().index, spec.fn_named("f").value())
-    var vs = named(spec, call, ast.NodeKind.NAME, "v")
+    var vs = named(spec, call, ast.NodeKind.Name, "v")
     assert_equal(type_text(spec, vs[0]), "f16")
     assert_equal(spec.resolution(vs[0]).value().kind, ResolutionKind.Local)
     assert_equal(spec.resolution(vs[0]).value().index, top)
@@ -635,7 +635,7 @@ def test_aggregate_spec_functions_are_planned_calls() raises:
         "all(v in f16.all: same(g(v), f(v)))", "fn g(y: f16) -> f16\n"
     )
     var names = List[String]()
-    for n in nodes_of(spec, clause_expr(spec, "f.a"), ast.NodeKind.CALL):
+    for n in nodes_of(spec, clause_expr(spec, "f.a"), ast.NodeKind.Call):
         var r = spec.resolution(n)
         if r and r.value().kind == .SpecFn:
             names.append(r.value().name.copy())

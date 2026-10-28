@@ -65,7 +65,7 @@ def test_qualified_methods_belong_to_their_model() raises:
     assert_equal(range.owner, -1)
     # self is the receiver inside the clauses: resolved, with the model's type.
     var union = clause_expr(spec, "bitpattern.IntSet.__or__.union")
-    var selfs = named(spec, union, ast.NodeKind.NAME, "self")
+    var selfs = named(spec, union, ast.NodeKind.Name, "self")
     assert_equal(len(selfs), 1)
     assert_equal(type_text(spec, selfs[0]), "bitpattern.IntSet")
 
@@ -89,7 +89,7 @@ def test_planned_calls_in_clauses() raises:
     var or_ = spec.fn_named("bitpattern.IntSet.__or__").value()
     var has = clause_expr(spec, "bitpattern.IntSet.__or__.has")
     var found = 0
-    for c in nodes_of(spec, has, ast.NodeKind.CALL):
+    for c in nodes_of(spec, has, ast.NodeKind.Call):
         var r = spec.resolution(c)
         if r and r.value().kind == .SpecFn:
             assert_equal(r.value().index, contains)
@@ -97,7 +97,7 @@ def test_planned_calls_in_clauses() raises:
             found += 1
     assert_equal(found, 2)
     var commutes = clause_expr(spec, "bitpattern.IntSet.__or__.commutes")
-    var recursive = nodes_of(spec, commutes, ast.NodeKind.CALL)
+    var recursive = nodes_of(spec, commutes, ast.NodeKind.Call)
     var is_or = False
     for c in recursive:
         var r = spec.resolution(c)
@@ -108,7 +108,7 @@ def test_planned_calls_in_clauses() raises:
     # An invariant of a model may call a planned function too.
     var counted = clause_expr(spec, "bitpattern.IntSet.counted")
     var len_calls = 0
-    for c in nodes_of(spec, counted, ast.NodeKind.CALL):
+    for c in nodes_of(spec, counted, ast.NodeKind.Call):
         var r = spec.resolution(c)
         if r and r.value().kind == .SpecFn:
             len_calls += 1
@@ -119,7 +119,7 @@ def test_requires_calls_definitions() raises:
     var spec = sample()
     var req = clause_expr(spec, "bitpattern.encode#1")
     var defs = 0
-    for c in nodes_of(spec, req, ast.NodeKind.CALL):
+    for c in nodes_of(spec, req, ast.NodeKind.Call):
         var r = spec.resolution(c)
         if r and r.value().kind == .Def:
             defs += 1
@@ -150,7 +150,7 @@ def test_constants_and_choice_types() raises:
     )
     var width = clause_expr(spec, "bitpattern.encode.width")
     var chains = 0
-    for n in nodes_of(spec, width, ast.NodeKind.ATTR):
+    for n in nodes_of(spec, width, ast.NodeKind.Attribute):
         var r = spec.resolution(n)
         if r and r.value().kind == .Const:
             chains += 1
@@ -188,7 +188,7 @@ def test_new_operators_and_parts() raises:
     assert_equal(type_text(spec, spec.defs[4].body), "int")
     var close = clause_expr(spec, "near.close")
     var parts = 0
-    for n in nodes_of(spec, close, ast.NodeKind.ATTR):
+    for n in nodes_of(spec, close, ast.NodeKind.Attribute):
         var r = spec.resolution(n)
         if r and r.value().kind == .QerrPart:
             parts += 1

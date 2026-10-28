@@ -91,11 +91,11 @@ def outcome_of[
 def is_literal(spec: Spec, e: Int) -> Bool:
     ref n = spec.ast.nodes[e]
     match n.kind:
-        case .NUM | .STR | .BOOL | .NONE:
+        case .Number | .String | .Bool | .NoneLiteral:
             return True
-        case .UNARY:
+        case .Unary:
             return n.op == .NEG and is_literal(spec, n.children[0])
-        case .LIST | .TUPLE:
+        case .List | .Tuple:
             return all([is_literal(spec, child) for child in n.children])
         case _:
             return False
@@ -104,7 +104,7 @@ def is_literal(spec: Spec, e: Int) -> Bool:
 def _operands(spec: Spec, e: Int, op: Op) -> List[Int]:
     """The operands of the run of `op` at `e`, left to right: `a and b and c` has three."""
     ref n = spec.ast.nodes[e]
-    if n.kind == .BINARY and n.op == op:
+    if n.kind == .Binary and n.op == op:
         return _operands(spec, n.children[0], op) + _operands(spec, n.children[1], op)
     return [e]
 
@@ -143,17 +143,17 @@ def operand[
         return
     ref n = spec.ast.nodes[e]
     match n.kind:
-        case .CALL:
+        case .Call:
             if not is_old_call(spec, e):
                 _add_args(explanation, spec, e, env, run, host)
-        case .INDEX:
+        case .Index:
             add(explanation, spec, n.children[0], env, run, host)
             _add_unless_literal(explanation, spec, n.children[1], env, run, host)
-        case .SLICE:
+        case .Slice:
             add(explanation, spec, n.children[0], env, run, host)
             for bound in n.children[1:]:
                 _add_unless_literal(explanation, spec, bound, env, run, host)
-        case .IF:
+        case .If:
             add(explanation, spec, n.children[0], env, run, host)
         case _:
             pass
@@ -169,39 +169,39 @@ def walk[
     # TODO: a guarded case of an `__enum` match runs on into the cases after it in Mojo
     # 1.2, so each guarded case returns.
     match n.kind:
-        case .BINARY if n.op in [Op.AND, Op.OR]:
+        case .Binary if n.op in [Op.AND, Op.OR]:
             walk_chain(explanation, spec, e, value, env, run, host)
             return
-        case .BINARY if n.op == .IMPLIES:
+        case .Binary if n.op == .IMPLIES:
             walk_implies(explanation, spec, e, value, env, run, host)
             return
-        case .BINARY if n.op in [Op.EQ, Op.NE, Op.LT, Op.LE, Op.GT, Op.GE, Op.IN]:
+        case .Binary if n.op in [Op.EQ, Op.NE, Op.LT, Op.LE, Op.GT, Op.GE, Op.IN]:
             operand(explanation, spec, n.children[0], env, run, host)
             operand(explanation, spec, n.children[1], env, run, host)
             return
-        case .UNARY if n.op == .NOT:
+        case .Unary if n.op == .NOT:
             var inner = outcome_of(spec, n.children[0], env, run, host)
             if inner.is_any_bool():
                 walk(explanation, spec, n.children[0], inner, env, run, host)
             else:
                 add_known(explanation, spec, n.children[0], inner)
             return
-        case .IF:
+        case .If:
             var condition = outcome_of(spec, n.children[0], env, run, host)
             add_known(explanation, spec, n.children[0], condition)
             if condition.is_any_bool():
                 var branch = n.children[1] if condition.value.as_bool() else n.children[2]
                 walk(explanation, spec, branch, value, env, run, host)
-        case .LET:
+        case .Let:
             walk_let(explanation, spec, e, value, env, run, host)
-        case .COMPREHENSION if n.op in [Op.ALL, Op.EXISTS]:
+        case .Comprehension if n.op in [Op.ALL, Op.EXISTS]:
             walk_quantifier(explanation, spec, e, value, env, run, host)
             return
-        case .CALL if not is_old_call(spec, e):
+        case .Call if not is_old_call(spec, e):
             _add_args(explanation, spec, e, env, run, host)
             add_known(explanation, spec, e, value)
             return
-        case .BOOL:
+        case .Bool:
             pass
         case _:
             add_known(explanation, spec, e, value)

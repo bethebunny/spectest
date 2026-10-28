@@ -50,17 +50,17 @@ def binds_value(c: Checker, name: String) -> Bool:
 
 def _root_name(c: Checker, e: Int) -> String:
     var n = e
-    while c.kind_of(n) == .ATTR:
+    while c.kind_of(n) == .Attribute:
         n = c.child(n, 0)
-    return c.text_of(n) if c.kind_of(n) == .NAME else String()
+    return c.text_of(n) if c.kind_of(n) == .Name else String()
 
 
 def dotted(c: Checker, e: Int) -> String:
     """`a.b.c` for a chain of names and attributes, or "" for anything else."""
     match c.kind_of(e):
-        case .NAME:
+        case .Name:
             return c.text_of(e)
-        case .ATTR:
+        case .Attribute:
             var inner = dotted(c, c.child(e, 0))
             return String(t"{inner}.{c.text_of(e)}") if inner else String()
         case _:
@@ -99,12 +99,12 @@ def assignable(c: Checker, actual: Int, target: Int, node: Int) -> Bool:
             if ka == kt:
                 return all([v in names for v in c.spec.types.infos[actual].names])
             if kt == .Literal:
-                return node > 0 and c.kind_of(node) == .STR and c.text_of(node) in names
+                return node > 0 and c.kind_of(node) == .String and c.text_of(node) in names
             return node > 0 and _choice_has(c, target, node)
         case .String:
             return c.is_stringish(actual)
         case .List if ka == .List:
-            if node > 0 and c.kind_of(node) == .LIST and c.children(node):
+            if node > 0 and c.kind_of(node) == .List and c.children(node):
                 return all([assignable(c, c.spec.node_types[x], c.arg(target, 0), x) for x in c.children(node)])
             return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0)
         case .Option if ka == .Option:
@@ -118,7 +118,7 @@ def assignable(c: Checker, actual: Int, target: Int, node: Int) -> Bool:
             ref xs = c.spec.types.infos[actual].args
             if len(ts) != len(xs):
                 return False
-            var written = node > 0 and c.kind_of(node) == .TUPLE and len(c.children(node)) == len(ts)
+            var written = node > 0 and c.kind_of(node) == .Tuple and len(c.children(node)) == len(ts)
             var elems = c.children(node) if written else List[Int](length=len(ts), fill=0)
             return all([assignable(c, x, t, n) for x, t, n in zip(xs, ts, elems)])
         case _:
@@ -131,42 +131,42 @@ def assignable(c: Checker, actual: Int, target: Int, node: Int) -> Bool:
 def infer(mut c: Checker, e: Int, expected: Int = NO_TYPE) -> Int:
     var t: Int
     match c.kind_of(e):
-        case .NAME:
+        case .Name:
             t = lookup(c, e)
-        case .BINARY:
+        case .Binary:
             t = infer_binary(c, e, expected)
-        case .CALL:
+        case .Call:
             t = infer_call(c, e)
-        case .ATTR:
+        case .Attribute:
             t = infer_attr(c, e)
-        case .NUM:
+        case .Number:
             t = c.int_ if is_integer_literal(c.spec.ast.nodes[e].text) else c.real_
-        case .STR:
+        case .String:
             t = c.string_
-        case .BOOL:
+        case .Bool:
             t = c.bool_
-        case .NONE:
+        case .NoneLiteral:
             t = c.spec.types.option_of(ANY_TYPE)
-        case .UNARY:
+        case .Unary:
             t = infer_unary(c, e)
-        case .IF:
+        case .If:
             t = infer_if(c, e, expected)
-        case .LET:
+        case .Let:
             t = infer_let(c, e, expected)
-        case .COMPREHENSION:
+        case .Comprehension:
             t = infer_comprehension(c, e)
-        case .TUPLE_INDEX:
+        case .TupleIndex:
             t = infer_tuple_index(c, e)
-        case .INDEX:
+        case .Index:
             t = infer_index(c, e)
-        case .SLICE:
+        case .Slice:
             t = infer_slice(c, e)
-        case .LIST:
+        case .List:
             t = infer_list(c, e)
-        case .TUPLE:
+        case .Tuple:
             var elems = [infer(c, x) for x in c.children(e)]
             t = c.spec.types.tuple_of(elems)
-        case .SET:
+        case .Set:
             t = infer_set(c, e, expected)
         case _:
             t = c.poison
@@ -186,7 +186,7 @@ def infer_in(mut c: Checker, var ctx: Ctx, e: Int, expected: Int = NO_TYPE) -> I
 
 
 def _old_local_message(c: Checker, name: String, binder: Int) -> String:
-    var how = String(t"{c.op_of(binder)}(...)") if c.kind_of(binder) == .COMPREHENSION else String("let")
+    var how = String(t"{c.op_of(binder)}(...)") if c.kind_of(binder) == .Comprehension else String("let")
     return String(
         t"old(...) is evaluated before the call, so it cannot use {name}, which {how} binds inside this "
         t"clause: bind old(...) of the state first, e.g. let xs = old(self.items) in "
@@ -496,7 +496,7 @@ def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
 def literal_member(mut c: Checker, at: Int, b: Int):
     """Reports a string literal `b` compared with or given as a literal union `at` that
     is not one of its values."""
-    if c.tkind(at) == .Literal and c.kind_of(b) == .STR and c.text_of(b) not in c.spec.types.infos[at].names:
+    if c.tkind(at) == .Literal and c.kind_of(b) == .String and c.text_of(b) not in c.spec.types.infos[at].names:
         c.error(b, t"\"{c.text_of(b)}\" is not one of {c.text(at)}")
 
 
@@ -683,9 +683,9 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
 def is_set_syntax(mut c: Checker, e: Int) -> Bool:
     """Is e written as a partition set (f16.all, f32.range(a, b), {v, ...}, | & -)?"""
     match c.kind_of(e):
-        case .SET:
+        case .Set:
             return True
-        case .BINARY:
+        case .Binary:
             match c.op_of(e):
                 case .BITOR | .BITAND | .SUB:
                     return is_set_syntax(c, c.child(e, 0)) or is_set_syntax(c, c.child(e, 1))
@@ -697,9 +697,9 @@ def is_set_syntax(mut c: Checker, e: Int) -> Bool:
 
 def set_scalar(mut c: Checker, e: Int) -> Int:
     """The scalar type T of a `T.<set>` or `T.range(...)` / `T.pattern(...)` node, or -1."""
-    var is_call = c.kind_of(e) == .CALL
+    var is_call = c.kind_of(e) == .Call
     var attr = c.child(e, 0) if is_call else e
-    if c.kind_of(attr) != .ATTR or c.kind_of(c.child(attr, 0)) != .NAME:
+    if c.kind_of(attr) != .Attribute or c.kind_of(c.child(attr, 0)) != .Name:
         return NO_TYPE
     var type_name = c.text_of(c.child(attr, 0))
     if binds_value(c, type_name) or type_name in c.ctx.hidden:
@@ -787,9 +787,9 @@ def set_call_res(mut c: Checker, e: Int, kind: ResolutionKind, name: String, *, 
 def infer_call(mut c: Checker, e: Int) -> Int:
     var f = c.child(e, 0)
     match c.kind_of(f):
-        case .NAME:
+        case .Name:
             return _call_by_name(c, e, f)
-        case .ATTR:
+        case .Attribute:
             return _call_by_attr(c, e, f)
         case _:
             _ = infer(c, f)
@@ -825,7 +825,7 @@ def _call_by_attr(mut c: Checker, e: Int, f: Int) -> Int:
             return call_spec_fn(c, e, chain, fi)
         if case .Some(pi) = c.prelude_ids.get(chain):
             return call_prelude(c, e, chain, pi)
-        if c.kind_of(base) == .NAME:
+        if c.kind_of(base) == .Name:
             var base_name = c.text_of(base)
             if base_name == "mp" or base_name == "cr":
                 c.set_type(base, ANY_TYPE)
@@ -844,7 +844,7 @@ def _call_by_attr(mut c: Checker, e: Int, f: Int) -> Int:
             var root = _root_name(c, f)
             if root and c.scalar(root) < 0:
                 return call_extern(c, e, chain)
-        var known_type_root = c.kind_of(base) == .NAME and (
+        var known_type_root = c.kind_of(base) == .Name and (
             c.scalar(c.text_of(base)) >= 0 or c.text_of(base) in c.enum_index
         )
         if not known_type_root:
@@ -1130,7 +1130,7 @@ def call_set_ctor(mut c: Checker, e: Int, scalar: Int, attr: String) -> Int:
             ok = False
         for a in args:
             var bound = c.child(a, 0)
-            if c.kind_of(bound) == .NONE:
+            if c.kind_of(bound) == .NoneLiteral:
                 var open = c.spec.types.option_of(ANY_TYPE)
                 c.set_type(bound, open)
                 arg_types.append(open)
@@ -1141,7 +1141,7 @@ def call_set_ctor(mut c: Checker, e: Int, scalar: Int, attr: String) -> Int:
                 c.error(bound, t"a bound of {scalar_name}.range must be a number or none, not {c.text(t)}")
                 ok = False
     else:
-        if len(args) != 1 or has_kw or c.kind_of(c.child(args[0], 0)) != .STR:
+        if len(args) != 1 or has_kw or c.kind_of(c.child(args[0], 0)) != .String:
             c.error(
                 e, t'{scalar_name}.pattern takes one string literal of bits, e.g. {scalar_name}.pattern("0 1* 0")'
             )
@@ -1198,7 +1198,7 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
             ensure_const(c, ci)
             c.resolve(e, .Const, chain, index=ci)
             return c.spec.consts[ci].type
-        if c.kind_of(base) == .NAME:
+        if c.kind_of(base) == .Name:
             var base_name = c.text_of(base)
             if base_name == "mp" or base_name == "cr":
                 c.set_type(base, ANY_TYPE)

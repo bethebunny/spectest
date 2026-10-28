@@ -116,55 +116,55 @@ comptime _KIND_NAMES: Array[StaticString, 49] = [
 __enum NodeKind(Equatable, ImplicitlyCopyable, Intable, Writable):
     """A node's kind. Writes as its lowercase name, eg. `tuple_index`."""
 
-    case EMPTY
-    case FILE
-    case PRELUDE_FILE
-    case USE
-    case PRELUDE
-    case ERROR
-    case CONST
-    case ENUM
-    case RECORD
-    case ALIAS
-    case MODEL
-    case INTERFACE
-    case FN
-    case CTOR
-    case METHOD
-    case DEF
-    case OBSERVE
-    case BUILD
-    case PARTITION
-    case CLASS
-    case CLAUSE
-    case PARAMS
-    case PARAM
-    case TPARAMS
-    case TPARAM
-    case QNAME
-    case TYPE
-    case TUPLE_TYPE
-    case CHOICE_TYPE
-    case NUM
-    case STR
-    case BOOL
-    case NONE
-    case NAME
-    case UNARY
-    case BINARY
-    case IF
-    case LET
-    case COMPREHENSION
-    case CALL
-    case TYPEARGS
-    case ARG
-    case ATTR
-    case TUPLE_INDEX
-    case INDEX
-    case SLICE
-    case LIST
-    case SET
-    case TUPLE
+    case Empty
+    case File
+    case PreludeFile
+    case Use
+    case Prelude
+    case Error
+    case Const
+    case Enum
+    case Record
+    case Alias
+    case Model
+    case Interface
+    case Fn
+    case Ctor
+    case Method
+    case Def
+    case Observe
+    case Build
+    case Partition
+    case Class
+    case Clause
+    case Params
+    case Param
+    case TypeParams
+    case TypeParam
+    case QualifiedName
+    case Type
+    case TupleType
+    case ChoiceType
+    case Number
+    case String
+    case Bool
+    case NoneLiteral
+    case Name
+    case Unary
+    case Binary
+    case If
+    case Let
+    case Comprehension
+    case Call
+    case TypeArgs
+    case Arg
+    case Attribute
+    case TupleIndex
+    case Index
+    case Slice
+    case List
+    case Set
+    case Tuple
 
     def __eq__(self, other: Self) -> Bool:
         return self._get_enum_discriminant() == other._get_enum_discriminant()
@@ -297,7 +297,7 @@ struct Ast(Movable):
     """The first file is `files[0]`; `parse_into` adds the others."""
 
     def __init__(out self, var source: String, var path: String):
-        self.nodes = [Node(.EMPTY, .NO_OP, NO_SPAN, "", [], 0)]
+        self.nodes = [Node(.Empty, .NO_OP, NO_SPAN, "", [], 0)]
         self.source = source^
         self.files = [File(path^, start=0, root=NIL)]
 

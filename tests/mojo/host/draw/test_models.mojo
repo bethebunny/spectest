@@ -163,7 +163,7 @@ def test_draw_args() raises:
     params.append(param("b", spec.types.string(), 7))
     params.append(param("c", box))
     spec.fns.append(
-        Fn("m.f", "m.f", "f", NodeKind.METHOD, 0, -1, List[String](), List[String](), params^, True,
+        Fn("m.f", "m.f", "f", NodeKind.Method, 0, -1, List[String](), List[String](), params^, True,
            spec.types.unit(), List[Partition](), List[Int]())
     )
     var rec = Recorder()

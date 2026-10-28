@@ -32,8 +32,8 @@ def test_parse_into_appends_a_file() raises:
     assert_equal(ast.files[1].start, SPEC.byte_length())
     assert_equal(String(ast.source[byte = ast.files[1].start :]), PRELUDE)
     assert_equal(ast.source, String(SPEC, PRELUDE))
-    assert_equal(ast.nodes[ast.files[1].root].kind, NodeKind.PRELUDE_FILE)
-    assert_equal(ast.nodes[ast.root()].kind, NodeKind.FILE)
+    assert_equal(ast.nodes[ast.files[1].root].kind, NodeKind.PreludeFile)
+    assert_equal(ast.nodes[ast.root()].kind, NodeKind.File)
     assert_equal(ast.root(), ast.files[0].root)
 
 
@@ -56,7 +56,7 @@ def test_spans_are_offsets_into_the_combined_source() raises:
     var ast = tree()
     var decls = ast.nodes[ast.files[1].root].children.copy()
     assert_equal(len(decls), 2)
-    assert_equal(ast.nodes[decls[0]].kind, NodeKind.DEF)
+    assert_equal(ast.nodes[decls[0]].kind, NodeKind.Def)
     assert_equal(ast.source_text(decls[0]), "fn twice(x: int) -> int = x + x")
     assert_equal(ast.source_text(decls[1]), "fn thrice(x: int) -> int = twice(x) + x")
 
@@ -69,7 +69,7 @@ def test_lines_and_columns_are_the_files_own() raises:
     assert_equal(ast.nodes[decls[1]].span.line, 4)
     assert_equal(ast.location(decls[1]), "dir/m.prelude:4:1")
     var f_ = ast.nodes[ast.root()].children[1]
-    assert_equal(ast.nodes[f_].kind, NodeKind.FN)
+    assert_equal(ast.nodes[f_].kind, NodeKind.Fn)
     assert_equal(ast.location(f_), "dir/s.spec:3:1")
 
 
@@ -85,7 +85,7 @@ def test_several_files_and_a_spec_among_them() raises:
     var ast = tree()
     var third = parse_into(ast, "spec other\nerror e.Oops\n", "dir/o.spec")
     assert_equal(third, 2)
-    assert_equal(ast.nodes[ast.files[2].root].kind, NodeKind.FILE)
+    assert_equal(ast.nodes[ast.files[2].root].kind, NodeKind.File)
     assert_equal(ast.nodes[ast.files[2].root].text, "other")
     var e = ast.nodes[ast.files[2].root].children[0]
     assert_equal(ast.nodes[e].file, 2)

@@ -100,7 +100,7 @@ def is_sequence(v: Value) -> Bool:
 
 
 def is_old_call(spec: Spec, e: Int) -> Bool:
-    if spec.ast.nodes[e].kind != .CALL:
+    if spec.ast.nodes[e].kind != .Call:
         return False
     var r = spec.resolution(e)
     return r is not None and r.value().kind == .Old
@@ -133,42 +133,42 @@ def _value[
 ](spec: Spec, e: Int, env: Env, mut run: Run, mut host: H) raises -> Value:
     ref n = spec.ast.nodes[e]
     match n.kind:
-        case .NAME:
+        case .Name:
             return _name_value(spec, e, env, run, host)
-        case .BINARY:
+        case .Binary:
             return _binary_value(spec, e, env, run, host)
-        case .CALL:
+        case .Call:
             return _call_value(spec, e, env, run, host)
-        case .ATTR:
+        case .Attribute:
             return _attr_value(spec, e, env, run, host)
-        case .NUM:
+        case .Number:
             if case .Some(small) = _small_literal(n.text):
                 return Value.int(small)
             var r = parse_number(n.text)
             return Value.int(r.numerator.copy()) if is_integer_literal(n.text) else real_value(r)
-        case .STR:
+        case .String:
             return Value.string(n.text.copy())
-        case .BOOL:
+        case .Bool:
             return Value.bool(n.op == .TRUE)
-        case .NONE:
+        case .NoneLiteral:
             return Value.none()
-        case .UNARY:
+        case .Unary:
             var operand = value_of(spec, n.children[0], env, run, host)
             if n.op == .NOT:
                 return Value.bool(not want_bool(operand, "the operand of not"))
             return fit(spec.types, negate(operand), spec.node_types[e])
-        case .IF:
+        case .If:
             var condition = want_bool(value_of(spec, n.children[0], env, run, host), "the condition of if")
             var branch = n.children[1] if condition else n.children[2]
             return fit(spec.types, value_of(spec, branch, env, run, host), spec.node_types[e])
-        case .LET:
+        case .Let:
             run.push(e, value_of(spec, n.children[0], env, run, host))
             var body = value_of(spec, n.children[1], env, run, host)
             run.pop()
             return body^
-        case .COMPREHENSION:
+        case .Comprehension:
             return _comprehension_value(spec, e, env, run, host)
-        case .INDEX:
+        case .Index:
             var v = value_of(spec, n.children[0], env, run, host)
             var i = value_of(spec, n.children[1], env, run, host)
             if v.kind == .Map:
@@ -176,14 +176,14 @@ def _value[
             if not is_sequence(v):
                 raise Error(t"cannot index {show(v)}")
             return index_value(v, i)
-        case .SLICE:
+        case .Slice:
             var v = value_of(spec, n.children[0], env, run, host)
             var lo = value_of(spec, n.children[1], env, run, host)
             var hi = value_of(spec, n.children[2], env, run, host)
             if not is_sequence(v):
                 raise Error(t"cannot slice {show(v)}")
             return slice_value(v, lo, hi)
-        case .TUPLE_INDEX:
+        case .TupleIndex:
             var v = value_of(spec, n.children[0], env, run, host)
             if v.kind not in [Kind.Tuple, Kind.List]:
                 raise Error(t".{n.text} needs a tuple, but the value is {show(v)}")
@@ -191,12 +191,12 @@ def _value[
             if not 0 <= index < v.count():
                 raise Error(t".{n.text} is out of range for a tuple of {v.count()} elements")
             return v.item(index)
-        case .LIST:
+        case .List:
             var items = [value_of(spec, child, env, run, host) for child in n.children]
             return fit(spec.types, Value.list(items^), spec.node_types[e])
-        case .TUPLE:
+        case .Tuple:
             return Value.tuple([value_of(spec, child, env, run, host) for child in n.children])
-        case .SET:
+        case .Set:
             raise Error("{...} is a partition set: it has no value in a clause")
         case _:
             raise Error(t"cannot evaluate a {n.kind} node")
@@ -521,7 +521,7 @@ def _call_value[
                 obj = self_of(env)
             else:
                 var callee = n.children[0]
-                if spec.ast.nodes[callee].kind != .ATTR:
+                if spec.ast.nodes[callee].kind != .Attribute:
                     raise Error(t"observer call {r.name} has no handle")
                 obj = value_of(spec, spec.ast.child(callee, 0), env, run, host)
             if obj.kind != .Handle:

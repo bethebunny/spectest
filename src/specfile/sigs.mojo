@@ -182,7 +182,7 @@ def _eq(mut c: Checker, info: CallInfo) raises TypingError -> Int:
         if kw.key != "float" and kw.key != "order":
             continue
         var choices = '"bits" | "ieee" | "nan_any"' if kw.key == "float" else '"exact" | "ignore"'
-        if c.kind_of(kw.node) != .STR or not _eq_mode_ok(c.text_of(kw.node), kw.key):
+        if c.kind_of(kw.node) != .String or not _eq_mode_ok(c.text_of(kw.node), kw.key):
             raise TypingError(t"eq: {kw.key}= must be one of {choices}", key=kw.key.copy())
     if not any([kw.key == "float" for kw in info.keywords]) and c.contains_float(t):
         raise TypingError(

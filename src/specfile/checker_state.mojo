@@ -332,7 +332,7 @@ struct Checker:
         return self.spec.ast.source_text(n)
 
     def has_modifies(self, decl: Int) -> Bool:
-        return any([self.kind_of(k) == .CLAUSE and self.op_of(k) == .MODIFIES for k in self.spec.ast.nodes[decl].children])
+        return any([self.kind_of(k) == .Clause and self.op_of(k) == .MODIFIES for k in self.spec.ast.nodes[decl].children])
 
     # -- reporting -------------------------------------------------------------
 

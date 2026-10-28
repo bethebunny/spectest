@@ -25,7 +25,7 @@ def test_examples_parse() raises:
     for path in paths:
         var ast = parse_spec(read(path), path)
         ref file = ast.nodes[ast.root()]
-        assert_equal(file.kind, NodeKind.FILE)
+        assert_equal(file.kind, NodeKind.File)
         assert_true(len(file.children) > 0, path)
         # The file's span covers the whole text up to its last token.
         assert_equal(file.span.start, 0)
@@ -36,7 +36,7 @@ def test_example_declaration_counts() raises:
     assert_equal(ast.nodes[ast.root()].text, "sorting")
     var fns = 0
     for d in ast.nodes[ast.root()].children:
-        if ast.nodes[d].kind == .FN:
+        if ast.nodes[d].kind == .Fn:
             fns += 1
     assert_true(fns > 0)
 
@@ -65,7 +65,7 @@ def test_clause_span_covers_its_continuation_lines() raises:
     var fn_id = ast.child(ast.root(), 0)
     var ensures = ast.child(fn_id, 3)
     var requires = ast.child(fn_id, 4)
-    assert_equal(ast.nodes[ensures].kind, NodeKind.CLAUSE)
+    assert_equal(ast.nodes[ensures].kind, NodeKind.Clause)
     assert_equal(ast.source_text(ensures), "ensures x > 0 and\n    x < 9")
     assert_equal(ast.nodes[ensures].span.line, 3)
     assert_equal(ast.nodes[ensures].span.column, 3)

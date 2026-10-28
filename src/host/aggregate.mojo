@@ -55,11 +55,11 @@ struct Shape(ImplicitlyCopyable):
 def _shape(spec: Spec, clause: Int) raises -> Shape:
     ref cl = spec.clauses[clause]
     ref node = spec.ast.nodes[cl.expr]
-    if node.kind == .COMPREHENSION and node.op == .ALL:
+    if node.kind == .Comprehension and node.op == .ALL:
         return Shape(cl.expr, .NO_OP, 0)
-    if node.kind == .BINARY and node.op in [ast.Op.LE, ast.Op.LT, ast.Op.EQ]:
+    if node.kind == .Binary and node.op in [ast.Op.LE, ast.Op.LT, ast.Op.EQ]:
         ref comp = spec.ast.nodes[node.children[0]]
-        if comp.kind == .COMPREHENSION and comp.op in [ast.Op.SUM, ast.Op.MAX]:
+        if comp.kind == .Comprehension and comp.op in [ast.Op.SUM, ast.Op.MAX]:
             return Shape(node.children[0], node.op, node.children[1])
     raise Error(
         t"{cl.id}: an aggregate clause is sum(v in S: e) <= c, < c or == 0, max(v in S: e) <= c"

@@ -107,17 +107,17 @@ def describe(ast: Ast, e: Int) -> String:
     """What a node is, for a message: `the operator ==`, `a call to f`, `x`."""
     ref n = ast.nodes[e]
     match n.kind:
-        case .BINARY:
+        case .Binary:
             return String("the operator ", n.op)
-        case .UNARY:
+        case .Unary:
             return String("the operator ", "-" if n.op == .NEG else String(n.op))
-        case .CALL if ast.nodes[n.children[0]].kind in [sx.NodeKind.NAME, sx.NodeKind.ATTR]:
+        case .Call if ast.nodes[n.children[0]].kind in [sx.NodeKind.Name, sx.NodeKind.Attribute]:
             return String("a call to ", ast.nodes[n.children[0]].text)
-        case .NUM:
+        case .Number:
             return String("the number ", n.text)
-        case .ATTR:
+        case .Attribute:
             return String(".", n.text)
-        case .NAME:
+        case .Name:
             return n.text.copy()
         case _:
             return String(n.kind)
@@ -149,7 +149,7 @@ def _numerator(bound: Optional[Real]) -> Optional[BigInt]:
 
 def _written(n: Node, value: Real) -> String:
     """A constant as written when it is a number, else its value."""
-    return n.text.copy() if n.kind == .NUM else String(value)
+    return n.text.copy() if n.kind == .Number else String(value)
 
 
 def _arithmetic(op: sx.Op, a: Real, b: Real) raises -> Real:
@@ -193,7 +193,7 @@ struct SetCompiler(Movable):
     def compile(self, mut ctx: SetContext, ast: Ast, e: Int) raises SetError -> BitSet:
         ref n = ast.nodes[e]
         match n.kind:
-            case .BINARY if n.op in [sx.Op.BITOR, sx.Op.BITAND, sx.Op.SUB]:
+            case .Binary if n.op in [sx.Op.BITOR, sx.Op.BITAND, sx.Op.SUB]:
                 var a = self.compile(ctx, ast, n.children[0])
                 var b = self.compile(ctx, ast, n.children[1])
                 match n.op:
@@ -203,7 +203,7 @@ struct SetCompiler(Movable):
                         return ctx.intersection(a, b)
                     case _:
                         return ctx.difference(a, b)
-            case .NAME:
+            case .Name:
                 if case .Some(cls) = self.classes.get(n.text):
                     if Int(cls.width) != self.elem.width:
                         raise SetError(e, t"class {n.text} is a set of {cls.width}-bit values")
@@ -213,7 +213,7 @@ struct SetCompiler(Movable):
                 raise SetError(
                     e, t"unknown class {n.text} (a class can only use classes defined before it)"
                 )
-            case .ATTR:
+            case .Attribute:
                 var tname = self.owner(ast, n.children[0], n.text, e)
                 if n.text in ["min", "max"]:
                     raise SetError(e, t"{tname}.{n.text} is a value, not a set; write {{{tname}.{n.text}}}")
@@ -221,14 +221,14 @@ struct SetCompiler(Movable):
                 if named is None:
                     raise SetError(e, t"{tname} has no set {n.text} (its sets are {self.set_names()})")
                 return named.value()
-            case .CALL:
+            case .Call:
                 ref callee = ast.nodes[n.children[0]]
-                if callee.kind == .ATTR and callee.text in ["range", "pattern"]:
+                if callee.kind == .Attribute and callee.text in ["range", "pattern"]:
                     var tname = self.owner(ast, callee.children[0], callee.text, e)
                     if callee.text == "range":
                         return self.range(ctx, ast, e, tname)
                     return self.pattern(ctx, ast, e, tname)
-            case .SET:
+            case .Set:
                 return ctx.exactly([self.member_bits(ast, k) for k in n.children], self.elem.width)
             case _:
                 pass
@@ -243,7 +243,7 @@ struct SetCompiler(Movable):
     def owner(self, ast: Ast, value: Int, member: String, whole: Int) raises SetError -> String:
         """The type name `value` writes, checked to be the partition's own type."""
         ref v = ast.nodes[value]
-        var found = self.type_named(v.text) if v.kind == .NAME else None
+        var found = self.type_named(v.text) if v.kind == .Name else None
         if found is None:
             raise SetError(whole, t"{describe(ast, value)}.{member} is not a partition set")
         if found.value() != self.elem:
@@ -295,7 +295,7 @@ struct SetCompiler(Movable):
         return ctx.int_range(self.elem.width, self.elem.signed, _numerator(lo), _numerator(hi))
 
     def bound(self, ast: Ast, e: Int, tname: String) raises SetError -> Optional[Real]:
-        if ast.nodes[e].kind == .NONE:
+        if ast.nodes[e].kind == .NoneLiteral:
             return None
         var v = self.const(ast, e)
         var text = _written(ast.nodes[e], v)
@@ -320,7 +320,7 @@ struct SetCompiler(Movable):
         self, mut ctx: SetContext, ast: Ast, call: Int, tname: String
     ) raises SetError -> BitSet:
         var arg = only_arg(ast, call)
-        if arg is None or ast.nodes[arg.value()].kind != .STR:
+        if arg is None or ast.nodes[arg.value()].kind != .String:
             raise SetError(call, t'{tname}.pattern takes one string: {tname}.pattern("...")')
         try:
             return ctx.pattern(ast.nodes[arg.value()].text, self.elem.width)
@@ -331,7 +331,7 @@ struct SetCompiler(Movable):
         ref n = ast.nodes[e]
         var name = self.elem.name()
         if self.elem.is_bool():
-            if n.kind != .BOOL:
+            if n.kind != .Bool:
                 raise SetError(e, t"a bool set holds true and false, not {describe(ast, e)}")
             return UInt64(1) if n.op == .TRUE else UInt64(0)
         var v = self.const(ast, e)
@@ -344,7 +344,7 @@ struct SetCompiler(Movable):
             ):
                 raise SetError(e, t"{text} is not a {name} value")
             return pattern_of(v.numerator, self.elem.width)
-        if n.kind == .UNARY and n.op == .NEG and v.is_zero():
+        if n.kind == .Unary and n.op == .NEG and v.is_zero():
             raise SetError(
                 e,
                 t"-0 is the number 0, which is +0.0 as a {name}; write {name}.zero &"
@@ -358,23 +358,23 @@ struct SetCompiler(Movable):
     def const(self, ast: Ast, e: Int) raises SetError -> Real:
         ref n = ast.nodes[e]
         match n.kind:
-            case .NUM:
+            case .Number:
                 try:
                     return parse_number(n.text)
                 except err:
                     raise SetError(e, err)
-            case .UNARY if n.op == .NEG:
+            case .Unary if n.op == .NEG:
                 return -self.const(ast, n.children[0])
-            case .BINARY if n.op in [sx.Op.ADD, sx.Op.SUB, sx.Op.MUL, sx.Op.DIV]:
+            case .Binary if n.op in [sx.Op.ADD, sx.Op.SUB, sx.Op.MUL, sx.Op.DIV]:
                 var a = self.const(ast, n.children[0])
                 var b = self.const(ast, n.children[1])
                 try:
                     return _arithmetic(n.op, a, b)
                 except err:
                     raise SetError(e, err)
-            case .ATTR if n.text in ["min", "max"]:
+            case .Attribute if n.text in ["min", "max"]:
                 ref owner = ast.nodes[n.children[0]]
-                var found = self.type_named(owner.text) if owner.kind == .NAME else None
+                var found = self.type_named(owner.text) if owner.kind == .Name else None
                 if found is not None:
                     var elem = found.value()
                     var is_min = n.text == "min"

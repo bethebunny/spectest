@@ -32,7 +32,7 @@ def check_with(var ast: Ast, files: Files) raises -> Spec:
     var decls: List[Int] = []
     for f in order:
         decls.extend(
-            [d for d in ast.nodes[ast.files[f].root].children if ast.nodes[d].kind not in (NodeKind.USE, NodeKind.PRELUDE)]
+            [d for d in ast.nodes[ast.files[f].root].children if ast.nodes[d].kind not in (NodeKind.Use, NodeKind.Prelude)]
         )
     var c = Checker(Spec(name^, ast^, Types()), decls^)
     c.diags = diags^

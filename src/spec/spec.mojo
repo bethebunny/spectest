@@ -289,12 +289,12 @@ def literal_value(ast: Ast, n: Int) -> Optional[Real]:
     """The value of a numeric literal, possibly negated."""
     ref node = ast.nodes[n]
     match node.kind:
-        case .NUM:
+        case .Number:
             try:
                 return parse_number(node.text)
             except:
                 return None
-        case .UNARY if node.op == .NEG:
+        case .Unary if node.op == .NEG:
             if case .Some(inner) = literal_value(ast, node.children[0]):
                 return -inner
             return None
@@ -329,13 +329,13 @@ def aggregate_shape(ast: Ast, e: Int) -> AggregateShape:
     """The shape of the condition `e` of an aggregate clause."""
     ref node = ast.nodes[e]
     match node.kind:
-        case .COMPREHENSION:
+        case .Comprehension:
             return AggregateShape(e, 0, "" if node.op == .ALL else _AGGREGATE_SHAPES)
-        case .BINARY:
+        case .Binary:
             var left = node.children[0]
             var right = node.children[1]
-            if ast.nodes[left].kind != .COMPREHENSION:
-                var top = right if ast.nodes[right].kind == .COMPREHENSION else 0
+            if ast.nodes[left].kind != .Comprehension:
+                var top = right if ast.nodes[right].kind == .Comprehension else 0
                 return AggregateShape(top, 0, _AGGREGATE_SHAPES)
             var op = node.op
             var allowed: Bool

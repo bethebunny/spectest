@@ -91,7 +91,7 @@ def items_of(loaded: Loaded) raises -> List[Value]:
     var out: List[Value] = []
     for f in range(len(spec.fns)):
         ref func = spec.fns[f]
-        if func.kind != .FN:
+        if func.kind != .Fn:
             _interface_items(spec, f, out)
             continue
         ref decl = func.decl_id

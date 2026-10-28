@@ -62,7 +62,7 @@ struct _Walk(Defaultable, Movable):
 
 
 def _is_prelude(ast: Ast, file: Int) -> Bool:
-    return ast.nodes[ast.files[file].root].kind == .PRELUDE_FILE
+    return ast.nodes[ast.files[file].root].kind == .PreludeFile
 
 
 def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
@@ -70,10 +70,10 @@ def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
     w.stack.append(file)
     for d in ast.nodes[ast.files[file].root].children.copy():
         var kind = ast.nodes[d].kind
-        if kind != .USE and kind != .PRELUDE:
+        if kind != .Use and kind != .Prelude:
             continue
         var name = ast.nodes[d].text.copy()
-        var word = "use" if kind == .USE else "prelude"
+        var word = "use" if kind == .Use else "prelude"
         var key = _relative(ast.files[file].path, name)
         var target = w.keys.try_index(key).or_else(-1)
         if target < 0:
@@ -90,7 +90,7 @@ def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
             var cycle = cycle_text([ast.files[f].path.copy() for f in w.stack[w.stack.index(target) :]])
             w.diags.append(ast.diagnostic(d, t"{word} cycle: {cycle}"))
             continue
-        var wants_prelude = kind == .PRELUDE or _is_prelude(ast, file)
+        var wants_prelude = kind == .Prelude or _is_prelude(ast, file)
         if _is_prelude(ast, target) != wants_prelude:
             if wants_prelude:
                 w.diags.append(ast.diagnostic(d, t"{name} is a spec, not a prelude file"))

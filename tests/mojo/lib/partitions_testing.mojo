@@ -25,9 +25,9 @@ def _resolved(
         return ty.ANY_TYPE
     ref n = ast.nodes[node]
     var args = [_resolved(types, ast, aliases, tparams, k) for k in n.children]
-    if n.kind == .TUPLE_TYPE:
+    if n.kind == .TupleType:
         return types.tuple_of(args)
-    if n.kind != .TYPE:
+    if n.kind != .Type:
         return ty.ANY_TYPE
     if len(args) == 0:
         var scalar = types.scalar(n.text)
@@ -78,7 +78,7 @@ def _add_fn(
     var clause_ids = List[Int]()
     for item in n.children[3:]:
         ref it = ast.nodes[item]
-        if it.kind == .PARTITION:
+        if it.kind == .Partition:
             var position = -1
             for j, param in enumerate(params):
                 if param.name == it.text:
@@ -88,7 +88,7 @@ def _add_fn(
                 for c in it.children
             ]
             partitions.append(Partition(position, item, classes^))
-        elif it.kind == .CLAUSE:
+        elif it.kind == .Clause:
             clause_ids.append(len(clauses))
             clauses.append(
                 Clause(
@@ -119,18 +119,18 @@ def build_spec(source: String, path: String = "t.spec") raises -> Spec:
     var clauses = List[Clause]()
     var no_tparams = List[String]()
     for d in ast.nodes[ast.root()].children:
-        if ast.nodes[d].kind == .ALIAS:
+        if ast.nodes[d].kind == .Alias:
             aliases[ast.nodes[d].text] = _resolved(
                 types, ast, aliases, no_tparams, ast.nodes[d].children[0]
             )
     for d in ast.nodes[ast.root()].children:
         ref dn = ast.nodes[d]
-        if dn.kind == .FN:
+        if dn.kind == .Fn:
             _add_fn(ast, types, aliases, no_tparams, d, dn.text, fns, clauses)
-        elif dn.kind == .INTERFACE:
+        elif dn.kind == .Interface:
             var tparams = [ast.nodes[t].text for t in ast.nodes[dn.children[0]].children]
             for m in dn.children[1:]:
-                if ast.nodes[m].kind in [sx.NodeKind.CTOR, sx.NodeKind.METHOD]:
+                if ast.nodes[m].kind in [sx.NodeKind.Ctor, sx.NodeKind.Method]:
                     var decl_id = String(dn.text, ".", ast.nodes[m].text)
                     _add_fn(ast, types, aliases, tparams, m, decl_id, fns, clauses)
     var spec = Spec(ast.nodes[ast.root()].text, ast^, types^)

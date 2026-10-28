@@ -86,7 +86,7 @@ def _example(ctx: SetContext, elem: Elem, s: BitSet) raises -> String:
 
 def _uses(ast: Ast, e: Int, names: Set[String]) -> Bool:
     ref n = ast.nodes[e]
-    return (n.kind == .NAME and n.text in names) or any([_uses(ast, k, names) for k in n.children])
+    return (n.kind == .Name and n.text in names) or any([_uses(ast, k, names) for k in n.children])
 
 
 def compile_partitions(mut ctx: SetContext, spec: Spec) raises -> PartitionSets:
