@@ -168,10 +168,9 @@ struct Mpfr(Movable):
     def _set_exact_integer(self, cell: Int, value: BigInt):
         """Sets the cell, whose precision is raised to hold the value exactly."""
         self._set_precision(cell, precision=max(value.bit_length(), 8))
-        var digits = abs(value).hex() + "\0"
-        _ = self.handle().call["mpfr_set_str", Int32](self.addr(cell), Int(digits.unsafe_ptr()), Int32(16), RNDN)
-        if value.negative:
-            _ = self.handle().call["mpfr_neg", Int32](self.addr(cell), self.addr(cell), RNDN)
+        # MPFR reads the sign and the 0x of `-0x1f`. The span keeps `digits` alive through the call.
+        var digits = value.hex()
+        _ = self.handle().call["mpfr_set_str", Int32](self.addr(cell), digits.as_c_string_span(), Int32(16), RNDN)
 
     def set_real(self, cell: Int, r: Real):
         """The real at the cell's precision, rounded to nearest when not exact."""

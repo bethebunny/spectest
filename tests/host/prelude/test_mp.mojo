@@ -55,6 +55,12 @@ def test_exact_cases() raises:
     assert_true(mp("exp", fl(F16, 0x8000)) == Real(1))
 
 
+def test_odd_functions_keep_the_sign() raises:
+    assert_true(mp("sin", Value.int(-1)) == -mp("sin", Value.int(1)))
+    assert_true(mp("atan", rat(-1, 3)) == -mp("atan", rat(1, 3)))
+    assert_true(mp("tan", rat(-5, 7)) == -mp("tan", rat(5, 7)))
+
+
 def test_infinite_inputs() raises:
     var inf = Real.infinity()
     assert_true(mp("exp", Value.real(BigInt(1), BigInt(0))) == inf)
