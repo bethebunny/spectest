@@ -99,7 +99,7 @@ def attr(o: PyObjectPtr, name: PyObjectPtr) raises -> Owned:
     return Owned(checked(PyObject_GetAttr(o, name)))
 
 
-def new_string(text: String) raises -> Owned:
+def new_string(text: StringSpan) raises -> Owned:
     return Owned(checked(PyUnicode_FromStringAndSize(text)))
 
 

@@ -60,12 +60,12 @@ from .pyutil import (
 
 def from_python(obj: PyObjectPtr) raises -> Value:
     """The Value of a wire object. Raises `TypeError: ...` for anything else."""
-    return _from_py(obj, wire()[])
+    return _value_of(obj, wire()[])
 
 
 def to_python(value: Value) raises -> PyObjectPtr:
     """The wire object for a Value, a new reference."""
-    return _to_py(value, wire()[]).take()
+    return _object_of(value, wire()[]).take()
 
 
 def _int_value(obj: PyObjectPtr) raises -> Value:
@@ -130,7 +130,7 @@ def _items_attr(obj: PyObjectPtr, name: PyObjectPtr) raises -> List[Owned]:
     return _items(attr(obj, name).ptr)
 
 
-def _from_py(obj: PyObjectPtr, wire: Wire) raises -> Value:
+def _value_of(obj: PyObjectPtr, wire: Wire) raises -> Value:
     if obj == wire.none:
         return Value.none()
     if obj == wire.true:
@@ -146,9 +146,9 @@ def _from_py(obj: PyObjectPtr, wire: Wire) raises -> Value:
     if flags & Py_TPFLAGS_BYTES_SUBCLASS:
         return Value.bytes(_bytes(obj))
     if flags & Py_TPFLAGS_LIST_SUBCLASS:
-        return Value.list([_from_py(PyList_GetItem(obj, i), wire) for i in range(PyList_Size(obj))])
+        return Value.list([_value_of(PyList_GetItem(obj, i), wire) for i in range(PyList_Size(obj))])
     if flags & Py_TPFLAGS_TUPLE_SUBCLASS:
-        return Value.tuple([_from_py(PyTuple_GetItem(obj, i), wire) for i in range(PyTuple_Size(obj))])
+        return Value.tuple([_value_of(PyTuple_GetItem(obj, i), wire) for i in range(PyTuple_Size(obj))])
     ref classes = wire.classes
     ref names = wire.names
     if type == classes.float:
@@ -158,8 +158,8 @@ def _from_py(obj: PyObjectPtr, wire: Wire) raises -> Value:
         var values: List[Value] = []
         for item in _items_attr(obj, names.pairs):
             var pair = _pair(item)
-            keys.append(_from_py(pair[0].ptr, wire))
-            values.append(_from_py(pair[1].ptr, wire))
+            keys.append(_value_of(pair[0].ptr, wire))
+            values.append(_value_of(pair[1].ptr, wire))
         return Value.map(keys^, values^)
     if type == classes.record:
         var fields: List[String] = []
@@ -167,7 +167,7 @@ def _from_py(obj: PyObjectPtr, wire: Wire) raises -> Value:
         for item in _items_attr(obj, names.fields):
             var pair = _pair(item)
             fields.append(_str(pair[0].ptr))
-            values.append(_from_py(pair[1].ptr, wire))
+            values.append(_value_of(pair[1].ptr, wire))
         return Value.record(_str_attr(obj, names.type), fields, values^)
     if type == classes.enum:
         return Value.enum(_str_attr(obj, names.type), _str_attr(obj, names.member))
@@ -177,11 +177,11 @@ def _from_py(obj: PyObjectPtr, wire: Wire) raises -> Value:
         var bases = [_str(base.ptr) for base in _items_attr(obj, names.bases)]
         return Value.error(_str_attr(obj, names.cls), bases, _str_attr(obj, names.message))
     if type == classes.converted:
-        return _from_py(attr(obj, names.value).ptr, wire)
+        return _value_of(attr(obj, names.value).ptr, wire)
     raise Error(t"TypeError: not a wire object: {_type_name(obj)}")
 
 
-def _to_py(value: Value, wire: Wire) raises -> Owned:
+def _object_of(value: Value, wire: Wire) raises -> Owned:
     ref classes = wire.classes
     match value.kind:
         case .BOOL:
@@ -192,22 +192,22 @@ def _to_py(value: Value, wire: Wire) raises -> Owned:
             var digits = value.as_bigint().hex()
             return Owned(checked(PyLong_FromString(digits.as_c_string_span(), 16)))
         case .FLOAT:
-            var format = String(value.float_format().name())
+            var format = value.float_format().name()
             return call(classes.float, [new_string(format), new_u64(value.float_bits())])
         case .STRING:
             return new_string(value.text())
         case .BYTES:
             return Owned(checked(PyBytes_FromStringAndSize(value.data())))
         case .LIST:
-            return new_list([_to_py(item, wire) for item in value.items()])
+            return new_list([_object_of(item, wire) for item in value.items()])
         case .TUPLE:
             return _tuple_of_items(value, wire)
         case .OPTION:
-            return Owned(Py_NewRef(wire.none)) if value.count() == 0 else _to_py(value.item(0), wire)
+            return Owned(Py_NewRef(wire.none)) if value.count() == 0 else _object_of(value.item(0), wire)
         case .MAP:
-            return call(classes.map, [_pairs(value, wire)])
+            return call(classes.map, [_tuple_of_pairs(value, wire)])
         case .RECORD:
-            return call(classes.record, [new_string(value.name()), _pairs(value, wire)])
+            return call(classes.record, [new_string(value.name()), _tuple_of_pairs(value, wire)])
         case .ENUM:
             return call(classes.enum, [new_string(value.name()), new_string(value.text())])
         case .HANDLE:
@@ -222,9 +222,11 @@ def _to_py(value: Value, wire: Wire) raises -> Owned:
 
 
 def _tuple_of_items(value: Value, wire: Wire) raises -> Owned:
-    return new_tuple([_to_py(item, wire) for item in value.items()])
+    return new_tuple([_object_of(item, wire) for item in value.items()])
 
 
-def _pairs(value: Value, wire: Wire) raises -> Owned:
+def _tuple_of_pairs(value: Value, wire: Wire) raises -> Owned:
     """A MAP's or RECORD's items as a tuple of (key, value) pairs."""
-    return new_tuple([new_tuple([_to_py(key, wire), _to_py(item, wire)]) for key, item in value.pairs()])
+    return new_tuple(
+        [new_tuple([_object_of(key, wire), _object_of(item, wire)]) for key, item in value.pairs()]
+    )
