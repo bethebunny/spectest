@@ -6,16 +6,18 @@ Errors go to the checker's diagnostics; an expression that already has an error 
 the poison type, which silences follow-on errors.
 """
 
-from numeric.real import Real
 from numeric.literal import is_integer_literal
-from syntax import ast
+from numeric.real import Real
 
-from check import types as ty
 from check.psig import Arg, CallInfo, TypingError
 from check.sigs import prelude_type
 from check.spec import Param, ResolutionKind
-from check.state import Checker, K_PARTITION_SET, NO_TYPE, classifier_hint, last_index_of
+from check.state import Checker, Ctx, NO_TYPE, Var, classifier_hint, is_reserved, last_index_of
+from check.types import ANY_TYPE, Types
 from check.typesyn import ensure_const, resolve_type
+
+comptime _NAMESPACE_FUNCTIONS: Array[StaticString, 7] = ["sqrt", "exp", "log", "sin", "cos", "tan", "atan"]
+"""The functions of `mp` and `cr`, as messages list them."""
 
 
 # -- small helpers --------------------------------------------------------------
@@ -23,17 +25,17 @@ from check.typesyn import ensure_const, resolve_type
 
 def poison_subtree(mut c: Checker, e: Int):
     for n in c.spec.ast.subtree(e):
-        if c.spec.node_types[n] == 0:
+        if c.spec.node_types[n] == ANY_TYPE:
             c.spec.node_types[n] = c.poison
 
 
-def want_bool(mut c: Checker, node: Int, t: Int, what: String):
+def want_bool(mut c: Checker, node: Int, t: Int, what: Some[Writable]):
     var k = c.tkind(t)
     if k != .BOOL and k != .ANY:
         c.error(node, t"{what} must be a bool, but this is {c.text(t)}")
 
 
-def want_int(mut c: Checker, node: Int, t: Int, what: String):
+def want_int(mut c: Checker, node: Int, t: Int, what: StaticString):
     if not c.is_integer(t) and not c.is_any(t):
         var hint = " (use // for integer division)" if c.tkind(t) == .REAL else ""
         c.error(node, t"{what} must be an integer, but it is {c.text(t)}{hint}")
@@ -43,28 +45,26 @@ def binds_value(c: Checker, name: String) -> Bool:
     """Is name a local, a partition class or a parameter here?"""
     if c.ctx.local_index(name) >= 0 or c.ctx.class_index(name) >= 0:
         return True
-    return c.ctx.param_index(name) >= 0 and c.ctx.kind != K_PARTITION_SET
+    return c.ctx.param_index(name) >= 0 and not c.ctx.in_partition_set
 
 
 def _root_name(c: Checker, e: Int) -> String:
     var n = e
     while c.kind_of(n) == .ATTR:
         n = c.child(n, 0)
-    if c.kind_of(n) == .NAME:
-        return c.text_of(n)
-    return String()
+    return c.text_of(n) if c.kind_of(n) == .NAME else String()
 
 
 def dotted(c: Checker, e: Int) -> String:
     """`a.b.c` for a chain of names and attributes, or "" for anything else."""
-    if c.kind_of(e) == .NAME:
-        return c.text_of(e)
-    if c.kind_of(e) == .ATTR:
-        var inner = dotted(c, c.child(e, 0))
-        if inner == "":
+    match c.kind_of(e):
+        case .NAME:
+            return c.text_of(e)
+        case .ATTR:
+            var inner = dotted(c, c.child(e, 0))
+            return String(t"{inner}.{c.text_of(e)}") if inner else String()
+        case _:
             return String()
-        return inner + "." + c.text_of(e)
-    return String()
 
 
 def chain_candidate(c: Checker, e: Int) -> String:
@@ -72,261 +72,210 @@ def chain_candidate(c: Checker, e: Int) -> String:
     var root = _root_name(c, e)
     if root == "" or root == "self" or root == "result" or root == "old":
         return String()
-    if binds_value(c, root) or c.ctx.hidden_index(root) >= 0:
+    if binds_value(c, root) or root in c.ctx.hidden:
         return String()
-    if c.ctx.fields_of >= 0:
-        # A bare observer shadows nothing qualified, but keep fields first.
-        if c.observer_pos(c.ctx.fields_of, root) >= 0:
-            return String()
+    # A bare observer shadows nothing qualified, but keep fields first.
+    if c.ctx.fields_of >= 0 and c.observer_pos(c.ctx.fields_of, root) >= 0:
+        return String()
     return dotted(c, e)
 
 
-def assignable(mut c: Checker, actual: Int, target: Int, node: Int) -> Bool:
+def assignable(c: Checker, actual: Int, target: Int, node: Int) -> Bool:
     """May a value of type actual be passed where target is expected? Fixed-width
     numeric targets accept any number: representability is checked at the call."""
     if c.is_any(actual) or c.is_any(target) or actual == target:
         return True
     var kt = c.tkind(target)
     var ka = c.tkind(actual)
-    if kt == .FIXED_INT:
-        return c.is_integer(actual) or ka == .REAL
-    if kt == .FLOAT or kt == .REAL:
-        return c.is_numeric(actual)
-    if kt == .INT:
-        return c.is_integer(actual)
-    if kt == .LITERAL:
-        var values = c.spec.types.infos[target].names.copy()
-        if ka == .LITERAL:
-            for v in c.spec.types.infos[actual].names:
-                var found = False
-                for w in values:
-                    if v == w:
-                        found = True
-                if not found:
-                    return False
-            return True
-        if node > 0 and c.kind_of(node) == .STR:
-            var text = c.text_of(node)
-            for w in values:
-                if w == text:
-                    return True
-        return False
-    if kt == .CHOICE:
-        var names = c.spec.types.infos[target].names.copy()
-        if ka == .CHOICE:
-            for v in c.spec.types.infos[actual].names:
-                var found = False
-                for w in names:
-                    if v == w:
-                        found = True
-                if not found:
-                    return False
-            return True
-        if node > 0:
-            var r = c.spec.resolutions.get(node)
-            if r and r.value().kind == .CONST:
-                var nm = c.spec.consts[r.value().index].name
-                for w in names:
-                    if w == nm:
-                        return True
-        return False
-    if kt == .STRING:
-        return c.is_stringish(actual)
-    if kt == .LIST and ka == .LIST:
-        if node > 0 and c.kind_of(node) == .LIST and c.children(node):
-            for x in c.children(node):
-                if not assignable(c, c.spec.node_types[x], c.arg(target, 0), x):
-                    return False
-            return True
-        return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0)
-    if kt == .OPTION and ka == .OPTION:
-        return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0)
-    if kt == .MAP and ka == .MAP:
-        return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0) and assignable(
-            c, c.arg(actual, 1), c.arg(target, 1), 0
-        )
-    if kt == .TUPLE and ka == .TUPLE:
-        var ts = c.spec.types.infos[target].args.copy()
-        var xs = c.spec.types.infos[actual].args.copy()
-        if len(ts) != len(xs):
-            return False
-        var subs = List[Int]()
-        if node > 0 and c.kind_of(node) == .TUPLE and len(c.children(node)) == len(ts):
-            subs = c.children(node)
-        for i in range(len(ts)):
-            if not assignable(c, xs[i], ts[i], subs[i] if len(subs) > 0 else 0):
+    match kt:
+        case .FIXED_INT:
+            return c.is_integer(actual) or ka == .REAL
+        case .FLOAT | .REAL:
+            return c.is_numeric(actual)
+        case .INT:
+            return c.is_integer(actual)
+        case .LITERAL | .CHOICE:
+            ref names = c.spec.types.infos[target].names
+            if ka == kt:
+                return all([v in names for v in c.spec.types.infos[actual].names])
+            if kt == .LITERAL:
+                return node > 0 and c.kind_of(node) == .STR and c.text_of(node) in names
+            return node > 0 and _choice_has(c, target, node)
+        case .STRING:
+            return c.is_stringish(actual)
+        case .LIST if ka == .LIST:
+            if node > 0 and c.kind_of(node) == .LIST and c.children(node):
+                return all([assignable(c, c.spec.node_types[x], c.arg(target, 0), x) for x in c.children(node)])
+            return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0)
+        case .OPTION if ka == .OPTION:
+            return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0)
+        case .MAP if ka == .MAP:
+            return assignable(c, c.arg(actual, 0), c.arg(target, 0), 0) and assignable(
+                c, c.arg(actual, 1), c.arg(target, 1), 0
+            )
+        case .TUPLE if ka == .TUPLE:
+            ref ts = c.spec.types.infos[target].args
+            ref xs = c.spec.types.infos[actual].args
+            if len(ts) != len(xs):
                 return False
-        return True
-    return False
+            var written = node > 0 and c.kind_of(node) == .TUPLE and len(c.children(node)) == len(ts)
+            var elems = c.children(node) if written else List[Int]()
+            for i in range(len(ts)):
+                if not assignable(c, xs[i], ts[i], elems[i] if written else 0):
+                    return False
+            return True
+        case _:
+            return False
 
 
 # -- entry point ----------------------------------------------------------------
 
 
 def infer(mut c: Checker, e: Int, expected: Int = NO_TYPE) -> Int:
-    var k = c.kind_of(e)
     var t: Int
-    if k == .NAME:
-        t = infer_name(c, e)
-    elif k == .BINARY:
-        t = infer_binary(c, e, expected)
-    elif k == .CALL:
-        t = infer_call(c, e)
-    elif k == .ATTR:
-        t = infer_attr(c, e)
-    elif k == .NUM:
-        t = c.int_ if is_integer_literal(c.spec.ast.nodes[e].text) else c.real_
-    elif k == .STR:
-        t = c.string_
-    elif k == .BOOL:
-        t = c.bool_
-    elif k == .NONE:
-        t = c.spec.types.option_of(ty.ANY_TYPE)
-    elif k == .UNARY:
-        t = infer_unary(c, e)
-    elif k == .IF:
-        t = infer_if(c, e, expected)
-    elif k == .LET:
-        t = infer_let(c, e, expected)
-    elif k == .COMPREHENSION:
-        t = infer_comprehension(c, e)
-    elif k == .TUPLE_INDEX:
-        t = infer_tuple_index(c, e)
-    elif k == .INDEX:
-        t = infer_index(c, e)
-    elif k == .SLICE:
-        t = infer_slice(c, e)
-    elif k == .LIST:
-        t = infer_list(c, e)
-    elif k == .TUPLE:
-        t = infer_tuple(c, e)
-    elif k == .SET:
-        t = infer_set(c, e, expected)
-    else:
-        t = c.poison
+    match c.kind_of(e):
+        case .NAME:
+            t = lookup(c, e)
+        case .BINARY:
+            t = infer_binary(c, e, expected)
+        case .CALL:
+            t = infer_call(c, e)
+        case .ATTR:
+            t = infer_attr(c, e)
+        case .NUM:
+            t = c.int_ if is_integer_literal(c.spec.ast.nodes[e].text) else c.real_
+        case .STR:
+            t = c.string_
+        case .BOOL:
+            t = c.bool_
+        case .NONE:
+            t = c.spec.types.option_of(ANY_TYPE)
+        case .UNARY:
+            t = infer_unary(c, e)
+        case .IF:
+            t = infer_if(c, e, expected)
+        case .LET:
+            t = infer_let(c, e, expected)
+        case .COMPREHENSION:
+            t = infer_comprehension(c, e)
+        case .TUPLE_INDEX:
+            t = infer_tuple_index(c, e)
+        case .INDEX:
+            t = infer_index(c, e)
+        case .SLICE:
+            t = infer_slice(c, e)
+        case .LIST:
+            t = infer_list(c, e)
+        case .TUPLE:
+            var elems = [infer(c, x) for x in c.children(e)]
+            t = c.spec.types.tuple_of(elems)
+        case .SET:
+            t = infer_set(c, e, expected)
+        case _:
+            t = c.poison
     c.set_type(e, t)
+    return t
+
+
+def infer_in(mut c: Checker, var ctx: Ctx, e: Int, expected: Int = NO_TYPE) -> Int:
+    """The type of `e` checked in `ctx`, leaving the current context as it was."""
+    swap(ctx, c.ctx)
+    var t = infer(c, e, expected)
+    swap(ctx, c.ctx)
     return t
 
 
 # -- names ----------------------------------------------------------------------
 
 
-def infer_name(mut c: Checker, e: Int) -> Int:
-    var t = lookup(c, e)
-    return c.poison if t < 0 else t
-
-
 def _old_local_message(c: Checker, name: String, binder: Int) -> String:
-    var how = "let"
-    if c.kind_of(binder) == .COMPREHENSION:
-        how = String(c.op_of(binder)) + "(...)"
-    return (
-        "old(...) is evaluated before the call, so it cannot use "
-        + name
-        + ", which "
-        + how
-        + " binds inside this clause: bind old(...) of the state first, e.g. "
-        "let xs = old(self.items) in all(i in range(0, len(xs)): xs[i] == self.items[i])"
+    var how = String(t"{c.op_of(binder)}(...)") if c.kind_of(binder) == .COMPREHENSION else String("let")
+    return String(
+        t"old(...) is evaluated before the call, so it cannot use {name}, which {how} binds inside this "
+        t"clause: bind old(...) of the state first, e.g. let xs = old(self.items) in "
+        t"all(i in range(0, len(xs)): xs[i] == self.items[i])"
     )
 
 
+def _takes_arguments(c: Checker, name: String, model: Int, observer: Int) -> String:
+    var params = ", ".join([p.name.copy() for p in c.spec.models[model].observers[observer].params])
+    return String(t"{name} takes arguments: {name}({params})")
+
+
+def _no_observer(c: Checker, model: Int, name: String) -> String:
+    return String(t"{c.spec.models[model].name} has no observer {name} (its observers: {c.observer_names(model)})")
+
+
 def lookup(mut c: Checker, e: Int) -> Int:
-    """The type of a bare name, recording its resolution; -1 after an error."""
+    """The type of a bare name, recording its resolution; poison after an error."""
     var name = c.text_of(e)
     var li = c.ctx.local_index(name)
     if li >= 0:
+        var binder = c.ctx.locals[li].node
         if c.ctx.in_old and c.ctx.allow_old and li < c.ctx.old_scope:
-            c.error(e, _old_local_message(c, name, c.ctx.loc_binders[li]))
-            return NO_TYPE
-        c.resolve(e, .LOCAL, c.ctx.loc_binders[li], -1, name)
-        return c.ctx.loc_types[li]
-    var hi = c.ctx.hidden_index(name)
-    if hi >= 0:
-        c.error(e, c.ctx.hidden_msgs[hi].copy())
-        return NO_TYPE
+            c.error(e, _old_local_message(c, name, binder))
+            return c.poison
+        c.resolve(e, .LOCAL, name, index=binder)
+        return c.ctx.locals[li].type
+    if case .Some(why) = c.ctx.hidden.get(name):
+        c.error(e, why)
+        return c.poison
     var ci = c.ctx.class_index(name)
     if ci >= 0:
-        c.resolve(e, .CLASS, c.ctx.class_nodes[ci], -1, name)
-        return c.ctx.class_types[ci]
+        c.resolve(e, .CLASS, name, index=c.ctx.classes[ci].node)
+        return c.ctx.classes[ci].type
     var pi = c.ctx.param_index(name)
     if pi >= 0:
-        if c.ctx.kind == K_PARTITION_SET:
-            var ptype = c.ctx.param_types[pi]
+        var ptype = c.ctx.params[pi].type
+        var only = c.ctx.only_param.copy()
+        if c.ctx.in_partition_set:
+            var pt = c.text(ptype)
             var set_name = "nan" if c.tkind(ptype) == .FLOAT else "all"
             c.error(
                 e,
-                String("classes of the fixed-width parameter ", c.ctx.only_param, " are sets of values, so ", name, " cannot appear in them: build them from ", c.text(ptype), ".", set_name, ", ", c.text(ptype), ".range(a, b), {v, ...} and earlier classes"),
+                t"classes of the fixed-width parameter {only} are sets of values, so {name} cannot appear in "
+                t"them: build them from {pt}.{set_name}, {pt}.range(a, b), {{v, ...}} and earlier classes",
             )
-            return NO_TYPE
-        if c.ctx.only_param != "" and name != c.ctx.only_param:
-            c.error(
-                e,
-                String("a class of partition ", c.ctx.only_param, " may only refer to ", c.ctx.only_param, ", not to ", name),
-            )
-            return NO_TYPE
-        c.resolve(e, .PARAM, pi, -1, name)
-        return c.ctx.param_types[pi]
+            return c.poison
+        if only != "" and name != only:
+            c.error(e, t"a class of partition {only} may only refer to {only}, not to {name}")
+            return c.poison
+        c.resolve(e, .PARAM, name, index=pi)
+        return ptype
     if name == "result":
         if c.ctx.in_old:
             c.error(e, "result does not exist before the call, so old(...) cannot use it")
-            return NO_TYPE
-        if not c.ctx.has_result:
+            return c.poison
+        if c.ctx.result < 0:
             c.error(e, c.ctx.no_result.copy())
-            return NO_TYPE
-        c.resolve(e, .RESULT, 0, -1, "result")
+            return c.poison
+        c.resolve(e, .RESULT, "result")
         return c.ctx.result
     if name == "self":
         if c.ctx.self_t < 0:
             c.error(e, c.ctx.no_self.copy())
-            return NO_TYPE
-        c.resolve(e, .SELF, 0, c.ctx.self_model, "self")
+            return c.poison
+        c.resolve(e, .SELF, "self", owner=c.ctx.self_model)
         return c.ctx.self_t
-    if c.ctx.fields_of >= 0:
-        var m = c.ctx.fields_of
-        var oi = c.observer_pos(m, name)
-        if oi >= 0:
-            ref obs = c.spec.models[m].observers[oi]
-            if len(obs.params) > 0:
-                var names = String()
-                for j in range(len(obs.params)):
-                    names += ", " if j else ""
-                    names += obs.params[j].name
-                c.error(e, t"{name} takes arguments: {name}({names})")
-                return NO_TYPE
-            var otype = obs.type
-            c.resolve(e, .FIELD, oi, m, name)
-            return otype
-    var found = -1
-    var member = -1
-    var count = 0
-    for en in c.spec.enums:
-        var names = c.spec.types.infos[en].names.copy()
-        for j in range(len(names)):
-            if names[j] == name:
-                count += 1
-                if found < 0:
-                    found = en
-                    member = j
-    if count == 1:
-        c.resolve(e, .ENUM_MEMBER, member, found, name)
-        return found
-    if count > 1:
-        var list = String()
-        var first = String()
-        var n = 0
-        for en in c.spec.enums:
-            var names = c.spec.types.infos[en].names.copy()
-            for j in range(len(names)):
-                if names[j] == name:
-                    list += ", " if n else ""
-                    list += c.text(en)
-                    if n == 0:
-                        first = c.text(en)
-                    n += 1
-        c.error(e, t"{name} is a member of several enums ({list}): write {first}.{name}")
-        return NO_TYPE
+    var m = c.ctx.fields_of
+    var oi = c.observer_pos(m, name) if m >= 0 else -1
+    if oi >= 0:
+        if c.spec.models[m].observers[oi].params:
+            c.error(e, _takes_arguments(c, name, m, oi))
+            return c.poison
+        c.resolve(e, .FIELD, name, index=oi, owner=m)
+        return c.spec.models[m].observers[oi].type
+    var owners = [en for en in c.spec.enums if name in c.spec.types.infos[en].names]
+    if len(owners) == 1:
+        var member = c.spec.types.infos[owners[0]].names.try_index(name).value()
+        c.resolve(e, .ENUM_MEMBER, name, index=member, owner=owners[0])
+        return owners[0]
+    if owners:
+        var listed = ", ".join([c.text(en) for en in owners])
+        c.error(e, t"{name} is a member of several enums ({listed}): write {c.text(owners[0])}.{name}")
+        return c.poison
     unknown_name(c, e, name)
-    return NO_TYPE
+    return c.poison
 
 
 def _namespace_what(ns: String) -> String:
@@ -335,14 +284,19 @@ def _namespace_what(ns: String) -> String:
     return "the correctly rounded functions, which return floats"
 
 
-def _namespace_members(c: Checker, ns: String) -> String:
-    var out = String()
-    var first = True
-    for word in "sqrt exp log sin cos tan atan".split(" "):
-        out += "" if first else ", "
-        first = False
-        out += ns + "." + String(word)
-    return out
+def _namespace_members(ns: String) -> String:
+    return ", ".join([String(t"{ns}.{f}") for f in materialize[_NAMESPACE_FUNCTIONS]()])
+
+
+def _namespace_hints(c: Checker, name: String) -> List[String]:
+    """`mp.name` and `cr.name`, those that are prelude functions."""
+    var qualified = [String(t"mp.{name}"), String(t"cr.{name}")]
+    return [q.copy() for q in qualified if q in c.prelude_ids]
+
+
+def _did_you_mean(options: List[String]) -> String:
+    var listed = " or ".join(options)
+    return String(t" (did you mean {listed}?)") if options else String()
 
 
 def unknown_name(mut c: Checker, e: Int, name: String):
@@ -350,48 +304,28 @@ def unknown_name(mut c: Checker, e: Int, name: String):
     if name == "old":
         msg = "old is called as old(e)"
     elif name in c.fn_index:
-        msg = (
-            name
-            + " is a spec function: call it as "
-            + name
-            + "(...), in an ensures, relates, invariant or aggregate clause"
+        msg = String(
+            t"{name} is a spec function: call it as {name}(...), in an ensures, relates, invariant or aggregate clause"
         )
     elif name in c.def_index:
-        msg = name + " is a definition: call it as " + name + "(...)"
+        msg = String(t"{name} is a definition: call it as {name}(...)")
     elif name in c.prelude_ids:
-        msg = name + " is a function: call it as " + name + "(...)"
+        msg = String(t"{name} is a function: call it as {name}(...)")
     elif name == "mp" or name == "cr":
-        msg = (
-            name
-            + " is the namespace of "
-            + _namespace_what(name)
-            + ", e.g. "
-            + name
-            + ".cos(x)"
-        )
+        msg = String(t"{name} is the namespace of {_namespace_what(name)}, e.g. {name}.cos(x)")
     elif c.scalar(name) >= 0 or name in c.model_index:
-        msg = name + " is a type, not a value"
+        msg = String(t"{name} is a type, not a value")
     else:
-        msg = "unknown name " + name
-        var hints = List[String]()
-        if c.ctx.self_t >= 0 and c.ctx.self_model >= 0:
-            if c.observer_pos(c.ctx.self_model, name) >= 0:
-                hints.append("self." + name)
-        for i in range(len(c.ctx.param_names)):
-            var pt = c.ctx.param_types[i]
-            if c.tkind(pt) == .MODEL and c.ctx.param_names[i] != "":
-                var mp = c.model_pos_of_type(pt)
+        var hints: List[String] = []
+        if c.ctx.self_t >= 0 and c.ctx.self_model >= 0 and c.observer_pos(c.ctx.self_model, name) >= 0:
+            hints.append(String(t"self.{name}"))
+        for p in c.ctx.params:
+            if c.tkind(p.type) == .MODEL and p.name != "":
+                var mp = c.model_pos_of_type(p.type)
                 if mp >= 0 and c.observer_pos(mp, name) >= 0:
-                    hints.append(c.ctx.param_names[i] + "." + name)
-        for ns in ["mp", "cr"]:
-            if (String(ns) + "." + name) in c.prelude_ids:
-                hints.append(String(ns) + "." + name)
-        if len(hints) > 0:
-            var joined = String()
-            for i in range(len(hints)):
-                joined += " or " if i else ""
-                joined += hints[i]
-            msg += " (did you mean " + joined + "?)"
+                    hints.append(String(t"{p.name}.{name}"))
+        hints.extend(_namespace_hints(c, name))
+        msg = String(t"unknown name {name}{_did_you_mean(hints)}")
     c.error(e, msg)
 
 
@@ -404,14 +338,11 @@ def infer_unary(mut c: Checker, e: Int) -> Int:
     if c.op_of(e) == .NOT:
         want_bool(c, operand, t, "the operand of not")
         return c.bool_
-    if c.is_any(t):
-        return t
-    var k = c.tkind(t)
-    if k == .FLOAT:
+    if c.is_any(t) or c.tkind(t) == .FLOAT:
         return t
     if c.is_integer(t):
         return c.int_
-    if k == .REAL:
+    if c.tkind(t) == .REAL:
         return c.real_
     c.error(e, t"unary - needs a number, but the operand is {c.text(t)}")
     return c.poison
@@ -421,46 +352,39 @@ def infer_binary(mut c: Checker, e: Int, expected: Int) -> Int:
     var op = c.op_of(e)
     var left = c.child(e, 0)
     var right = c.child(e, 1)
-    var side = NO_TYPE
-    if expected >= 0 and c.tkind(expected) == .SET:
-        side = expected
+    var side = expected if expected >= 0 and c.tkind(expected) == .SET else NO_TYPE
     var lt = infer(c, left, side)
     var rt = infer(c, right, side)
-    if op == .AND or op == .OR or op == .IMPLIES:
-        var word = String(op)
-        want_bool(c, left, lt, "the left operand of " + word)
-        want_bool(c, right, rt, "the right operand of " + word)
-        return c.bool_
-    if op == .BITOR or op == .BITAND:
-        if c.is_integer(lt) and c.is_integer(rt):
-            return c.int_
-        return set_op(c, e, lt, rt)
-    if op == .SUB and (c.tkind(lt) == .SET or c.tkind(rt) == .SET):
-        return set_op(c, e, lt, rt)
-    if op == .EQ or op == .NE:
-        return equality(c, e, lt, rt)
-    if op == .LT or op == .LE or op == .GT or op == .GE:
-        return ordering(c, e, lt, rt)
-    if op == .IN:
-        return membership(c, e, lt, rt)
-    if op == .SHL or op == .SHR or op == .POW:
-        return integer_op(c, e, lt, rt)
-    return arith(c, e, lt, rt)
+    match op:
+        case .AND | .OR | .IMPLIES:
+            want_bool(c, left, lt, t"the left operand of {op}")
+            want_bool(c, right, rt, t"the right operand of {op}")
+            return c.bool_
+        case .BITOR | .BITAND:
+            return c.int_ if c.is_integer(lt) and c.is_integer(rt) else set_op(c, e, lt, rt)
+        case .SUB if c.tkind(lt) == .SET or c.tkind(rt) == .SET:
+            return set_op(c, e, lt, rt)
+        case .EQ | .NE:
+            return equality(c, e, lt, rt)
+        case .LT | .LE | .GT | .GE:
+            return ordering(c, e, lt, rt)
+        case .IN:
+            return membership(c, e, lt, rt)
+        case .SHL | .SHR | .POW:
+            return integer_op(c, e, lt, rt)
+        case _:
+            return arith(c, e, lt, rt)
 
 
 def integer_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
-    var op = String(c.op_of(e))
     if c.is_poison(lt) or c.is_poison(rt):
         return c.poison
+    var op = c.op_of(e)
     if (c.is_integer(lt) or c.is_any(lt)) and (c.is_integer(rt) or c.is_any(rt)):
-        if c.op_of(e) == .POW:
+        if op == .POW:
             var exponent = c.literal_value(c.child(e, 1))
-            if exponent and exponent.value() < Real(0):
-                c.error(
-                    e,
-                    "** needs a non-negative exponent: a negative power is not an"
-                    " integer",
-                )
+            if exponent is not None and exponent.value() < Real(0):
+                c.error(e, "** needs a non-negative exponent: a negative power is not an integer")
                 return c.poison
         return c.int_
     c.error(e, t"{op} takes integers, but got {c.text(lt)} and {c.text(rt)}")
@@ -470,60 +394,44 @@ def integer_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
 def set_op(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     if c.is_poison(lt) or c.is_poison(rt):
         return c.poison
-    var op = String(c.op_of(e))
+    var op = c.op_of(e)
     if c.tkind(lt) != .SET or c.tkind(rt) != .SET:
-        if (op == "|" or op == "&") and c.tkind(lt) == .BOOL and c.tkind(rt) == .BOOL:
-            var word = "or" if op == "|" else "and"
+        var bitwise = op == .BITOR or op == .BITAND
+        if bitwise and c.tkind(lt) == .BOOL and c.tkind(rt) == .BOOL:
+            var word = "or" if op == .BITOR else "and"
             c.error(e, t"{op} combines partition sets or integers; for booleans write {word}")
-        elif op == "|" or op == "&":
-            c.error(
-                e,
-                t"{op} needs two integers or two partition sets, but got {c.text(lt)} and {c.text(rt)}",
-            )
+        elif bitwise:
+            c.error(e, t"{op} needs two integers or two partition sets, but got {c.text(lt)} and {c.text(rt)}")
         else:
-            c.error(
-                e,
-                t"{op} on partition sets needs a set on both sides, but got {c.text(lt)} and {c.text(rt)}",
-            )
+            c.error(e, t"{op} on partition sets needs a set on both sides, but got {c.text(lt)} and {c.text(rt)}")
         return c.poison
     if c.arg(lt, 0) != c.arg(rt, 0):
-        c.error(
-            e,
-            t"cannot combine a set of {c.text(c.arg(lt, 0))} with a set of {c.text(c.arg(rt, 0))}",
-        )
+        c.error(e, t"cannot combine a set of {c.text(c.arg(lt, 0))} with a set of {c.text(c.arg(rt, 0))}")
         return c.poison
     return lt
 
 
-def eq_message(mut c: Checker, op: String, t: Int, bad: Int) -> String:
-    var inside = String() if t == bad else (" (inside " + c.text(t) + ")")
-    var k = c.tkind(bad)
-    if k == .FLOAT:
-        return (
-            op
-            + " is not defined on "
-            + c.text(bad)
-            + inside
-            + ": floats have no implicit equality. Use same(a, b) for bit-identical"
-            " values, ieee_eq(a, b) for IEEE 754 equality, real(a) "
-            + op
-            + " real(b) to compare numerically, or eq(a, b, float=...) for collections"
-        )
-    if k == .MODEL:
-        return (
-            op
-            + " is not defined on "
-            + c.text(bad)
-            + " handles"
-            + inside
-            + ": compare their observers (a.items == b.items) or use eq(a, b, ...)"
-        )
-    if k == .TYPEVAR:
-        var name = c.spec.types.infos[bad].name
-        return op + " needs equality on " + c.text(bad) + inside + ": declare it as " + name + ": Eq"
-    if k == .SET:
-        return op + " is not defined on partition sets"
-    return op + " is not defined on " + c.text(bad) + inside
+def eq_message(c: Checker, op: String, t: Int, bad: Int) -> String:
+    var inside = String() if t == bad else String(t" (inside {c.text(t)})")
+    var what = c.text(bad)
+    match c.tkind(bad):
+        case .FLOAT:
+            return String(
+                t"{op} is not defined on {what}{inside}: floats have no implicit equality. Use same(a, b) for "
+                t"bit-identical values, ieee_eq(a, b) for IEEE 754 equality, real(a) {op} real(b) to compare "
+                t"numerically, or eq(a, b, float=...) for collections"
+            )
+        case .MODEL:
+            return String(
+                t"{op} is not defined on {what} handles{inside}: compare their observers (a.items == b.items) "
+                t"or use eq(a, b, ...)"
+            )
+        case .TYPEVAR:
+            return String(t"{op} needs equality on {what}{inside}: declare it as {c.spec.types.infos[bad].name}: Eq")
+        case .SET:
+            return String(t"{op} is not defined on partition sets")
+        case _:
+            return String(t"{op} is not defined on {what}{inside}")
 
 
 def qerr_comparison(mut c: Checker, e: Int, lt: Int, rt: Int) -> Bool:
@@ -533,51 +441,41 @@ def qerr_comparison(mut c: Checker, e: Int, lt: Int, rt: Int) -> Bool:
     if not lq and not rq:
         return False
     var other = rt if lq else lt
-    if c.tkind(other) == .QERR or c.is_any(other):
-        return True
-    if c.is_numeric(other) and c.tkind(other) != .FLOAT:
-        return True
-    c.error(
-        e,
-        t"{c.op_of(e)} compares a qerr with a qerr or a number (an int or real, read "
-        t"as c + 0·nan), but the other side is {c.text(other)}",
-    )
+    var ok = c.tkind(other) == .QERR or c.is_any(other) or (c.is_numeric(other) and c.tkind(other) != .FLOAT)
+    if not ok:
+        c.error(
+            e,
+            t"{c.op_of(e)} compares a qerr with a qerr or a number (an int or real, read "
+            t"as c + 0·nan), but the other side is {c.text(other)}",
+        )
     return True
 
 
-def _choice_has(mut c: Checker, choice: Int, node: Int) -> Bool:
+def _choice_has(c: Checker, choice: Int, node: Int) -> Bool:
+    """Whether `node` names one of the constants of a choice type."""
     var r = c.spec.resolutions.get(node)
-    if r and r.value().kind == .CONST:
-        var nm = c.spec.consts[r.value().index].name
-        for w in c.spec.types.infos[choice].names:
-            if w == nm:
-                return True
-    return False
+    return (
+        r is not None
+        and r.value().kind == .CONST
+        and c.spec.consts[r.value().index].name in c.spec.types.infos[choice].names
+    )
 
 
 def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
-    if c.is_poison(lt) or c.is_poison(rt):
-        return c.bool_
-    if qerr_comparison(c, e, lt, rt):
+    if c.is_poison(lt) or c.is_poison(rt) or qerr_comparison(c, e, lt, rt):
         return c.bool_
     var op = String(c.op_of(e))
     var left = c.child(e, 0)
     var right = c.child(e, 1)
     var lc = c.tkind(lt) == .CHOICE
-    var rc = c.tkind(rt) == .CHOICE
-    if lc or rc:
+    if lc or c.tkind(rt) == .CHOICE:
         var choice = lt if lc else rt
         var other = rt if lc else lt
-        var other_node = right if lc else left
-        if other == choice or c.is_any(other):
-            return c.bool_
-        if _choice_has(c, choice, other_node):
-            return c.bool_
-        c.error(
-            e,
-            t"cannot compare {c.text(lt)} with {c.text(rt)}: a choice is compared with one of its "
-            t"constants",
-        )
+        if not (other == choice or c.is_any(other) or _choice_has(c, choice, right if lc else left)):
+            c.error(
+                e,
+                t"cannot compare {c.text(lt)} with {c.text(rt)}: a choice is compared with one of its constants",
+            )
         return c.bool_
     for t in [lt, rt]:
         var bad = c.non_eq_part(t)
@@ -587,32 +485,26 @@ def equality(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     var j = c.join(lt, rt)
     if j < 0:
         c.error(e, t"cannot compare {c.text(lt)} with {c.text(rt)}")
-        return c.bool_
-    if c.contains_any(j):
+    elif c.contains_any(j):
         c.error(
             e,
-            t"cannot tell the type of both sides of {op} ({c.text(j)}); compare with a value of known "
-            t"type",
+            t"cannot tell the type of both sides of {op} ({c.text(j)}); compare with a value of known type",
         )
-        return c.bool_
-    literal_member(c, lt, right)
-    literal_member(c, rt, left)
+    else:
+        literal_member(c, lt, right)
+        literal_member(c, rt, left)
     return c.bool_
 
 
 def literal_member(mut c: Checker, at: Int, b: Int):
-    if c.tkind(at) == .LITERAL and c.kind_of(b) == .STR:
-        var text = c.text_of(b)
-        for v in c.spec.types.infos[at].names:
-            if v == text:
-                return
-        c.error(b, '"' + text + '" is not one of ' + c.text(at))
+    """Reports a string literal `b` compared with or given as a literal union `at` that
+    is not one of its values."""
+    if c.tkind(at) == .LITERAL and c.kind_of(b) == .STR and c.text_of(b) not in c.spec.types.infos[at].names:
+        c.error(b, t"\"{c.text_of(b)}\" is not one of {c.text(at)}")
 
 
 def ordering(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
-    if c.is_any(lt) or c.is_any(rt):
-        return c.bool_
-    if qerr_comparison(c, e, lt, rt):
+    if c.is_any(lt) or c.is_any(rt) or qerr_comparison(c, e, lt, rt):
         return c.bool_
     if c.is_numeric(lt) and c.is_numeric(rt):
         return c.bool_
@@ -620,43 +512,38 @@ def ordering(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     if j < 0:
         c.error(e, t"cannot compare {c.text(lt)} with {c.text(rt)}")
     elif not c.ordered(j):
-        var hint = String()
-        var k = c.tkind(j)
-        if k == .TYPEVAR:
-            hint = ": declare it as " + c.spec.types.infos[j].name + ": Ord"
-        elif k == .MODEL:
-            hint = ": compare their observers"
-        c.error(
-            e,
-            t"{c.op_of(e)} needs ordered operands, but {c.text(j)} has no total order"
-            t"{hint}",
-        )
+        var hint: String
+        match c.tkind(j):
+            case .TYPEVAR:
+                hint = String(t": declare it as {c.spec.types.infos[j].name}: Ord")
+            case .MODEL:
+                hint = ": compare their observers"
+            case _:
+                hint = String()
+        c.error(e, t"{c.op_of(e)} needs ordered operands, but {c.text(j)} has no total order{hint}")
     return c.bool_
 
 
 def membership(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     if c.is_poison(lt) or c.is_poison(rt):
         return c.bool_
-    var rk = c.tkind(rt)
     var elem: Int
-    if rk == .LIST:
-        elem = c.arg(rt, 0)
-    elif rk == .MAP:
-        elem = c.arg(rt, 0)
-    elif c.is_stringish(rt):
-        if not c.is_stringish(lt) and not c.is_any(lt):
-            c.error(e, t"in on a string looks for a substring, but the left side is {c.text(lt)}")
-        return c.bool_
-    elif rk == .SET:
-        c.error(
-            e,
-            "partition sets are not values: in a clause test the value directly, "
-            "e.g. is_nan(x) or x < 0",
-        )
-        return c.bool_
-    else:
-        c.error(e, t"in needs a list, map or string on the right, but it is {c.text(rt)}")
-        return c.bool_
+    match c.tkind(rt):
+        case .LIST | .MAP:
+            elem = c.arg(rt, 0)
+        case .STRING | .LITERAL:
+            if not c.is_stringish(lt) and not c.is_any(lt):
+                c.error(e, t"in on a string looks for a substring, but the left side is {c.text(lt)}")
+            return c.bool_
+        case .SET:
+            c.error(
+                e,
+                "partition sets are not values: in a clause test the value directly, e.g. is_nan(x) or x < 0",
+            )
+            return c.bool_
+        case _:
+            c.error(e, t"in needs a list, map or string on the right, but it is {c.text(rt)}")
+            return c.bool_
     for t in [lt, elem]:
         var bad = c.non_eq_part(t)
         if bad >= 0:
@@ -669,9 +556,8 @@ def membership(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
 
 def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
     var op = c.op_of(e)
-    var opn = String(op)
     if c.is_any(lt) or c.is_any(rt):
-        return c.poison if (c.is_poison(lt) or c.is_poison(rt)) else ty.ANY_TYPE
+        return c.poison if c.is_poison(lt) or c.is_poison(rt) else ANY_TYPE
     var lk = c.tkind(lt)
     var rk = c.tkind(rt)
     if lk == .QERR or rk == .QERR:
@@ -679,7 +565,7 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
             return c.qerr_
         c.error(
             e,
-            t"cannot apply {opn} to {c.text(lt)} and {c.text(rt)}: quantized errors only add to each "
+            t"cannot apply {op} to {c.text(lt)} and {c.text(rt)}: quantized errors only add to each "
             t"other (qe(a, b) + qe(c, d)); read their parts with steps(e) and nans(e)",
         )
         return c.poison
@@ -695,21 +581,21 @@ def arith(mut c: Checker, e: Int, lt: Int, rt: Int) -> Int:
         if lk == .BYTES and rk == .BYTES:
             return c.bytes_
     if c.is_numeric(lt) and c.is_numeric(rt):
-        if op == .DIV:
-            return c.real_
-        if op == .FLOORDIV or op == .MOD:
-            if c.is_integer(lt) and c.is_integer(rt):
-                return c.int_
-            c.error(
-                e,
-                t"{opn} takes integers, but got {c.text(lt)} and {c.text(rt)} (use / for division of "
-                t"reals)",
-            )
-            return c.poison
-        if lk == .FLOAT or lk == .REAL or rk == .FLOAT or rk == .REAL:
-            return c.real_
-        return c.int_
-    c.error(e, t"cannot apply {opn} to {c.text(lt)} and {c.text(rt)}")
+        match op:
+            case .DIV:
+                return c.real_
+            case .FLOORDIV | .MOD:
+                if c.is_integer(lt) and c.is_integer(rt):
+                    return c.int_
+                c.error(
+                    e,
+                    t"{op} takes integers, but got {c.text(lt)} and {c.text(rt)} (use / for division of reals)",
+                )
+                return c.poison
+            case _:
+                var inexact = lk == .FLOAT or lk == .REAL or rk == .FLOAT or rk == .REAL
+                return c.real_ if inexact else c.int_
+    c.error(e, t"cannot apply {op} to {c.text(lt)} and {c.text(rt)}")
     return c.poison
 
 
@@ -731,36 +617,23 @@ def infer_if(mut c: Checker, e: Int, expected: Int) -> Int:
 
 
 def bind_name(mut c: Checker, node: Int, name: String):
-    if name == "old" or name == "result" or name == "self" or name == "mp" or name == "cr":
+    if is_reserved(name):
         c.error(node, t"{name} is reserved and cannot be bound")
-
-
-def push_local(mut c: Checker, name: String, t: Int, binder: Int):
-    c.ctx.loc_names.append(name)
-    c.ctx.loc_types.append(t)
-    c.ctx.loc_binders.append(binder)
-
-
-def pop_local(mut c: Checker):
-    _ = c.ctx.loc_names.pop()
-    _ = c.ctx.loc_types.pop()
-    _ = c.ctx.loc_binders.pop()
 
 
 def infer_let(mut c: Checker, e: Int, expected: Int) -> Int:
     var name = c.text_of(e)
     bind_name(c, e, name)
     var vt = infer(c, c.child(e, 0))
-    push_local(c, name, vt, e)
+    c.ctx.locals.append(Var(name^, vt, e))
     var t = infer(c, c.child(e, 1), expected)
-    pop_local(c)
+    _ = c.ctx.locals.pop()
     return t
 
 
 def infer_comprehension(mut c: Checker, e: Int) -> Int:
     var name = c.text_of(e)
     var kind = c.op_of(e)
-    var kname = String(kind)
     bind_name(c, e, name)
     var iterable = c.child(e, 0)
     var body = c.child(e, 1)
@@ -769,72 +642,70 @@ def infer_comprehension(mut c: Checker, e: Int) -> Int:
         elem = set_iterable(c, e)
     else:
         var it = infer(c, iterable)
-        var ik = c.tkind(it)
-        if ik == .LIST:
-            elem = c.arg(it, 0)
-        elif c.is_stringish(it):
-            elem = c.string_
-        elif ik == .BYTES:
-            elem = c.int_
-        elif ik == .MAP:
-            elem = c.arg(it, 0)
-        elif ik == .ANY:
-            elem = it
-        else:
-            c.error(
-                iterable,
-                t"{kname}(...) ranges over a list, string, bytes or map, but this is {c.text(it)}",
-            )
-            elem = c.poison
-    push_local(c, name, elem, e)
+        match c.tkind(it):
+            case .LIST | .MAP:
+                elem = c.arg(it, 0)
+            case .STRING | .LITERAL:
+                elem = c.string_
+            case .BYTES:
+                elem = c.int_
+            case .ANY:
+                elem = it
+            case _:
+                c.error(iterable, t"{kind}(...) ranges over a list, string, bytes or map, but this is {c.text(it)}")
+                elem = c.poison
+    c.ctx.locals.append(Var(name^, elem, e))
     var bt = infer(c, body)
-    pop_local(c)
-    if kind == .ALL or kind == .EXISTS or kind == .COUNT or kind == .FILTER:
-        want_bool(c, body, bt, "the body of " + kname + "(...)")
-    if kind == .ALL or kind == .EXISTS:
-        return c.bool_
-    if kind == .COUNT:
-        return c.int_
-    if kind == .FILTER:
-        return c.spec.types.list_of(elem)
-    if kind == .MAP:
-        return c.spec.types.list_of(bt)
-    if c.is_any(bt):
-        return bt
-    if c.tkind(bt) == .QERR:
-        return c.qerr_
-    if c.is_integer(bt):
-        return c.int_
-    if c.is_numeric(bt):
-        return c.real_
-    var what = "adds" if kind == .SUM else "takes the largest of"
-    c.error(body, t"{kname}(...) {what} numbers or qerr values, but the body is {c.text(bt)}")
-    return c.poison
+    _ = c.ctx.locals.pop()
+    match kind:
+        case .ALL | .EXISTS:
+            want_bool(c, body, bt, t"the body of {kind}(...)")
+            return c.bool_
+        case .COUNT:
+            want_bool(c, body, bt, t"the body of {kind}(...)")
+            return c.int_
+        case .FILTER:
+            want_bool(c, body, bt, t"the body of {kind}(...)")
+            return c.spec.types.list_of(elem)
+        case .MAP:
+            return c.spec.types.list_of(bt)
+        case _:
+            if c.is_any(bt):
+                return bt
+            if c.tkind(bt) == .QERR:
+                return c.qerr_
+            if c.is_integer(bt):
+                return c.int_
+            if c.is_numeric(bt):
+                return c.real_
+            var what = "adds" if kind == .SUM else "takes the largest of"
+            c.error(body, t"{kind}(...) {what} numbers or qerr values, but the body is {c.text(bt)}")
+            return c.poison
 
 
 def is_set_syntax(mut c: Checker, e: Int) -> Bool:
     """Is e written as a partition set (f16.all, f32.range(a, b), {v, ...}, | & -)?"""
-    var k = c.kind_of(e)
-    if k == .SET:
-        return True
-    if k == .BINARY:
-        var op = c.op_of(e)
-        if op == .BITOR or op == .BITAND or op == .SUB:
-            return is_set_syntax(c, c.child(e, 0)) or is_set_syntax(c, c.child(e, 1))
-        return False
-    return set_scalar(c, e) >= 0
+    match c.kind_of(e):
+        case .SET:
+            return True
+        case .BINARY:
+            match c.op_of(e):
+                case .BITOR | .BITAND | .SUB:
+                    return is_set_syntax(c, c.child(e, 0)) or is_set_syntax(c, c.child(e, 1))
+                case _:
+                    return False
+        case _:
+            return set_scalar(c, e) >= 0
 
 
 def set_scalar(mut c: Checker, e: Int) -> Int:
     """The scalar type T of a `T.<set>` or `T.range(...)` / `T.pattern(...)` node, or -1."""
-    var attr = e
     var is_call = c.kind_of(e) == .CALL
-    if is_call:
-        attr = c.child(e, 0)
+    var attr = c.child(e, 0) if is_call else e
     if c.kind_of(attr) != .ATTR or c.kind_of(c.child(attr, 0)) != .NAME:
         return NO_TYPE
     var name = c.text_of(c.child(attr, 0))
-    if binds_value(c, name) or c.ctx.hidden_index(name) >= 0:
+    if binds_value(c, name) or name in c.ctx.hidden:
         return NO_TYPE
     var st = c.scalar(name)
     if st < 0:
@@ -843,7 +714,7 @@ def set_scalar(mut c: Checker, e: Int) -> Int:
     if is_call:
         return st if c.has_set_constructor(st, an) else NO_TYPE
     var tc = c.type_constant(st, an)
-    return st if (tc >= 0 and c.tkind(tc) == .SET) else NO_TYPE
+    return st if tc >= 0 and c.tkind(tc) == .SET else NO_TYPE
 
 
 def _find_set_scalar(mut c: Checker, n: Int) -> Int:
@@ -851,20 +722,20 @@ def _find_set_scalar(mut c: Checker, n: Int) -> Int:
     if s >= 0:
         return s
     for k in c.children(n):
-        var r = _find_set_scalar(c, k)
-        if r >= 0:
-            return r
+        var found = _find_set_scalar(c, k)
+        if found >= 0:
+            return found
     return NO_TYPE
 
 
 def set_iterable(mut c: Checker, e: Int) -> Int:
     """Check a set ranged over by a comprehension; the type of its members."""
     var it = c.child(e, 0)
-    var kname = String(c.op_of(e))
+    var kind = c.op_of(e)
     if c.ctx.aggregate_top != e:
         c.error(
             it,
-            t"{kname}(...) ranges over a set such as f16.all only as the top comprehension of an "
+            t"{kind}(...) ranges over a set such as f16.all only as the top comprehension of an "
             t"aggregate clause; elsewhere it ranges over a list, string, bytes or map",
         )
         poison_subtree(c, it)
@@ -874,17 +745,14 @@ def set_iterable(mut c: Checker, e: Int) -> Int:
         c.error(it, "the type of this set is unknown: start from a typed set, e.g. f16.all")
         poison_subtree(c, it)
         return c.poison
-    var saved = c.ctx.kind
-    c.ctx.kind = K_PARTITION_SET
+    var saved = c.ctx.in_partition_set
+    c.ctx.in_partition_set = True
     var t = infer(c, it, c.spec.types.set_of(elem))
-    c.ctx.kind = saved
+    c.ctx.in_partition_set = saved
     if c.tkind(t) == .SET:
         return c.arg(t, 0)
     if not c.is_any(t):
-        c.error(
-            it,
-            t"{kname}(...) ranges over a set of {c.text(elem)} values, but this is {c.text(t)}",
-        )
+        c.error(it, t"{kind}(...) ranges over a set of {c.text(elem)} values, but this is {c.text(t)}")
     return c.poison
 
 
@@ -908,118 +776,106 @@ def fail_call(mut c: Checker, e: Int, node: Int, message: Some[Writable]) -> Int
     _ = call_info(c, e, "")
     poison_subtree(c, c.child(e, 0))
     var text = String(message)
-    if text != "":
+    if text:
         c.error(node, text)
     return c.poison
 
 
-def set_call_res(mut c: Checker, e: Int, kind: ResolutionKind, index: Int, owner: Int, name: String):
-    c.resolve(e, kind, index, owner, name)
-    c.resolve(c.child(e, 0), kind, index, owner, name)
+def set_call_res(mut c: Checker, e: Int, kind: ResolutionKind, name: String, *, index: Int = 0, owner: Int = -1):
+    """Resolves both the call and its callee."""
+    c.resolve(e, kind, name, index=index, owner=owner)
+    c.resolve(c.child(e, 0), kind, name, index=index, owner=owner)
 
 
 def infer_call(mut c: Checker, e: Int) -> Int:
     var f = c.child(e, 0)
-    var fk = c.kind_of(f)
-    if fk == .NAME:
-        var name = c.text_of(f)
-        if binds_value(c, name):
-            return fail_call(c, e, f, t"{name} is a value, not a function")
-        if name == "old":
-            return call_old(c, e)
-        if c.ctx.fields_of >= 0:
-            var oi = c.observer_pos(c.ctx.fields_of, name)
-            if oi >= 0:
-                return call_observer(
-                    c, e, c.spec.models[c.ctx.fields_of].type, c.ctx.fields_of, name, True
+    match c.kind_of(f):
+        case .NAME:
+            return _call_by_name(c, e, f)
+        case .ATTR:
+            return _call_by_attr(c, e, f)
+        case _:
+            _ = infer(c, f)
+            return fail_call(c, e, f, "only functions and observers can be called")
+
+
+def _call_by_name(mut c: Checker, e: Int, f: Int) -> Int:
+    var name = c.text_of(f)
+    if binds_value(c, name):
+        return fail_call(c, e, f, t"{name} is a value, not a function")
+    if name == "old":
+        return call_old(c, e)
+    var m = c.ctx.fields_of
+    if m >= 0 and c.observer_pos(m, name) >= 0:
+        return call_observer(c, e, c.spec.models[m].type, m, name, True)
+    if case .Some(fi) = c.fn_index.get(name):
+        return call_spec_fn(c, e, name, fi)
+    if case .Some(di) = c.def_index.get(name):
+        return call_def(c, e, name, di)
+    if case .Some(pi) = c.prelude_ids.get(name):
+        return call_prelude(c, e, name, pi)
+    if name == "result" or name == "self" or c.ctx.param_index(name) >= 0:
+        return fail_call(c, e, f, t"{name} is a value, not a function")
+    return fail_call(c, e, f, t"unknown function {name}{_did_you_mean(_namespace_hints(c, name))}")
+
+
+def _call_by_attr(mut c: Checker, e: Int, f: Int) -> Int:
+    var base = c.child(f, 0)
+    var attr = c.text_of(f)
+    var chain = chain_candidate(c, f)
+    if chain:
+        if case .Some(fi) = c.fn_index.get(chain):
+            return call_spec_fn(c, e, chain, fi)
+        if case .Some(pi) = c.prelude_ids.get(chain):
+            return call_prelude(c, e, chain, pi)
+        if c.kind_of(base) == .NAME:
+            var bname = c.text_of(base)
+            if bname == "mp" or bname == "cr":
+                c.set_type(base, ANY_TYPE)
+                return fail_call(
+                    c,
+                    e,
+                    f,
+                    t"unknown function {chain}: {bname} holds {_namespace_what(bname)}: {_namespace_members(bname)}",
                 )
-        var fi = c.fn_index.get(name)
-        if fi:
-            return call_spec_fn(c, e, name, fi.value())
-        var di = c.def_index.get(name)
-        if di:
-            return call_def(c, e, name, di.value())
-        var pi = c.prelude_ids.get(name)
-        if pi:
-            return call_prelude(c, e, name, pi.value())
-        if name == "result" or name == "self" or c.ctx.param_index(name) >= 0:
-            return fail_call(c, e, f, t"{name} is a value, not a function")
-        var options = List[String]()
-        for ns in ["mp", "cr"]:
-            if (String(ns) + "." + name) in c.prelude_ids:
-                options.append(String(ns) + "." + name)
-        var hint = String()
-        if len(options) > 0:
-            var joined = String()
-            for i in range(len(options)):
-                joined += " or " if i else ""
-                joined += options[i]
-            hint = " (did you mean " + joined + "?)"
-        return fail_call(c, e, f, t"unknown function {name}{hint}")
-    if fk == .ATTR:
-        var base = c.child(f, 0)
-        var attr = c.text_of(f)
-        var chain = chain_candidate(c, f)
-        if chain != "":
-            var fi = c.fn_index.get(chain)
-            if fi:
-                return call_spec_fn(c, e, chain, fi.value())
-            var pi = c.prelude_ids.get(chain)
-            if pi:
-                return call_prelude(c, e, chain, pi.value())
-            if c.kind_of(base) == .NAME:
-                var bname = c.text_of(base)
-                if bname == "mp" or bname == "cr":
-                    c.set_type(base, ty.ANY_TYPE)
-                    return fail_call(
-                        c,
-                        e,
-                        f,
-                        t"unknown function {chain}: {bname} holds {_namespace_what(bname)}: "
-                        t"{_namespace_members(c, bname)}",
-                    )
-                var st = c.scalar(bname)
-                if st >= 0:
-                    c.set_type(base, st)
-                    return call_set_ctor(c, e, st, attr)
-            if c.ctx.extern_result >= 0 and chain.find(".") >= 0:
-                var root = _root_name(c, f)
-                if root != "" and c.scalar(root) < 0:
-                    return call_extern(c, e, chain)
-            var known_type_root = c.kind_of(base) == .NAME and (
-                c.scalar(c.text_of(base)) >= 0 or c.text_of(base) in c.enum_index
-            )
-            if not known_type_root:
-                return fail_call(c, e, f, t"unknown function {chain}")
-        var vt = infer(c, base)
-        if c.tkind(vt) == .MODEL:
-            var mp = c.model_pos_of_type(vt)
-            if mp >= 0:
-                return call_observer(c, e, vt, mp, attr, False)
-        if c.is_any(vt):
-            return fail_call(c, e, f, String())
-        return fail_call(
-            c,
-            e,
-            f,
-            t"{c.text(vt)} has no function {attr}: only observers of models and interfaces can be "
-            t"called with '.'",
+            var st = c.scalar(bname)
+            if st >= 0:
+                c.set_type(base, st)
+                return call_set_ctor(c, e, st, attr)
+        if c.ctx.extern_result >= 0 and "." in chain:
+            var root = _root_name(c, f)
+            if root and c.scalar(root) < 0:
+                return call_extern(c, e, chain)
+        var known_type_root = c.kind_of(base) == .NAME and (
+            c.scalar(c.text_of(base)) >= 0 or c.text_of(base) in c.enum_index
         )
-    _ = infer(c, f)
-    return fail_call(c, e, f, "only functions and observers can be called")
+        if not known_type_root:
+            return fail_call(c, e, f, t"unknown function {chain}")
+    var vt = infer(c, base)
+    if c.tkind(vt) == .MODEL:
+        var mp = c.model_pos_of_type(vt)
+        if mp >= 0:
+            return call_observer(c, e, vt, mp, attr, False)
+    if c.is_any(vt):
+        return fail_call(c, e, f, "")
+    return fail_call(
+        c,
+        e,
+        f,
+        t"{c.text(vt)} has no function {attr}: only observers of models and interfaces can be called with '.'",
+    )
 
 
 def call_extern(mut c: Checker, e: Int, chain: String) -> Int:
     """A call of a qualified callable the spec doesn't declare, in an observer's
     reading expression: it takes the observer's declared type."""
     var info = call_info(c, e, chain)
-    set_call_res(c, e, .EXTERN, 0, -1, chain)
+    set_call_res(c, e, .EXTERN, chain)
     c.set_type(c.child(e, 0), c.spec.types.fn_(info.arg_types(), [], c.ctx.extern_result))
     return c.ctx.extern_result
 
 
 def call_old(mut c: Checker, e: Int) -> Int:
-    var f = c.child(e, 0)
     var args = c.call_args(e)
     var has_kw = any([c.text_of(a) != "" for a in args])
     if len(args) != 1 or has_kw or c.children(c.child(e, 1)):
@@ -1031,13 +887,13 @@ def call_old(mut c: Checker, e: Int) -> Int:
     var saved_in = c.ctx.in_old
     var saved_scope = c.ctx.old_scope
     c.ctx.in_old = True
-    c.ctx.old_scope = len(c.ctx.loc_names)
+    c.ctx.old_scope = len(c.ctx.locals)
     var info = call_info(c, e, "")
     c.ctx.in_old = saved_in
     c.ctx.old_scope = saved_scope
-    set_call_res(c, e, .OLD, 0, -1, "old")
+    set_call_res(c, e, .OLD, "old")
     var t = info.args[0].type if len(info.args) == 1 else c.poison
-    c.set_type(f, c.spec.types.fn_([t], [], t))
+    c.set_type(c.child(e, 0), c.spec.types.fn_([t], [], t))
     return t
 
 
@@ -1073,7 +929,8 @@ def bindings(
         slots[at] = kw.copy()
     var missing = [p.name.copy() for p, slot in zip(params, slots) if slot is None and p.default == 0]
     if missing:
-        c.error(e, t"{what} needs argument {', '.join(missing)}")
+        var listed = ", ".join(missing)
+        c.error(e, t"{what} needs argument {listed}")
         return None
     var out: List[Binding] = []
     for p, t, slot in zip(params, param_types, slots):
@@ -1083,60 +940,43 @@ def bindings(
 
 
 def bind_tvars(
-    mut c: Checker,
-    pattern: Int,
-    actual: Int,
-    mut names: List[String],
-    mut types: List[Int],
-    tvars: List[String],
+    mut c: Checker, pattern: Int, actual: Int, mut names: List[String], mut types: List[Int], tvars: List[String]
 ):
+    """Solves the type variables `tvars` in `pattern` from `actual`, into `names` and `types`."""
     var pk = c.tkind(pattern)
     if pk == .TYPEVAR:
-        var nm = c.spec.types.infos[pattern].name
-        var known = False
-        for t in tvars:
-            if t == nm:
-                known = True
-        if known:
+        var name = c.spec.types.infos[pattern].name.copy()
+        if name in tvars:
             if c.is_any(actual):
                 return
-            var prev = -1
-            for i in range(len(names)):
-                if names[i] == nm:
-                    prev = i
+            var prev = last_index_of(names, name)
             if prev < 0:
-                names.append(nm)
+                names.append(name^)
                 types.append(actual)
-            else:
-                var j = c.join(types[prev], actual)
-                if j >= 0:
-                    types[prev] = j
+                return
+            var j = c.join(types[prev], actual)
+            if j >= 0:
+                types[prev] = j
             return
-    var ak = c.tkind(actual)
-    if (pk == .LIST or pk == .OPTION or pk == .SET) and ak == pk:
-        bind_tvars(c, c.arg(pattern, 0), c.arg(actual, 0), names, types, tvars)
-    elif pk == .MAP and ak == .MAP:
-        bind_tvars(c, c.arg(pattern, 0), c.arg(actual, 0), names, types, tvars)
-        bind_tvars(c, c.arg(pattern, 1), c.arg(actual, 1), names, types, tvars)
-    elif pk == .TUPLE and ak == .TUPLE:
-        var ps = c.spec.types.infos[pattern].args.copy()
-        var xs = c.spec.types.infos[actual].args.copy()
-        for i in range(min(len(ps), len(xs))):
-            bind_tvars(c, ps[i], xs[i], names, types, tvars)
-    elif pk == .MODEL and ak == .MODEL:
-        var ps = c.spec.types.infos[pattern].args.copy()
-        var xs = c.spec.types.infos[actual].args.copy()
-        for i in range(min(len(ps), len(xs))):
-            bind_tvars(c, ps[i], xs[i], names, types, tvars)
+    if c.tkind(actual) != pk:
+        return
+    match pk:
+        case .LIST | .OPTION | .SET:
+            bind_tvars(c, c.arg(pattern, 0), c.arg(actual, 0), names, types, tvars)
+        case .MAP:
+            bind_tvars(c, c.arg(pattern, 0), c.arg(actual, 0), names, types, tvars)
+            bind_tvars(c, c.arg(pattern, 1), c.arg(actual, 1), names, types, tvars)
+        case .TUPLE | .MODEL:
+            var ps = c.spec.types.infos[pattern].args.copy()
+            var xs = c.spec.types.infos[actual].args.copy()
+            for p, x in zip(ps, xs):
+                bind_tvars(c, p, x, names, types, tvars)
+        case _:
+            pass
 
 
-def _fn_type(mut c: Checker, params: List[Param], result: Int) -> Int:
-    var ptypes = List[Int]()
-    var pnames = List[String]()
-    for p in params:
-        ptypes.append(p.type)
-        pnames.append(p.name)
-    return c.spec.types.fn_(ptypes, pnames, result)
+def _fn_type(mut types: Types, params: List[Param], result: Int) -> Int:
+    return types.fn_([p.type for p in params], [p.name.copy() for p in params], result)
 
 
 def check_declared_call(
@@ -1153,54 +993,36 @@ def check_declared_call(
     parameters, type variables solved from the arguments, bounds checked."""
     if c.children(c.child(e, 1)):
         c.error(e, t"{name} takes no explicit type arguments")
-    var ptypes = List[Int]()
-    for p in params:
-        ptypes.append(p.type)
-    var bound = bindings(c, e, name, params, ptypes, info)
+    var bound = bindings(c, e, name, params, [p.type for p in params], info)
     if bound is None:
         return c.poison
-    var sn = List[String]()
-    var st = List[Int]()
+    var solved: List[String] = []
+    var solutions: List[Int] = []
     for b in bound.value():
-        bind_tvars(c, b.param_type, b.type, sn, st, tparams)
+        bind_tvars(c, b.param_type, b.type, solved, solutions, tparams)
     var ok = True
-    for i in range(len(sn)):
-        var bi = -1
-        for j in range(len(tparams)):
-            if tparams[j] == sn[i]:
-                bi = j
-        if bi >= 0 and not c.satisfies(st[i], bounds[bi]):
-            c.error(e, t"{name}: {c.text(st[i])} does not satisfy {tparams[bi]}: {bounds[bi]}")
+    for tv, t in zip(solved, solutions):
+        var bi = last_index_of(tparams, tv)
+        if bi >= 0 and not c.satisfies(t, bounds[bi]):
+            c.error(e, t"{name}: {c.text(t)} does not satisfy {tparams[bi]}: {bounds[bi]}")
             ok = False
     for b in bound.value():
-        var target = c.spec.types.substitute(b.param_type, sn, st)
+        var target = c.spec.types.substitute(b.param_type, solved, solutions)
         if not assignable(c, b.type, target, b.node):
             c.error(b.node, t"argument {b.param} of {name} is a {c.text(target)}, but this is {c.text(b.type)}")
             ok = False
-    var un = List[String]()
-    var ut = List[Int]()
-    for tp in tparams:
-        var solved = False
-        for s in sn:
-            if s == tp:
-                solved = True
-        if not solved:
-            un.append(tp)
-            ut.append(ty.ANY_TYPE)
-    var r = c.spec.types.substitute(c.spec.types.substitute(result, sn, st), un, ut)
+    var unsolved = [tp.copy() for tp in tparams if tp not in solved]
+    var anys = List[Int](length=len(unsolved), fill=ANY_TYPE)
+    var r = c.spec.types.substitute(c.spec.types.substitute(result, solved, solutions), unsolved, anys)
     return r if ok else c.poison
 
 
 def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
-    var f = c.child(e, 0)
     var info = call_info(c, e, name)
-    var fn_owner = c.spec.fns[pos].owner
-    set_call_res(c, e, .SPEC_FN, pos, fn_owner, name)
-    c.set_type(f, _fn_type(c, c.spec.fns[pos].params.copy(), c.spec.fns[pos].result))
+    set_call_res(c, e, .SPEC_FN, name, index=pos, owner=c.spec.fns[pos].owner)
+    c.set_type(c.child(e, 0), _fn_type(c.spec.types, c.spec.fns[pos].params, c.spec.fns[pos].result))
     if not c.ctx.allow_spec_fn:
-        var shadow = String()
-        if name in c.prelude_ids:
-            shadow = " (it shadows the prelude function of the same name)"
+        var shadow = " (it shadows the prelude function of the same name)" if name in c.prelude_ids else ""
         c.error(
             e,
             t"{name}(...) calls the spec function {name}{shadow}; calls to spec functions are only "
@@ -1208,42 +1030,25 @@ def call_spec_fn(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
             t"planned implementation call",
         )
         return c.poison
-    if c.fn_modifies[pos]:
+    if c.has_modifies(c.spec.fns[pos].node):
         c.error(
             e,
             t"{name} modifies its arguments, so it cannot be called in a clause: a planned call must "
             t"leave its inputs unchanged",
         )
         return c.poison
-    return check_declared_call(
-        c,
-        e,
-        name,
-        c.spec.fns[pos].params.copy(),
-        c.spec.fns[pos].tparams.copy(),
-        c.spec.fns[pos].bounds.copy(),
-        c.spec.fns[pos].result,
-        info,
-    )
+    ref f = c.spec.fns[pos]
+    return check_declared_call(c, e, name, f.params.copy(), f.tparams.copy(), f.bounds.copy(), f.result, info)
 
 
 def call_def(mut c: Checker, e: Int, name: String, pos: Int) -> Int:
-    var f = c.child(e, 0)
     var info = call_info(c, e, name)
-    set_call_res(c, e, .DEF, pos, -1, name)
-    if c.cur_def >= 0:
-        c.def_edges[c.cur_def].append(pos)
-    c.set_type(f, _fn_type(c, c.spec.defs[pos].params.copy(), c.spec.defs[pos].result))
-    return check_declared_call(
-        c,
-        e,
-        name,
-        c.spec.defs[pos].params.copy(),
-        c.spec.defs[pos].tparams.copy(),
-        c.spec.defs[pos].bounds.copy(),
-        c.spec.defs[pos].result,
-        info,
-    )
+    set_call_res(c, e, .DEF, name, index=pos)
+    if c.current_def >= 0:
+        c.def_calls[c.current_def].append(pos)
+    c.set_type(c.child(e, 0), _fn_type(c.spec.types, c.spec.defs[pos].params, c.spec.defs[pos].result))
+    ref d = c.spec.defs[pos]
+    return check_declared_call(c, e, name, d.params.copy(), d.tparams.copy(), d.bounds.copy(), d.result, info)
 
 
 def _plural(n: Int) -> String:
@@ -1254,7 +1059,7 @@ def call_prelude(mut c: Checker, e: Int, name: String, pid: Int) -> Int:
     var f = c.child(e, 0)
     var sig = c.prelude_sigs[pid].copy()
     var info = call_info(c, e, name)
-    set_call_res(c, e, .PRELUDE, pid, -1, name)
+    set_call_res(c, e, .PRELUDE, name, index=pid)
     for tn in c.children(c.child(e, 1)):
         info.targs.append(resolve_type(c, tn))
     var ok = True
@@ -1302,106 +1107,73 @@ def call_set_ctor(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
     var f = c.child(e, 0)
     var stext = c.text(st)
     if attr != "range" and attr != "pattern":
-        var msg: String
         if c.type_constant(st, attr) >= 0:
-            msg = stext + "." + attr + " is a constant, not a function: write " + stext + "." + attr
-        else:
-            msg = stext + " has no function " + attr
-        return fail_call(c, e, f, msg)
+            return fail_call(c, e, f, t"{stext}.{attr} is a constant, not a function: write {stext}.{attr}")
+        return fail_call(c, e, f, t"{stext} has no function {attr}")
     if not c.has_set_constructor(st, attr):
         return fail_call(c, e, f, t"{stext} has no {attr}(...) set")
-    set_call_res(c, e, .SET_CTOR, st, -1, attr)
-    var ok = c.ctx.kind == K_PARTITION_SET
+    set_call_res(c, e, .SET_CTOR, attr, index=st)
+    var ok = c.ctx.in_partition_set
     if not ok:
         c.error(
             e,
             t"{stext}.{attr}(...) is a partition set: it only appears in a partition class of a "
             t"{stext} parameter",
         )
-    var kids = c.children(e)
-    var nargs = len(kids) - 2
-    var has_kw = False
-    for i in range(2, len(kids)):
-        if c.text_of(kids[i]) != "":
-            has_kw = True
-    var arg_types = List[Int]()
+    var args = c.call_args(e)
+    var has_kw = any([c.text_of(a) != "" for a in args])
+    var arg_types: List[Int] = []
     if attr == "range":
-        if nargs != 2 or has_kw:
+        if len(args) != 2 or has_kw:
             c.error(
                 e,
-                t"{stext}.range takes two bounds: {stext}.range(a, b), half-open, with none for an open "
-                t"end",
+                t"{stext}.range takes two bounds: {stext}.range(a, b), half-open, with none for an open end",
             )
             ok = False
-        for i in range(2, len(kids)):
-            var a = c.child(kids[i], 0)
-            if c.kind_of(a) == .NONE:
-                var ot = c.spec.types.option_of(ty.ANY_TYPE)
-                c.set_type(a, ot)
-                arg_types.append(ot)
+        for a in args:
+            var bound = c.child(a, 0)
+            if c.kind_of(bound) == .NONE:
+                var open = c.spec.types.option_of(ANY_TYPE)
+                c.set_type(bound, open)
+                arg_types.append(open)
                 continue
-            var t = infer(c, a)
+            var t = infer(c, bound)
             arg_types.append(t)
             if not c.is_numeric(t) and not c.is_any(t):
-                c.error(a, t"a bound of {stext}.range must be a number or none, not {c.text(t)}")
+                c.error(bound, t"a bound of {stext}.range must be a number or none, not {c.text(t)}")
                 ok = False
     else:
-        if nargs != 1 or has_kw or c.kind_of(c.child(kids[2], 0)) != .STR:
-            c.error(
-                e,
-                stext
-                + '.pattern takes one string literal of bits, e.g. '
-                + stext
-                + '.pattern("0 1* 0")',
-            )
+        if len(args) != 1 or has_kw or c.kind_of(c.child(args[0], 0)) != .STR:
+            c.error(e, t'{stext}.pattern takes one string literal of bits, e.g. {stext}.pattern("0 1* 0")')
             ok = False
-        for i in range(2, len(kids)):
-            arg_types.append(infer(c, c.child(kids[i], 0)))
+        arg_types = [infer(c, c.child(a, 0)) for a in args]
     var set_t = c.spec.types.set_of(st)
-    c.set_type(f, c.spec.types.fn_(arg_types, List[String](), set_t))
+    c.set_type(f, c.spec.types.fn_(arg_types, [], set_t))
     return set_t if ok else c.poison
 
 
-def call_observer(
-    mut c: Checker, e: Int, mt: Int, model: Int, name: String, is_field: Bool
-) -> Int:
+def call_observer(mut c: Checker, e: Int, mt: Int, model: Int, name: String, is_field: Bool) -> Int:
     var f = c.child(e, 0)
-    var mname = c.spec.models[model].name
+    var mname = c.spec.models[model].name.copy()
     var oi = c.observer_pos(model, name)
     if oi < 0:
-        return fail_call(
-            c,
-            e,
-            f,
-            t"{mname} has no observer {name} (its observers: {c.observer_names(model)})",
-        )
+        return fail_call(c, e, f, _no_observer(c, model, name))
     var info = call_info(c, e, name)
     var kind = ResolutionKind.FIELD if is_field else ResolutionKind.OBSERVER
-    set_call_res(c, e, kind, oi, model, name)
+    set_call_res(c, e, kind, name, index=oi, owner=model)
     var params = c.spec.models[model].observers[oi].params.copy()
     var declared = c.spec.models[model].observers[oi].type
     var tparams = c.spec.models[model].tparams.copy()
     var targs = c.spec.types.infos[mt].args.copy()
-    var use_env = len(tparams) > 0 and len(tparams) == len(targs)
-    var result = declared
-    if use_env:
-        result = c.spec.types.substitute(declared, tparams, targs)
-    var ptypes = List[Int]()
-    var pnames = List[String]()
-    for p in params:
-        var pt = p.type
-        if use_env:
-            pt = c.spec.types.substitute(pt, tparams, targs)
-        ptypes.append(pt)
-        pnames.append(p.name)
-    c.set_type(f, c.spec.types.fn_(ptypes, pnames, result))
-    if len(params) == 0:
-        c.error(
-            e,
-            String(name, " is a field of ", mname, " and takes no arguments: write ", ("" if is_field else "x."), name),
-        )
+    var use_env = Bool(tparams) and len(tparams) == len(targs)
+    var result = c.spec.types.substitute(declared, tparams, targs) if use_env else declared
+    var ptypes = [c.spec.types.substitute(p.type, tparams, targs) if use_env else p.type for p in params]
+    c.set_type(f, c.spec.types.fn_(ptypes, [p.name.copy() for p in params], result))
+    if not params:
+        var receiver = "" if is_field else "x."
+        c.error(e, t"{name} is a field of {mname} and takes no arguments: write {receiver}{name}")
         return c.poison
-    var bound = bindings(c, e, mname + "." + name, params, ptypes, info)
+    var bound = bindings(c, e, String(t"{mname}.{name}"), params, ptypes, info)
     if bound is None:
         return c.poison
     var ok = True
@@ -1421,16 +1193,15 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
     var base = c.child(e, 0)
     var attr = c.text_of(e)
     var chain = chain_candidate(c, e)
-    if chain != "":
-        var ci = c.const_index.get(chain)
-        if ci:
-            ensure_const(c, ci.value())
-            c.resolve(e, .CONST, ci.value(), -1, chain)
-            return c.spec.consts[ci.value()].type
+    if chain:
+        if case .Some(ci) = c.const_index.get(chain):
+            ensure_const(c, ci)
+            c.resolve(e, .CONST, chain, index=ci)
+            return c.spec.consts[ci].type
         if c.kind_of(base) == .NAME:
             var bname = c.text_of(base)
             if bname == "mp" or bname == "cr":
-                c.set_type(base, ty.ANY_TYPE)
+                c.set_type(base, ANY_TYPE)
                 if chain in c.prelude_ids:
                     c.error(e, t"{chain} is a function: call it as {chain}(x)")
                 else:
@@ -1440,58 +1211,48 @@ def infer_attr(mut c: Checker, e: Int) -> Int:
             if st >= 0:
                 c.set_type(base, st)
                 return type_const(c, e, st, attr)
-            var en = c.enum_index.get(bname)
-            if en:
-                c.set_type(base, en.value())
-                var names = c.spec.types.infos[en.value()].names.copy()
-                for j in range(len(names)):
-                    if names[j] == attr:
-                        c.resolve(e, .ENUM_MEMBER, j, en.value(), attr)
-                        return en.value()
-                c.error(e, t"enum {bname} has no member {attr}")
-                return c.poison
+            if case .Some(en) = c.enum_index.get(bname):
+                c.set_type(base, en)
+                var member = c.spec.types.infos[en].names.try_index(attr)
+                if member is None:
+                    c.error(e, t"enum {bname} has no member {attr}")
+                    return c.poison
+                c.resolve(e, .ENUM_MEMBER, attr, index=member.value(), owner=en)
+                return en
     var vt = infer(c, base)
-    var k = c.tkind(vt)
-    if k == .MODEL:
-        var mp = c.model_pos_of_type(vt)
-        if mp >= 0:
+    match c.tkind(vt):
+        case .MODEL if c.model_pos_of_type(vt) >= 0:
+            var mp = c.model_pos_of_type(vt)
             var oi = c.observer_pos(mp, attr)
             if oi < 0:
-                c.error(
-                    e,
-                    String(c.spec.models[mp].name, " has no observer ", attr, " (its observers: ", c.observer_names(mp), ")"),
-                )
+                c.error(e, _no_observer(c, mp, attr))
                 return c.poison
-            if len(c.spec.models[mp].observers[oi].params) > 0:
-                var names = String()
-                for j in range(len(c.spec.models[mp].observers[oi].params)):
-                    names += ", " if j else ""
-                    names += c.spec.models[mp].observers[oi].params[j].name
-                c.error(e, t"{attr} takes arguments: {attr}({names})")
+            if c.spec.models[mp].observers[oi].params:
+                c.error(e, _takes_arguments(c, attr, mp, oi))
                 return c.poison
-            c.resolve(e, .OBSERVER, oi, mp, attr)
+            c.resolve(e, .OBSERVER, attr, index=oi, owner=mp)
             return c.observer_type(vt, mp, oi)
-    if k == .RECORD:
-        var names = c.spec.types.infos[vt].names.copy()
-        for j in range(len(names)):
-            if names[j] == attr:
-                c.resolve(e, .RECORD_FIELD, j, vt, attr)
-                return c.arg(vt, j)
-        c.error(e, t"record {c.text(vt)} has no field {attr}")
-        return c.poison
-    if k == .QERR:
-        if attr == "steps" or attr == "nans":
-            c.resolve(e, .QERR_PART, 0, -1, attr)
-            return c.int_
-        c.error(e, t"qerr has no part {attr}: its parts are steps and nans")
-        return c.poison
-    if k == .ANY:
-        return c.poison
-    if k == .TUPLE:
-        c.error(e, "tuple fields are numbered: .0, .1, ...")
-        return c.poison
-    c.error(e, t"{c.text(vt)} has no field {attr}")
-    return c.poison
+        case .RECORD:
+            var field = c.spec.types.infos[vt].names.try_index(attr)
+            if field is None:
+                c.error(e, t"record {c.text(vt)} has no field {attr}")
+                return c.poison
+            c.resolve(e, .RECORD_FIELD, attr, index=field.value(), owner=vt)
+            return c.arg(vt, field.value())
+        case .QERR:
+            if attr == "steps" or attr == "nans":
+                c.resolve(e, .QERR_PART, attr)
+                return c.int_
+            c.error(e, t"qerr has no part {attr}: its parts are steps and nans")
+            return c.poison
+        case .ANY:
+            return c.poison
+        case .TUPLE:
+            c.error(e, "tuple fields are numbered: .0, .1, ...")
+            return c.poison
+        case _:
+            c.error(e, t"{c.text(vt)} has no field {attr}")
+            return c.poison
 
 
 def type_const(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
@@ -1501,24 +1262,17 @@ def type_const(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
         return c.poison
     var t = c.type_constant(st, attr)
     if t < 0:
-        var names = String()
         var consts = c.constants_of(st)
-        for i in range(len(consts)):
-            names += ", " if i else ""
-            names += stext + "." + consts[i]
-        c.error(
-            e,
-            String(stext, " has no constant ", attr, ((" (available: " + names + ")") if len(consts) > 0 else "")),
-        )
+        var listed = ", ".join([String(t"{stext}.{k}") for k in consts])
+        var available = String(t" (available: {listed})") if consts else String()
+        c.error(e, t"{stext} has no constant {attr}{available}")
         return c.poison
-    c.resolve(e, .TYPE_CONST, st, -1, attr)
-    if c.tkind(t) == .SET and c.ctx.kind != K_PARTITION_SET:
-        var hint = String()
-        if c.tkind(st) == .FLOAT:
-            hint = classifier_hint(attr)
+    c.resolve(e, .TYPE_CONST, attr, index=st)
+    if c.tkind(t) == .SET and not c.ctx.in_partition_set:
+        var hint = classifier_hint(attr) if c.tkind(st) == .FLOAT else String()
+        var test = String(t"; in a clause, test the value with {hint}") if hint else String()
         c.error(
-            e,
-            String(stext, ".", attr, " is a partition set: it only appears in a partition class of a ", stext, " parameter", ((("; in a clause, test the value with " + hint)) if hint else "")),
+            e, t"{stext}.{attr} is a partition set: it only appears in a partition class of a {stext} parameter{test}"
         )
         return c.poison
     return t
@@ -1527,67 +1281,71 @@ def type_const(mut c: Checker, e: Int, st: Int, attr: String) -> Int:
 def infer_tuple_index(mut c: Checker, e: Int) -> Int:
     var vt = infer(c, c.child(e, 0))
     var digits = c.text_of(e)
-    var index = 1 << 40
+    var index = 1 << 40  # past any tuple, when the digits overflow an Int
     try:
         index = Int(digits)
     except:
         pass
-    if c.tkind(vt) == .TUPLE:
-        if index < len(c.spec.types.infos[vt].args):
-            return c.arg(vt, index)
-        c.error(e, t".{digits} is out of range for {c.text(vt)}")
-        return c.poison
-    if c.is_any(vt):
-        return c.poison
-    c.error(e, t".{digits} needs a tuple, but the value is {c.text(vt)}")
-    return c.poison
+    match c.tkind(vt):
+        case .TUPLE:
+            if index < len(c.spec.types.infos[vt].args):
+                return c.arg(vt, index)
+            c.error(e, t".{digits} is out of range for {c.text(vt)}")
+            return c.poison
+        case .ANY:
+            return c.poison
+        case _:
+            c.error(e, t".{digits} needs a tuple, but the value is {c.text(vt)}")
+            return c.poison
 
 
 def infer_index(mut c: Checker, e: Int) -> Int:
-    var value = c.child(e, 0)
     var index = c.child(e, 1)
-    var vt = infer(c, value)
+    var vt = infer(c, c.child(e, 0))
     var it = infer(c, index)
     var k = c.tkind(vt)
-    if k == .MAP:
-        var key = c.arg(vt, 0)
-        var bad = c.non_eq_part(key)
-        if bad >= 0:
-            c.error(e, eq_message(c, "map lookup", key, bad))
-        elif c.join(it, key) < 0 and not c.is_any(it):
-            c.error(index, t"the keys of {c.text(vt)} are {c.text(key)}, not {c.text(it)}")
-        return c.arg(vt, 1)
-    if k == .LIST or k == .STRING or k == .LITERAL or k == .BYTES:
-        want_int(c, index, it, "an index")
-        if k == .LIST:
-            return c.arg(vt, 0)
-        return c.int_ if k == .BYTES else c.string_
-    if k == .ANY:
-        return c.poison
-    if k == .TUPLE:
-        c.error(e, "tuple fields are selected with .0, .1, ..., not [i]")
-        return c.poison
-    c.error(e, t"cannot index a {c.text(vt)}")
-    return c.poison
+    match k:
+        case .MAP:
+            var key = c.arg(vt, 0)
+            var bad = c.non_eq_part(key)
+            if bad >= 0:
+                c.error(e, eq_message(c, "map lookup", key, bad))
+            elif c.join(it, key) < 0 and not c.is_any(it):
+                c.error(index, t"the keys of {c.text(vt)} are {c.text(key)}, not {c.text(it)}")
+            return c.arg(vt, 1)
+        case .LIST | .STRING | .LITERAL | .BYTES:
+            want_int(c, index, it, "an index")
+            if k == .LIST:
+                return c.arg(vt, 0)
+            return c.int_ if k == .BYTES else c.string_
+        case .ANY:
+            return c.poison
+        case .TUPLE:
+            c.error(e, "tuple fields are selected with .0, .1, ..., not [i]")
+            return c.poison
+        case _:
+            c.error(e, t"cannot index a {c.text(vt)}")
+            return c.poison
 
 
 def infer_slice(mut c: Checker, e: Int) -> Int:
     var vt = infer(c, c.child(e, 0))
     want_int(c, c.child(e, 1), infer(c, c.child(e, 1)), "a slice bound")
     want_int(c, c.child(e, 2), infer(c, c.child(e, 2)), "a slice bound")
-    var k = c.tkind(vt)
-    if k == .LIST or k == .BYTES:
-        return vt
-    if c.is_stringish(vt):
-        return c.string_
-    if k == .ANY:
-        return c.poison
-    c.error(e, t"cannot slice a {c.text(vt)}")
-    return c.poison
+    match c.tkind(vt):
+        case .LIST | .BYTES:
+            return vt
+        case .STRING | .LITERAL:
+            return c.string_
+        case .ANY:
+            return c.poison
+        case _:
+            c.error(e, t"cannot slice a {c.text(vt)}")
+            return c.poison
 
 
 def infer_list(mut c: Checker, e: Int) -> Int:
-    var elem = ty.ANY_TYPE
+    var elem = ANY_TYPE
     var ok = True
     for x in c.children(e):
         var xt = infer(c, x)
@@ -1607,22 +1365,11 @@ def infer_list(mut c: Checker, e: Int) -> Int:
     return c.spec.types.list_of(elem) if ok else c.poison
 
 
-def infer_tuple(mut c: Checker, e: Int) -> Int:
-    var elems = List[Int]()
-    for x in c.children(e):
-        elems.append(infer(c, x))
-    return c.spec.types.tuple_of(elems)
-
-
 def infer_set(mut c: Checker, e: Int, expected: Int) -> Int:
-    if c.ctx.kind != K_PARTITION_SET or expected < 0 or c.tkind(expected) != .SET:
+    if not c.ctx.in_partition_set or expected < 0 or c.tkind(expected) != .SET:
         for x in c.children(e):
             _ = infer(c, x)
-        c.error(
-            e,
-            "{...} is a partition set: it only appears in a partition class of a"
-            " fixed-width parameter",
-        )
+        c.error(e, "{...} is a partition set: it only appears in a partition class of a fixed-width parameter")
         return c.poison
     var elem = c.arg(expected, 0)
     var ek = c.tkind(elem)
@@ -1632,16 +1379,15 @@ def infer_set(mut c: Checker, e: Int, expected: Int) -> Int:
         if c.is_any(t):
             continue
         var good: Bool
-        if ek == .FLOAT:
-            good = c.is_numeric(t)
-        elif ek == .FIXED_INT:
-            good = c.is_integer(t)
-        else:
-            good = c.tkind(t) == .BOOL
+        match ek:
+            case .FLOAT:
+                good = c.is_numeric(t)
+            case .FIXED_INT:
+                good = c.is_integer(t)
+            case _:
+                good = c.tkind(t) == .BOOL
         if not good:
-            c.error(
-                x,
-                String("a member of a set of ", c.text(elem), " values must be a ", ("number" if c.is_numeric(elem) else c.text(elem)), ", not ", c.text(t)),
-            )
+            var want = String("number") if c.is_numeric(elem) else c.text(elem)
+            c.error(x, t"a member of a set of {c.text(elem)} values must be a {want}, not {c.text(t)}")
             ok = False
     return expected if ok else c.poison

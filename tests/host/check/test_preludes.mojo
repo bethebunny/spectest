@@ -135,6 +135,13 @@ def test_a_system_prelude_name_cannot_be_reused() raises:
     )
 
 
+def test_a_doubled_slash_names_the_same_directory() raises:
+    var fs = Files(disk=False)
+    fs.add("dir/b.spec", "spec b\n")
+    var spec = check_source_with('spec s\nuse "b.spec"\n', "dir//s.spec", fs)
+    assert_equal(spec.ast.files[1].path, "dir/b.spec")
+
+
 def test_a_missing_prelude_file() raises:
     var lines = messages('spec s\nprelude "gone.prelude"\n', "dir/s.spec", Files(disk=False))
     assert_true(

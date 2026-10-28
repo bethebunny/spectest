@@ -8,6 +8,8 @@ Declarations keep source order. Lists of declarations refer to each other by pos
 (`Fn.owner` is a position in `Spec.models`, `Fn.clauses` positions in `Spec.clauses`).
 """
 
+from numeric.literal import parse_number
+from numeric.real import Real
 from syntax.ast import Ast, NodeKind, Op
 
 from check.types import ANY_TYPE, Types
@@ -81,7 +83,7 @@ __enum ResolutionKind(Equatable, ImplicitlyCopyable, Intable, Writable):
 
 
 @fieldwise_init
-struct Resolution(Copyable, Movable):
+struct Resolution(Copyable):
     var kind: ResolutionKind
     var index: Int
     var owner: Int
@@ -89,7 +91,7 @@ struct Resolution(Copyable, Movable):
 
 
 @fieldwise_init
-struct Param(Copyable, Movable):
+struct Param(Copyable):
     var name: String
     var type: Int
     var default: Int
@@ -98,7 +100,7 @@ struct Param(Copyable, Movable):
 
 
 @fieldwise_init
-struct Clause(Copyable, Movable):
+struct Clause(Copyable):
     var id: String
     """`<decl>.<label>` or `<decl>#<n>`, as verdicts name it."""
     var kind: Op
@@ -118,14 +120,14 @@ struct Clause(Copyable, Movable):
 
 
 @fieldwise_init
-struct PartitionClass(Copyable, Movable):
+struct PartitionClass(Copyable):
     var name: String
     var node: Int
     var expr: Int
 
 
 @fieldwise_init
-struct Partition(Copyable, Movable):
+struct Partition(Copyable):
     var param: Int
     """Position of the partitioned parameter."""
     var node: Int
@@ -133,7 +135,7 @@ struct Partition(Copyable, Movable):
 
 
 @fieldwise_init
-struct Observer(Copyable, Movable):
+struct Observer(Copyable):
     var name: String
     var params: List[Param]
     var type: Int
@@ -144,7 +146,7 @@ struct Observer(Copyable, Movable):
 
 
 @fieldwise_init
-struct Build(Copyable, Movable):
+struct Build(Copyable):
     var target: String
     """The qualified callable that makes a value of the model."""
     var params: List[Param]
@@ -152,7 +154,7 @@ struct Build(Copyable, Movable):
 
 
 @fieldwise_init
-struct Fn(Copyable, Movable):
+struct Fn(Copyable):
     var name: String
     """The qualified name of the callable it tests, or a constructor's or method's own
     name inside an interface."""
@@ -181,7 +183,7 @@ struct Fn(Copyable, Movable):
 
 
 @fieldwise_init
-struct Model(Copyable, Movable):
+struct Model(Copyable):
     var name: String
     var node: Int
     var is_interface: Bool
@@ -204,7 +206,7 @@ struct Model(Copyable, Movable):
 
 
 @fieldwise_init
-struct Def(Copyable, Movable):
+struct Def(Copyable):
     var name: String
     var node: Int
     var tparams: List[String]
@@ -216,7 +218,7 @@ struct Def(Copyable, Movable):
 
 
 @fieldwise_init
-struct Const(Copyable, Movable):
+struct Const(Copyable):
     var name: String
     var type: Int
     var node: Int
@@ -280,3 +282,75 @@ struct Spec(Movable):
             if clause.id == id:
                 return i
         return None
+
+
+def literal_value(ast: Ast, n: Int) -> Optional[Real]:
+    """The value of a numeric literal, possibly negated."""
+    ref node = ast.nodes[n]
+    match node.kind:
+        case .NUM:
+            try:
+                return parse_number(node.text)
+            except:
+                return None
+        case .UNARY if node.op == .NEG:
+            if case .Some(inner) = literal_value(ast, node.children[0]):
+                return -inner
+            return None
+        case _:
+            return None
+
+
+comptime _AGGREGATE_SHAPES = (
+    "an aggregate clause has one of the shapes sum(v in S: e) <= c, sum(v in S: e) <"
+    " c, sum(v in S: e) == 0, max(v in S: e) <= c, max(v in S: e) < c or all(v in S:"
+    " p), with S a set such as f16.all or a list, and c a constant"
+)
+comptime _SUM_EQUALS_ZERO = (
+    "sum(...) == c is an aggregate shape only for c = 0, where it demands that every"
+    " term is 0; bound the total with sum(...) <= c instead"
+)
+
+
+@fieldwise_init
+struct AggregateShape(Copyable):
+    """The parts of an aggregate clause's condition."""
+
+    var top: Int
+    """The top comprehension, which ranges over the input set, or 0."""
+    var bound: Int
+    """The bound a sum or max is compared with, or 0."""
+    var problem: String
+    """What is wrong with the shape, or ""."""
+
+
+def aggregate_shape(ast: Ast, e: Int) -> AggregateShape:
+    """The shape of the condition `e` of an aggregate clause."""
+    ref node = ast.nodes[e]
+    match node.kind:
+        case .COMPREHENSION:
+            return AggregateShape(e, 0, "" if node.op == .ALL else _AGGREGATE_SHAPES)
+        case .BINARY:
+            var left = node.children[0]
+            var right = node.children[1]
+            if ast.nodes[left].kind != .COMPREHENSION:
+                var top = right if ast.nodes[right].kind == .COMPREHENSION else 0
+                return AggregateShape(top, 0, _AGGREGATE_SHAPES)
+            var op = node.op
+            var allowed: Bool
+            match ast.nodes[left].op:
+                case .SUM:
+                    allowed = op == .LE or op == .LT or op == .EQ
+                case .MAX:
+                    allowed = op == .LE or op == .LT
+                case _:
+                    allowed = False
+            if not allowed:
+                return AggregateShape(left, 0, _AGGREGATE_SHAPES)
+            if op == .EQ:
+                var v = literal_value(ast, right)
+                if v is None or not (v.value() == Real(0)):
+                    return AggregateShape(left, 0, _SUM_EQUALS_ZERO)
+            return AggregateShape(left, right, "")
+        case _:
+            return AggregateShape(0, 0, _AGGREGATE_SHAPES)

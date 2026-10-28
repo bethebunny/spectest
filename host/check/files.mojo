@@ -6,14 +6,13 @@ it finds into the same tree, once, however many files name it. It reports a file
 cannot be read, a file of the wrong kind and a cycle of `use` as diagnostics.
 """
 
-from std.collections import Dict
+from std.os.path import dirname, join
 from std.pathlib import Path
 
-from syntax import ast as sx
 from syntax.ast import Ast, Diagnostic
 from syntax.parser import parse_into
 
-from check.state import index_of
+from check.state import Visit
 
 
 struct Files(Movable):
@@ -30,9 +29,8 @@ struct Files(Movable):
         self.memory[normalize(path)] = text
 
     def read(self, path: String) raises -> String:
-        var found = self.memory.get(path)
-        if found is not None:
-            return found.value()
+        if case .Some(text) = self.memory.get(path):
+            return text.copy()
         if self.disk:
             return Path(path).read_text()
         raise Error("no such file")
@@ -42,88 +40,69 @@ def normalize(path: String) -> String:
     """`path` without leading `./` parts."""
     var p = path.copy()
     while p.startswith("./"):
-        var rest = String(p[byte=2:])
+        var rest = String(p.removeprefix("./"))
         p = rest^
     return p^
 
 
-def dir_of(path: String) -> String:
-    """The directory part of `path` with its trailing slash, or ""."""
-    return String(path[byte = 0 : path.rfind("/") + 1])
-
-
-def join(base_file: String, name: String) -> String:
+def _relative(base_file: String, name: String) -> String:
     """`name` relative to the directory of `base_file`."""
-    if name.startswith("/"):
-        return name.copy()
-    return normalize(dir_of(base_file) + name)
+    return normalize(join(dirname(base_file), name))
 
 
-struct _Walk(Movable):
+struct _Walk(Defaultable, Movable):
     var keys: List[String]
     """By file index: the normalized path the file was found under."""
-    var state: List[Int]
-    """By file index: 0 not visited, 1 being visited, 2 done."""
+    var visits: List[Visit]
+    """By file index."""
     var stack: List[Int]
     var order: List[Int]
     """The files reached, in the order they were found."""
     var diags: List[Diagnostic]
-
-    def __init__(out self):
-        self.keys = []
-        self.state = []
-        self.stack = []
-        self.order = []
-        self.diags = []
 
 
 def _is_prelude(ast: Ast, file: Int) -> Bool:
     return ast.nodes[ast.files[file].root].kind == .PRELUDE_FILE
 
 
-def _report(mut w: _Walk, ast: Ast, node: Int, message: Some[Writable]):
-    w.diags.append(ast.diagnostic(node, message))
-
-
 def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
-    w.state[file] = 1
+    w.visits[file] = .ON_PATH
     w.stack.append(file)
-    var decls = ast.nodes[ast.files[file].root].children.copy()
-    for d in decls:
+    for d in ast.nodes[ast.files[file].root].children.copy():
         var kind = ast.nodes[d].kind
         if kind != .USE and kind != .PRELUDE:
             continue
         var name = ast.nodes[d].text.copy()
         var word = "use" if kind == .USE else "prelude"
-        var key = join(ast.files[file].path, name)
-        var target = index_of(w.keys, key)
+        var key = _relative(ast.files[file].path, name)
+        var target = w.keys.try_index(key).or_else(-1)
         if target < 0:
             var text: String
             try:
                 text = files.read(key)
             except:
-                _report(w, ast, d, String("cannot read ", word, " file ", name, " (", key, ")"))
+                w.diags.append(ast.diagnostic(d, t"cannot read {word} file {name} ({key})"))
                 continue
             target = parse_into(ast, text, key)
             w.keys.append(key^)
-            w.state.append(0)
-        elif w.state[target] == 1:
-            var files_in_cycle = [ast.files[f].path.copy() for f in w.stack[w.stack.index(target) :]]
-            var chain = " -> ".join(files_in_cycle + [ast.files[target].path.copy()])
-            _report(w, ast, d, String(word, " cycle: ", chain))
+            w.visits.append(.UNSEEN)
+        elif w.visits[target] == .ON_PATH:
+            var cycle = [ast.files[f].path.copy() for f in w.stack[w.stack.index(target) :]]
+            var chain = " -> ".join(cycle + [ast.files[target].path.copy()])
+            w.diags.append(ast.diagnostic(d, t"{word} cycle: {chain}"))
             continue
         var wants_prelude = kind == .PRELUDE or _is_prelude(ast, file)
         if _is_prelude(ast, target) != wants_prelude:
             if wants_prelude:
-                _report(w, ast, d, String(name, " is a spec, not a prelude file"))
+                w.diags.append(ast.diagnostic(d, t"{name} is a spec, not a prelude file"))
             else:
-                _report(w, ast, d, String(name, " is a prelude file, not a spec: attach it with prelude"))
+                w.diags.append(ast.diagnostic(d, t"{name} is a prelude file, not a spec: attach it with prelude"))
             continue
-        if w.state[target] == 0:
+        if w.visits[target] == .UNSEEN:
             w.order.append(target)
             _visit(w, ast, files, target)
     _ = w.stack.pop()
-    w.state[file] = 2
+    w.visits[file] = .DONE
 
 
 def resolve_files(mut ast: Ast, files: Files, mut diags: List[Diagnostic]) raises -> List[Int]:
@@ -133,7 +112,7 @@ def resolve_files(mut ast: Ast, files: Files, mut diags: List[Diagnostic]) raise
     `diags`. Raises on a syntax error in a loaded file."""
     var w = _Walk()
     w.keys.append(normalize(ast.files[0].path))
-    w.state.append(0)
+    w.visits.append(.UNSEEN)
     w.order.append(0)
     _visit(w, ast, files, 0)
     diags.extend(w.diags.copy())
