@@ -15,11 +15,12 @@ def load(path: String) raises -> Tuple[Int, Int, Int]:
     var sets = compile_partitions(ctx, spec)
     var set_classes = 0
     var predicates = 0
-    for i in range(len(sets.predicates)):
-        if sets.predicates[i]:
-            predicates += 1
-        else:
-            set_classes += 1
+    for partitions in sets.partitions:
+        for part in partitions:
+            if part.predicates:
+                predicates += len(part.sets)
+            else:
+                set_classes += len(part.sets)
     return (len(spec.fns), set_classes, predicates)
 
 
