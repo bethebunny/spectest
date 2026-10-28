@@ -490,12 +490,13 @@ wheels = [
 
 [[package]]
 name = "spectest"
-version = "0.1.0.dev0"
+version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "bitpattern" },
     { name = "gmpy2" },
     { name = "hypothesis" },
+    { name = "mojo-compiler" },
     { name = "pytest" },
 ]
 
@@ -508,7 +509,6 @@ examples = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "mojo-compiler" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "polars" },
@@ -521,6 +521,7 @@ requires-dist = [
     { name = "bitpattern", specifier = ">=0.3" },
     { name = "gmpy2", specifier = ">=2.2" },
     { name = "hypothesis", specifier = ">=6.150" },
+    { name = "mojo-compiler", specifier = "==1.2.0" },
     { name = "numpy", marker = "extra == 'examples'", specifier = ">=2.1" },
     { name = "pandas", marker = "extra == 'examples'", specifier = ">=2.2" },
     { name = "polars", marker = "extra == 'examples'", specifier = ">=1.0" },
@@ -530,7 +531,6 @@ provides-extras = ["examples"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "mojo-compiler", specifier = "==1.2.0" },
     { name = "numpy", specifier = ">=2.1" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "polars", specifier = ">=1.0" },

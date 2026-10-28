@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import spectest
 from spectest import cli
 from spectest.runtime.report import ClauseResult, Counterexample, Report, dump_reports
 
@@ -96,7 +97,7 @@ def test_version(capsys):
     with pytest.raises(SystemExit) as e:
         cli.main(["--version"])
     assert e.value.code == 0
-    assert capsys.readouterr().out.strip() == "spectest 0.1.0.dev0"
+    assert capsys.readouterr().out.strip() == f"spectest {spectest.__version__}"
 
 
 def test_module_entry_point():

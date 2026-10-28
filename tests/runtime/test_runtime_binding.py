@@ -9,6 +9,7 @@ import struct
 from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
+from importlib import metadata
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1088,7 +1089,7 @@ def test_impl_lookup(spec):
 
 
 def test_public_package_exports():
-    assert spectest.__version__ == "0.1.0.dev0"
+    assert spectest.__version__ == metadata.version("spectest")
     assert spectest.conformance is conformance
     assert spectest.ModelBinding is ModelBinding and spectest.InterfaceBinding is InterfaceBinding
     assert spectest.Conformance is Conformance and spectest.Unrepresentable is Unrepresentable
