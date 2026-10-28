@@ -86,34 +86,58 @@ def _new_library() -> Library:
 comptime _LIBRARY = _Global["spectest_prelude_mpfr", _new_library]
 
 
+def _library() raises -> Pointer[Library, MutUntrackedOrigin]:
+    var lib = _LIBRARY.get_or_create_ptr()
+    if lib[].handle is None:
+        raise Error(lib[].error)
+    return lib
+
+
+struct ExponentRange:
+    """MPFR's exponent range, [emin, emax] inside a `with` block and as it was after it."""
+
+    var lib: Pointer[Library, MutUntrackedOrigin]
+    var emin: Int
+    var emax: Int
+
+    def __init__(out self, *, emin: Int, emax: Int) raises:
+        self.lib = _library()
+        self.emin = emin
+        self.emax = emax
+
+    def __enter__(mut self):
+        self._exchange()
+
+    def __exit__(mut self):
+        self._exchange()
+
+    def _exchange(mut self):
+        """Sets the library's range to the one held, and holds the one it had."""
+        ref lib = self.lib[].handle.value()
+        var emin = Int(lib.call["mpfr_get_emin", Int](()))
+        var emax = Int(lib.call["mpfr_get_emax", Int](()))
+        _ = lib.call["mpfr_set_emin", Int32](self.emin)
+        _ = lib.call["mpfr_set_emax", Int32](self.emax)
+        self.emin = emin
+        self.emax = emax
+
+
 struct Mpfr(Movable):
-    """`CELLS` MPFR numbers, and the exponent range to restore when they are freed."""
+    """`CELLS` MPFR numbers of one precision."""
 
     var lib: Pointer[Library, MutUntrackedOrigin]
     var cells: List[Int]
     """`WORDS` words for each cell's `mpfr_t`."""
-    var saved_emin: Int
-    var saved_emax: Int
 
-    def __init__(out self, *, precision: Int, emin: Int, emax: Int) raises:
-        """Cells of `precision` bits, with MPFR's exponent range set to [emin, emax]
-        until they are freed."""
-        self.lib = _LIBRARY.get_or_create_ptr()
-        if self.lib[].handle is None:
-            raise Error(self.lib[].error)
+    def __init__(out self, *, precision: Int) raises:
+        self.lib = _library()
         self.cells = List[Int](length=WORDS * CELLS, fill=0)
-        self.saved_emin = Int(self.lib[].handle.value().call["mpfr_get_emin", Int](()))
-        self.saved_emax = Int(self.lib[].handle.value().call["mpfr_get_emax", Int](()))
         for cell in range(CELLS):
             self.handle().call["mpfr_init2"](self.addr(cell), precision)
-        _ = self.handle().call["mpfr_set_emin", Int32](emin)
-        _ = self.handle().call["mpfr_set_emax", Int32](emax)
 
     def __deinit__(deinit self):
         for cell in range(CELLS):
             self.handle().call["mpfr_clear"](self.addr(cell))
-        _ = self.handle().call["mpfr_set_emin", Int32](self.saved_emin)
-        _ = self.handle().call["mpfr_set_emax", Int32](self.saved_emax)
 
     def handle(self) -> ref [MutUntrackedOrigin] OwnedDLHandle:
         return self.lib[].handle.value()
