@@ -2,7 +2,7 @@ from std.pathlib import Path
 from std.testing import assert_equal, assert_true, TestSuite
 from std.time import perf_counter_ns
 
-from check.checker import check_source
+from specfile.checker import check_source
 from eval.api import judge
 from eval.env import Env
 from eval.host import EvalHost

@@ -8,12 +8,12 @@ that fail are skipped, so one mistake reports once.
 """
 
 from spec.ast import Ast, Diagnostic, NodeKind
-from syntax.parser import parse_spec
+from specfile.parser import parse_spec
 
-from check.decls import run
-from check.files import Files, resolve_files
+from specfile.declaration_checks import run
+from specfile.files import Files, resolve_files
 from spec.spec import Spec
-from check.state import Checker
+from specfile.checker_state import Checker
 from spec.types import ANY_TYPE, Types
 
 

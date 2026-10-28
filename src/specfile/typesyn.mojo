@@ -4,7 +4,7 @@ Type variables in scope are the ones in `Checker.ctx`. Aliases and records resol
 first use, so a declaration may use one declared later; a cycle is reported.
 """
 
-from check.state import Checker, Ctx, NO_TYPE, type_hint
+from specfile.checker_state import Checker, Ctx, NO_TYPE, type_hint
 from spec.types import ANY_TYPE
 
 

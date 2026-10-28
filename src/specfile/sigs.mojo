@@ -7,7 +7,7 @@ arguments are already typed. A rule that finds the call ill-typed raises a
 
 from spec.types import TypeKind
 from spec.prelude_signatures import CallInfo, PreludeSig, TypingError
-from check.state import Checker
+from specfile.checker_state import Checker
 
 
 def _argument(i: Int) -> String:

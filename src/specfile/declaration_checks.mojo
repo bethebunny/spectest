@@ -7,7 +7,7 @@ from value.floats import exactly
 from value.real import Real
 from spec.ast import Op
 
-from check.exprs import assignable, infer_in, literal_member, poison_subtree, want_bool
+from specfile.expression_types import assignable, infer_in, literal_member, poison_subtree, want_bool
 from spec.spec import (
     Build,
     Clause,
@@ -21,8 +21,8 @@ from spec.spec import (
     PartitionClass,
     aggregate_shape,
 )
-from check.state import Checker, Ctx, Var, Visit, cycle_text, is_builtin_type_name, is_reserved, qualify_error
-from check.typesyn import alias_type, ensure_const, record_type, resolve_type
+from specfile.checker_state import Checker, Ctx, Var, Visit, cycle_text, is_builtin_type_name, is_reserved, qualify_error
+from specfile.typesyn import alias_type, ensure_const, record_type, resolve_type
 from spec.types import Types
 
 

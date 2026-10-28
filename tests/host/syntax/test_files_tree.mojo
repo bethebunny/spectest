@@ -3,7 +3,7 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
 from spec.ast import Ast, NodeKind
-from syntax.parser import parse_into, parse_spec
+from specfile.parser import parse_into, parse_spec
 
 comptime SPEC = 'spec s\nprelude "m.prelude"\nfn f(x: int) -> int\n  ensures big: twice(x) > x\n'
 comptime PRELUDE = "\n\nfn twice(x: int) -> int = x + x\nfn thrice(x: int) -> int = twice(x) + x\n"

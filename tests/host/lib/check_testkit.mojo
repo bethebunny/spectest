@@ -4,7 +4,7 @@ from std.testing import assert_true
 
 from spec import ast
 
-from check.checker import check_source
+from specfile.checker import check_source
 from spec.spec import Spec
 
 

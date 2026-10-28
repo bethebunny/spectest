@@ -10,9 +10,9 @@ from std.os.path import dirname, join
 from std.pathlib import Path
 
 from spec.ast import Ast, Diagnostic
-from syntax.parser import parse_into
+from specfile.parser import parse_into
 
-from check.state import Visit, cycle_text
+from specfile.checker_state import Visit, cycle_text
 
 
 struct Files(Movable):

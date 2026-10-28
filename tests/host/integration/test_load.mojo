@@ -3,7 +3,7 @@
 from std.pathlib import Path
 from std.testing import assert_equal, assert_true, TestSuite
 
-from check.checker import check_source
+from specfile.checker import check_source
 from partitions.check import compile_partitions
 from sets.context import SetContext
 

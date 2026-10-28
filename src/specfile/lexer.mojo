@@ -10,7 +10,7 @@ lines. `perf` takes the rest of its line raw.
 """
 
 from spec.ast import Diagnostic, Span
-from syntax.chars import is_digit, is_word_char, is_word_start
+from specfile.chars import is_digit, is_word_char, is_word_start
 
 
 __enum TokenKind(Equatable, ImplicitlyCopyable, Writable):

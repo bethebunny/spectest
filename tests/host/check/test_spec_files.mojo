@@ -3,7 +3,7 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.ffi import external_call
 from std.time import perf_counter_ns
 
-from check.checker import check, check_source
+from specfile.checker import check, check_source
 from spec.spec import ResolutionKind, Spec
 from check_testkit import (
     clause_expr,
@@ -15,7 +15,7 @@ from check_testkit import (
     type_text,
 )
 from spec import ast
-from syntax.parser import parse_spec
+from specfile.parser import parse_spec
 
 
 comptime CLOCK_THREAD_CPUTIME_ID = Int32(3)

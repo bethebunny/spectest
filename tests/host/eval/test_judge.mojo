@@ -1,7 +1,7 @@
 from std.pathlib import Path
 from std.testing import assert_equal, assert_true, TestSuite
 
-from check.checker import check_source
+from specfile.checker import check_source
 from spec.spec import Spec
 from eval.api import class_holds, explain, snapshot_olds
 from eval_testkit import *

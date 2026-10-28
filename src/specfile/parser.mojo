@@ -10,7 +10,7 @@ covers its continuation lines.
 """
 
 from spec.ast import Ast, File, NIL, Node, NodeKind, Op, Span
-from syntax.lexer import Token, TokenKind, syntax_error, tokens
+from specfile.lexer import Token, TokenKind, syntax_error, tokens
 
 
 def _is_reserved(text: String) -> Bool:

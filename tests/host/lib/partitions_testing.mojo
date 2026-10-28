@@ -11,7 +11,7 @@ from spec.spec import Clause, Fn, Param, Partition, PartitionClass, Spec
 from partitions.compile import compile_set_aliased
 from sets import BitSet, SetContext
 from spec.ast import Ast
-from syntax.parser import parse_spec
+from specfile.parser import parse_spec
 
 
 def _resolved(

@@ -1,6 +1,6 @@
 from std.testing import assert_equal, TestSuite
 
-from syntax.lexer import tokens
+from specfile.lexer import tokens
 
 
 def kinds(source: String) raises -> String:

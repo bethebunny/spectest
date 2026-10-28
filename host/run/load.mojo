@@ -2,8 +2,8 @@
 
 from std.pathlib import Path
 
-from check.checker import check_source_with
-from check.files import Files
+from specfile.checker import check_source_with
+from specfile.files import Files
 from spec.spec import Spec
 from gen.sizes import Sizes
 from value.digits import hex_digits

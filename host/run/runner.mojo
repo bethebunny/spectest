@@ -39,7 +39,7 @@ from mcheck.search import SearchResult, enumerate_all, search
 from mcheck.settings import Settings
 from mcheck.shrink import shrink
 from mcheck.source import Source
-from syntax.chars import is_digit, is_word_char
+from specfile.chars import is_digit, is_word_char
 from value.text import format_value
 from value.value import Value
 
