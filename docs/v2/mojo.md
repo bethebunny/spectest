@@ -476,9 +476,11 @@ A cached rerun takes about a second.
   `Limbs`). Cleanup tied to a block goes in a context manager.
 - A raw pointer is `Pointer[T, MutUntrackedOrigin](unsafe_from_address=a)`, indexed
   with `p[unsafe_offset=i]`.
-- A local is destroyed right after its last use. Passing `owner.ptr` to a call can free
-  the object before the call runs. Pass the owning struct as a borrowed argument, or
-  keep the owner alive past the call (`_ = len(buf)`). `host/bridge` does both.
+- A local is destroyed right after its last use. A call given a trivial copy taken from
+  it, eg. `Int(buf.unsafe_ptr())` or an `Int` field, can run after the owner is freed.
+  Pass the owner as a borrowed argument instead. A field of a non-trivial type passed
+  straight to a call, eg. `owned.ptr` (a `PyObjectPtr`), borrows its owner through the
+  call. `host/bridge` relies on both.
 - Module-level state in the shared library is `std.ffi._Global[name, init_fn]`, whose
   `init_fn` is a non-raising `def() -> T`. `get_or_create_ptr()` raises and returns a
   `MutUntrackedOrigin` pointer.
