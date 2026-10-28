@@ -384,7 +384,7 @@ fn f(x: u8, y: f32, b: bool, n: i16) -> u8
     )
     var c = SetContext()
     var x = admitted(c, spec, 0, 0).value()
-    assert_equal(c.count(x).uint128_or_none().value(), UInt128(10))
+    assert_equal(c.count(x), UInt128(10))
     assert_true(c.contains(x, 10) and c.contains(x, 19))
     assert_false(c.contains(x, 20) or c.contains(x, 9))
     var y = admitted(c, spec, 0, 1).value()
@@ -397,7 +397,7 @@ fn f(x: u8, y: f32, b: bool, n: i16) -> u8
     var b = admitted(c, spec, 0, 2).value()
     assert_true(c.contains(b, 1) and not c.contains(b, 0))
     var n = admitted(c, spec, 0, 3).value()
-    assert_equal(c.count(n).uint128_or_none().value(), UInt128(4))
+    assert_equal(c.count(n), UInt128(4))
     assert_true(c.contains(n, 100) and c.contains(n, 5) and not c.contains(n, 3))
 
 

@@ -3,7 +3,6 @@ bool arrays on small widths."""
 
 from std.testing import assert_equal, assert_true, TestSuite
 
-from bigint import BigUInt
 from sets import BitSet, SetContext
 
 comptime W = 10
@@ -59,22 +58,22 @@ def test_nth_and_rank_are_inverses() raises:
     var rng = Rng(7)
     for _ in range(40):
         var s = _random_set(c, rng)
-        var total = c.count(s).uint128_or_none().value()
+        var total = c.count(s)
         var previous: Optional[UInt64] = None
         var seen = 0
         for i in range(Int(total)):
-            var member = c.nth(s, BigUInt(UInt64(i)))
+            var member = c.nth(s, UInt64(i))
             assert_true(c.contains(s, member))
             if previous:
                 assert_true(previous.value() < member)
             previous = member
-            assert_true(c.rank(s, member) == BigUInt(UInt64(i)))
+            assert_true(c.rank(s, member) == UInt128(i))
             seen += 1
         assert_equal(UInt128(seen), total)
         # rank of any pattern counts the members below it.
         var below = 0
         for v in range(N):
-            assert_true(c.rank(s, UInt64(v)) == BigUInt(UInt64(below)))
+            assert_true(c.rank(s, UInt64(v)) == UInt128(below))
             if c.contains(s, UInt64(v)):
                 below += 1
 
@@ -158,7 +157,7 @@ def test_laws() raises:
         var left = c.count(a) + c.count(b)
         var right = c.count(c.union(a, b)) + c.count(c.intersection(a, b))
         assert_true(left == right)
-        assert_true(c.count(c.complement(a)) + c.count(a) == BigUInt(UInt64(N)))
+        assert_true(c.count(c.complement(a)) + c.count(a) == UInt128(N))
 
 
 def test_wide_sets() raises:
@@ -168,18 +167,18 @@ def test_wide_sets() raises:
         c.interval(5, 1000, 64),
         c.interval_inclusive(UInt64.MAX - 500, UInt64.MAX, 64),
     )
-    assert_true(c.count(s) == BigUInt(995 + 501))
-    assert_equal(c.nth(s, BigUInt(0)), 5)
-    assert_equal(c.nth(s, BigUInt(994)), 999)
-    assert_equal(c.nth(s, BigUInt(995)), UInt64.MAX - 500)
-    assert_equal(c.nth(s, BigUInt(1495)), UInt64.MAX)
-    assert_true(c.rank(s, UInt64.MAX) == BigUInt(1495))
-    assert_true(c.rank(s, 5) == BigUInt(0))
+    assert_true(c.count(s) == UInt128(995 + 501))
+    assert_equal(c.nth(s, 0), 5)
+    assert_equal(c.nth(s, 994), 999)
+    assert_equal(c.nth(s, 995), UInt64.MAX - 500)
+    assert_equal(c.nth(s, 1495), UInt64.MAX)
+    assert_true(c.rank(s, UInt64.MAX) == UInt128(1495))
+    assert_true(c.rank(s, 5) == UInt128(0))
     var all = c.full(64)
-    assert_equal(c.nth(all, BigUInt(UInt64.MAX)), UInt64.MAX)
-    assert_true(c.rank(all, UInt64.MAX) == BigUInt(UInt64.MAX))
+    assert_equal(c.nth(all, UInt64.MAX), UInt64.MAX)
+    assert_true(c.rank(all, UInt64.MAX) == UInt128(UInt64.MAX))
     # Out of range nth gives 0.
-    assert_equal(c.nth(s, BigUInt(1496)), 0)
+    assert_equal(c.nth(s, 1496), 0)
 
 
 def main() raises:

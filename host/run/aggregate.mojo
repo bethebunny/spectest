@@ -8,7 +8,6 @@ a failure but never invents one."""
 
 from std.time import perf_counter_ns
 
-from bigint import BigUInt
 from check import types as ty
 from check.spec import Spec
 from eval.api import evaluate
@@ -75,21 +74,22 @@ def _members(
         ctx, spec.ast, spec.types, elem, iterable, Dict[String, BitSet](), spec.aliases
     )
     var count = ctx.count(s)
-    var exact = count.uint64_or_none()
-    if exact is not None and exact.value() <= UInt64(limit):
-        total_out = Int(exact.value())
+    if count <= UInt128(limit):
+        total_out = Int(count)
         return [value_from_bits(spec.types, elem, bits) for bits in ctx.members(s, limit)]
     var out = List[Value]()
     sampled = True
-    total_out = Int(exact.value()) if exact is not None and exact.value() < UInt64(1 << 62) else (1 << 62)
+    total_out = Int(min(count, UInt128(1 << 62)))
     var rng = Rng(seed)
+    # Only the whole 64-bit type has more members than a UInt64 counts.
+    var exact = count <= UInt128(UInt64.MAX)
     # The ends of the set, then random members.
-    out.append(value_from_bits(spec.types, elem, ctx.nth(s, BigUInt(0))))
-    if exact is not None:
-        out.append(value_from_bits(spec.types, elem, ctx.nth(s, BigUInt(exact.value() - 1))))
+    out.append(value_from_bits(spec.types, elem, ctx.nth(s, 0)))
+    if exact:
+        out.append(value_from_bits(spec.types, elem, ctx.nth(s, UInt64(count - 1))))
     for _ in range(max(0, samples - 2)):
-        var index = rng.below(exact.value()) if exact is not None else rng.next()
-        out.append(value_from_bits(spec.types, elem, ctx.nth(s, BigUInt(index))))
+        var index = rng.below(UInt64(count)) if exact else rng.next()
+        out.append(value_from_bits(spec.types, elem, ctx.nth(s, index)))
     return out^
 
 

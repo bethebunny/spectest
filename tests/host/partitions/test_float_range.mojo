@@ -6,11 +6,7 @@ from numeric.floats import round_to, to_real
 from numeric.formats import BF16, F16, F32, F64, FloatFormat
 from numeric.real import Real
 from partitions.ranges import float_equal, float_range
-from sets import BitSet, SetContext
-
-
-def _count(c: SetContext, s: BitSet) -> UInt128:
-    return c.count(s).uint128_or_none().value()
+from sets import SetContext
 
 
 def _some(r: Real) -> Optional[Real]:
@@ -78,25 +74,25 @@ def _exercise(format: FloatFormat) raises:
     var w = format.width()
     var inf_mag = format.exponent_mask()
     var sign = format.sign_mask()
-    var nans = c.count(c.difference(c.full(w), c.float_named(format, "finite"))).uint128_or_none().value()
+    var nans = c.count(c.difference(c.full(w), c.float_named(format, "finite")))
     var infs = UInt128(2)
     var nan_count = nans - infs
     var total = UInt128(1) << UInt128(w)
     # No bounds: every non-NaN value.
-    assert_equal(_count(c, float_range(c, format, None, None)), total - nan_count)
+    assert_equal(c.count(float_range(c, format, None, None)), total - nan_count)
     # Open ends include their infinity, and no NaN.
     var up = float_range(c, format, _some(Real(0)), None)
     assert_true(c.contains(up, inf_mag))
     assert_false(c.contains(up, inf_mag | sign))
     assert_true(c.contains(up, 0))
     assert_true(c.contains(up, sign))
-    assert_equal(_count(c, up), UInt128(inf_mag) + 2)
+    assert_equal(c.count(up), UInt128(inf_mag) + 2)
     var down = float_range(c, format, None, _some(Real(0)))
     assert_true(c.contains(down, inf_mag | sign))
     assert_false(c.contains(down, inf_mag))
     assert_false(c.contains(down, 0))
     assert_false(c.contains(down, sign))
-    assert_equal(_count(c, down), UInt128(inf_mag))
+    assert_equal(c.count(down), UInt128(inf_mag))
     # Edges of the subnormal and normal ranges.
     var edges: List[UInt64] = [
         1, format.fraction_mask(), format.fraction_mask() + 1, inf_mag - 1
@@ -104,15 +100,15 @@ def _exercise(format: FloatFormat) raises:
     for m in edges:
         var v = to_real(format, m)
         # [0, v): both zeros and magnitudes below m.
-        assert_equal(_count(c, float_range(c, format, _some(Real(0)), _some(v))), UInt128(m) + 1)
+        assert_equal(c.count(float_range(c, format, _some(Real(0)), _some(v))), UInt128(m) + 1)
         # [-v, 0): negative magnitudes 1..m.
-        assert_equal(_count(c, float_range(c, format, _some(-v), _some(Real(0)))), UInt128(m))
+        assert_equal(c.count(float_range(c, format, _some(-v), _some(Real(0)))), UInt128(m))
         # [v, none): from m up to and including +inf.
-        assert_equal(_count(c, float_range(c, format, _some(v), None)), UInt128(inf_mag - m) + 1)
+        assert_equal(c.count(float_range(c, format, _some(v), None)), UInt128(inf_mag - m) + 1)
         # (none, -v): the negatives of magnitude above m, down to -inf.
-        assert_equal(_count(c, float_range(c, format, None, _some(-v))), UInt128(inf_mag - m))
+        assert_equal(c.count(float_range(c, format, None, _some(-v))), UInt128(inf_mag - m))
         # [-v, v) is every value between, both zeros once each.
-        assert_equal(_count(c, float_range(c, format, _some(-v), _some(v))), UInt128(2 * m) + 1)
+        assert_equal(c.count(float_range(c, format, _some(-v), _some(v))), UInt128(2 * m) + 1)
         assert_true(c.contains(float_range(c, format, _some(-v), _some(v)), sign | m))
         assert_false(c.contains(float_range(c, format, _some(-v), _some(v)), m))
     # An empty range, and an inverted one.
@@ -121,7 +117,7 @@ def _exercise(format: FloatFormat) raises:
     # Between two values: [a, b) holds b - a patterns.
     var a = to_real(format, 3)
     var b = to_real(format, inf_mag - 1)
-    assert_equal(_count(c, float_range(c, format, _some(a), _some(b))), UInt128(inf_mag - 4))
+    assert_equal(c.count(float_range(c, format, _some(a), _some(b))), UInt128(inf_mag - 4))
     # A bound that is no value: 1/10 lies between two patterns.
     var tenth = Real(1) / Real(10)
     var m = round_to(format, tenth)
@@ -146,11 +142,11 @@ def test_every_format() raises:
 
 def test_float_equal() raises:
     var c = SetContext()
-    assert_equal(_count(c, float_equal(c, F64, Real(0))), UInt128(2))
+    assert_equal(c.count(float_equal(c, F64, Real(0))), UInt128(2))
     assert_true(c.contains(float_equal(c, F64, Real(0)), 0))
     assert_true(c.contains(float_equal(c, F64, Real(0)), 1 << 63))
     var one = float_equal(c, F32, Real(1))
-    assert_equal(_count(c, one), UInt128(1))
+    assert_equal(c.count(one), UInt128(1))
     assert_true(c.contains(one, 0x3F800000))
     var neg = float_equal(c, F32, Real(-2))
     assert_true(c.contains(neg, 0xC0000000))

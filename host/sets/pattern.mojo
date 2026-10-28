@@ -17,12 +17,13 @@ def expand_pattern(text: StringSlice) raises -> String:
     var bits = String()
     for at, quartet in enumerate(stripped.split(".")):
         var star = quartet.find("*")
-        var expanded = String(quartet)
-        if star >= 0:
-            var fill = "?" * (5 - quartet.byte_length())
-            expanded = String(quartet[byte=0:star], fill, quartet[byte = star + 1 :])
+        var expanded = (
+            String(quartet[byte=0:star], "?" * (5 - quartet.byte_length()), quartet[byte = star + 1 :])
+            if star >= 0
+            else String(quartet)
+        )
         var n = expanded.byte_length()
-        var length_ok = n >= 1 and n <= 4 if at == 0 else n == 4
+        var length_ok = 1 <= n <= 4 if at == 0 else n == 4
         if not length_ok or not all([_is_bit_symbol(b) for b in expanded.as_bytes()]):
             raise Error(
                 t"bad quartet '{quartet}' in pattern '{stripped}': quartets are 4 bits"

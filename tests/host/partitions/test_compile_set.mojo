@@ -1,7 +1,6 @@
 from std.memory import bitcast
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
-from bigint import BigUInt
 from check.types import Types
 from numeric.formats import BF16, F16, F32, F64, FloatFormat
 from partitions.compile import compile_set_aliased
@@ -40,10 +39,6 @@ def error_of(
     return String()
 
 
-def size(c: SetContext, s: BitSet) -> UInt128:
-    return c.count(s).uint128_or_none().value()
-
-
 def f64_bits(x: Float64) -> UInt64:
     return bitcast[DType.uint64](x)
 
@@ -71,11 +66,11 @@ def _named_sizes(name: String, fmt: FloatFormat) raises:
     var exp = fmt.exponent_bits
     var man = fmt.fraction_bits
     var payloads = (UInt128(1) << UInt128(man)) - 1
-    var nan = size(c, comp(c, name + ".nan", name))
-    var inf = size(c, comp(c, name + ".inf", name))
-    var zero = size(c, comp(c, name + ".zero", name))
-    var sub = size(c, comp(c, name + ".subnormal", name))
-    var normal = size(c, comp(c, name + ".normal", name))
+    var nan = c.count(comp(c, name + ".nan", name))
+    var inf = c.count(comp(c, name + ".inf", name))
+    var zero = c.count(comp(c, name + ".zero", name))
+    var sub = c.count(comp(c, name + ".subnormal", name))
+    var normal = c.count(comp(c, name + ".normal", name))
     assert_equal(nan, 2 * payloads)
     assert_equal(inf, UInt128(2))
     assert_equal(zero, UInt128(2))
@@ -89,7 +84,7 @@ def _named_sizes(name: String, fmt: FloatFormat) raises:
             comp(c, name + ".zero | " + name + ".subnormal | " + name + ".normal", name),
         )
     )
-    assert_equal(size(c, comp(c, name + ".all", name)), total)
+    assert_equal(c.count(comp(c, name + ".all", name)), total)
 
 
 def test_float_named_set_sizes() raises:
@@ -103,8 +98,8 @@ def test_positive_and_negative_are_by_sign_bit() raises:
     var c = SetContext()
     var pos = comp(c, "f64.positive", "f64")
     var neg = comp(c, "f64.negative", "f64")
-    assert_equal(size(c, pos), UInt128(1) << 63)
-    assert_equal(size(c, neg), UInt128(1) << 63)
+    assert_equal(c.count(pos), UInt128(1) << 63)
+    assert_equal(c.count(neg), UInt128(1) << 63)
     assert_true(c.contains(pos, 0) and c.contains(neg, NEG_ZERO))
     assert_true(c.contains(pos, f64_bits(Float64.MAX_FINITE)))
     assert_true(c.contains(pos, 0x7FF8000000000000))
@@ -128,22 +123,22 @@ def test_named_sets_hold_the_right_values() raises:
 
 def test_int_named_sets() raises:
     var c = SetContext()
-    assert_equal(size(c, comp(c, "i32.negative", "i32")), UInt128(1) << 31)
-    assert_equal(size(c, comp(c, "i32.positive", "i32")), UInt128(1) << 31)
+    assert_equal(c.count(comp(c, "i32.negative", "i32")), UInt128(1) << 31)
+    assert_equal(c.count(comp(c, "i32.positive", "i32")), UInt128(1) << 31)
     assert_true(c.contains(comp(c, "i32.positive", "i32"), 0))
     assert_true(c.contains(comp(c, "i32.negative", "i32"), 0xFFFFFFFF))
     assert_true(c.equal(comp(c, "i8.zero", "i8"), comp(c, "{0}", "i8")))
-    assert_equal(size(c, comp(c, "u32.negative", "u32")), UInt128(0))
+    assert_equal(c.count(comp(c, "u32.negative", "u32")), UInt128(0))
     assert_true(c.equal(comp(c, "u32.positive", "u32"), c.full(32)))
-    assert_equal(size(c, comp(c, "i64.all", "i64")), UInt128(1) << 64)
+    assert_equal(c.count(comp(c, "i64.all", "i64")), UInt128(1) << 64)
 
 
 def test_bool_sets() raises:
     var c = SetContext()
     var t = comp(c, "{true}", "bool")
-    assert_equal(size(c, t), UInt128(1))
+    assert_equal(c.count(t), UInt128(1))
     assert_true(c.contains(t, 1) and not c.contains(t, 0))
-    assert_equal(size(c, comp(c, "bool.all", "bool")), UInt128(2))
+    assert_equal(c.count(comp(c, "bool.all", "bool")), UInt128(2))
     assert_true(c.equal(comp(c, "bool.all - {false}", "bool"), t))
 
 
@@ -163,7 +158,7 @@ def test_range_from_zero_holds_both_zeros() raises:
     var c = SetContext()
     var s = comp(c, "f64.range(0, 1)", "f64")
     assert_true(c.contains(s, 0) and c.contains(s, NEG_ZERO))
-    assert_equal(size(c, s), UInt128(f64_bits(1.0)) + 1)
+    assert_equal(c.count(s), UInt128(f64_bits(1.0)) + 1)
     assert_false(c.contains(s, NEG_ZERO | 1))
 
 
@@ -172,7 +167,7 @@ def test_range_to_zero_holds_no_zero() raises:
     var s = comp(c, "f64.range(-1, 0)", "f64")
     assert_false(c.contains(s, 0) or c.contains(s, NEG_ZERO))
     assert_true(c.contains(s, f64_bits(-1.0)) and c.contains(s, NEG_ZERO | 1))
-    assert_equal(size(c, s), UInt128(f64_bits(1.0)))
+    assert_equal(c.count(s), UInt128(f64_bits(1.0)))
 
 
 def test_ranges_never_hold_nan() raises:
@@ -211,7 +206,7 @@ def test_empty_and_inverted_ranges() raises:
 def test_range_with_type_bounds() raises:
     var c = SetContext()
     var s = comp(c, "f16.range(f16.min, f16.max)", "f16")
-    assert_equal(size(c, s), size(c, comp(c, "f16.finite", "f16")) - 1)
+    assert_equal(c.count(s), c.count(comp(c, "f16.finite", "f16")) - 1)
     assert_true(c.contains(s, 0xFBFF))
     assert_false(c.contains(s, 0x7BFF))
 
@@ -221,7 +216,7 @@ def test_range_of_subnormal_width() raises:
     assert_true(
         c.equal(comp(c, "f64.range(0, 0x1p-1074)", "f64"), comp(c, "f64.zero", "f64"))
     )
-    assert_equal(size(c, comp(c, "f64.range(-0x1p-1074, 0x1p-1074)", "f64")), UInt128(3))
+    assert_equal(c.count(comp(c, "f64.range(-0x1p-1074, 0x1p-1074)", "f64")), UInt128(3))
 
 
 def test_libm_small_range() raises:
@@ -252,9 +247,9 @@ def test_int_ranges() raises:
     assert_true(c.equal(comp(c, "i8.range(-128, 128)", "i8"), c.full(8)))
     assert_true(c.equal(comp(c, "i8.range(none, 0)", "i8"), comp(c, "i8.negative", "i8")))
     assert_true(c.equal(comp(c, "u8.range(0, 256)", "u8"), c.full(8)))
-    assert_equal(size(c, comp(c, "i64.range(i32.min, i32.max + 1)", "i64")), UInt128(1) << 32)
+    assert_equal(c.count(comp(c, "i64.range(i32.min, i32.max + 1)", "i64")), UInt128(1) << 32)
     assert_equal(
-        size(c, comp(c, "i64.range(i32.max + 1, none)", "i64")),
+        c.count(comp(c, "i64.range(i32.max + 1, none)", "i64")),
         (UInt128(1) << 63) - (UInt128(1) << 31),
     )
     assert_error(c, "i8.range(-129, 0)", "i8", "outside i8")
@@ -292,8 +287,8 @@ def test_patterns() raises:
     )
     var quiet = comp(c, 'f64.pattern("?111.1111.1111.1*.*.*.*.*.*.*.*.*.*.*.*.*")', "f64")
     assert_true(c.subset(quiet, comp(c, "f64.nan", "f64")))
-    assert_equal(size(c, quiet), UInt128(1) << 52)
-    assert_equal(size(c, comp(c, 'u8.pattern("1???.????")', "u8")), UInt128(128))
+    assert_equal(c.count(quiet), UInt128(1) << 52)
+    assert_equal(c.count(comp(c, 'u8.pattern("1???.????")', "u8")), UInt128(128))
     assert_true(
         c.equal(comp(c, 'i8.pattern("1???.????")', "i8"), comp(c, "i8.negative", "i8"))
     )
@@ -308,9 +303,9 @@ def test_set_literals() raises:
     var edge = comp(c, "{i32.min, i32.max, -1}", "i32")
     assert_true(c.contains(edge, 0x80000000) and c.contains(edge, 0x7FFFFFFF))
     assert_true(c.contains(edge, 0xFFFFFFFF))
-    assert_equal(size(c, edge), UInt128(3))
+    assert_equal(c.count(edge), UInt128(3))
     var fl = comp(c, "{0.5, 1, -2, 0x1p-149}", "f32")
-    assert_equal(size(c, fl), UInt128(4))
+    assert_equal(c.count(fl), UInt128(4))
     assert_true(c.contains(fl, f32_bits(0.5)) and c.contains(fl, f32_bits(1.0)))
     assert_true(c.contains(fl, f32_bits(-2.0)) and c.contains(fl, 1))
     assert_true(c.equal(comp(c, "{0}", "f64"), c.exactly([UInt64(0)], 64)))
@@ -346,19 +341,19 @@ def test_constant_arithmetic() raises:
             comp(c, "i32.range(-(3 - 1), 2 * 3)", "i32"), comp(c, "i32.range(-2, 6)", "i32")
         )
     )
-    assert_equal(size(c, comp(c, "i64.range(i32.min - 1, i32.min)", "i64")), UInt128(1))
+    assert_equal(c.count(comp(c, "i64.range(i32.min - 1, i32.min)", "i64")), UInt128(1))
     assert_error(c, "f64.range(1/0, 2)", "f64", "division by zero")
 
 
 def test_set_algebra() raises:
     var c = SetContext()
     var a = comp(c, "f64.normal & f64.negative", "f64")
-    assert_equal(size(c, a), size(c, comp(c, "f64.normal", "f64")) // 2)
+    assert_equal(c.count(a), c.count(comp(c, "f64.normal", "f64")) // 2)
     var b = comp(c, "f64.finite - f64.zero - f64.subnormal", "f64")
     assert_true(c.equal(b, comp(c, "f64.normal", "f64")))
     assert_equal(
-        size(c, comp(c, "f64.nan | f64.inf", "f64")),
-        size(c, comp(c, "f64.nan", "f64")) + 2,
+        c.count(comp(c, "f64.nan | f64.inf", "f64")),
+        c.count(comp(c, "f64.nan", "f64")) + 2,
     )
 
 

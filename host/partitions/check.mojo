@@ -6,7 +6,6 @@ from std.math import log2
 
 import check.types as ty
 import syntax.ast as sx
-from bigint import BigUInt
 from check.spec import Partition, Spec
 from numeric.digits import hex_digits
 from numeric.fixed import low_mask, signed_of
@@ -49,8 +48,7 @@ struct PartitionSets(Movable):
         return self.predicates[self.starts[f][p] + k]
 
 
-def _count_text(n: BigUInt) -> String:
-    var small = n.uint128_or_none().value()
+def _count_text(small: UInt128) -> String:
     var noun = " value" if small == 1 else " values"
     if small < UInt128(1 << 20):
         var digits = String(Int(small))
@@ -95,7 +93,7 @@ def _example(mut ctx: SetContext, elem: Elem, s: BitSet) raises -> String:
     for c in candidates:
         if ctx.contains(s, c):
             return value_text(elem, c)
-    return value_text(elem, ctx.nth(s, BigUInt(0)))
+    return value_text(elem, ctx.nth(s, 0))
 
 
 def _uses(ast: Ast, e: Int, names: Dict[String, Bool]) -> Bool:

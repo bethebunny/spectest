@@ -1,24 +1,23 @@
 """Sets of bit patterns up to 64 bits wide, and the context that owns their nodes."""
 
+from std.collections import Set
 from std.os import abort
-from std.builtin.sort import sort
 
 from arena import ACCEPT, Arena, Id, Interrupted, REJECT
 from arena.apply import complement, difference, intersection, union
 from arena.arena import PauseStatePointer, never_pause
-from arena.build import diagram, exactly_these, interval
+from arena.build import diagram, exactly_these, interval, narrow_bit
 from arena.compare import disjoint, subset
-from arena.members import accepts, nth_narrow, rank_narrow
-from bigint import BigUInt
+from arena.members import accepts, bits_between, nth_narrow, rank_narrow
+from arena.walk import Narrow, Walk
 from numeric.bigint import BigInt
 from numeric.fixed import int_max, int_min, low_mask, pattern_of
 from numeric.formats import FloatFormat
 
 from .pattern import expand_pattern
 
-
-def _bit(value: UInt64, bit: Int32) -> Bool:
-    return bit < 64 and (value >> UInt64(bit)) & 1 == 1
+comptime Combine = def(mut Arena, Id, Id) thin raises Interrupted -> Id
+comptime Relation = def(mut Arena, Id, Id) thin raises Interrupted -> Bool
 
 
 @fieldwise_init
@@ -28,9 +27,6 @@ struct BitSet(Copyable, Equatable, TrivialRegisterPassable):
     var width: Int32
     var root: Id
 
-    def __eq__(self, other: Self) -> Bool:
-        return self.width == other.width and self.root == other.root
-
 
 def _check_width(width: Int) raises:
     if width < 1 or width > 64:
@@ -38,17 +34,20 @@ def _check_width(width: Int) raises:
 
 
 struct SetContext(Movable):
-    """Owns the arena of its sets. Nothing is freed before the context is dropped."""
+    """Owns the arena of its sets. Nothing is freed before the context is dropped.
+
+    The arena never pauses, so its operations never raise `Interrupted`.
+    """
 
     var arena: Arena
 
     def __init__(out self):
         self.arena = Arena(never_pause, PauseStatePointer.unsafe_dangling())
 
-    def empty(mut self, width: Int) -> BitSet:
+    def empty(self, width: Int) -> BitSet:
         return BitSet(Int32(width), REJECT)
 
-    def full(mut self, width: Int) -> BitSet:
+    def full(self, width: Int) -> BitSet:
         return BitSet(Int32(width), ACCEPT)
 
     def interval_inclusive(
@@ -59,7 +58,8 @@ struct SetContext(Movable):
             return self.empty(width)
         try:
             return BitSet(
-                Int32(width), interval[_bit](self.arena, first, last, Int32(width))
+                Int32(width),
+                interval[narrow_bit](self.arena, UInt128(first), UInt128(last), Int32(width)),
             )
         except:
             abort("interval interrupted")
@@ -71,13 +71,10 @@ struct SetContext(Movable):
         return self.interval_inclusive(lo, hi - 1, width)
 
     def exactly(mut self, var values: List[UInt64], width: Int) -> BitSet:
-        sort(values)
-        var distinct = [v for i, v in enumerate(values) if i == 0 or values[i - 1] != v]
+        var members = [UInt128(v) for v in Set(values^)]
+        sort(members)
         try:
-            return BitSet(
-                Int32(width),
-                exactly_these[_bit](self.arena, distinct, Int32(width)),
-            )
+            return BitSet(Int32(width), exactly_these[narrow_bit](self.arena, members, Int32(width)))
         except:
             abort("exactly interrupted")
 
@@ -162,23 +159,26 @@ struct SetContext(Movable):
         var sign = format.sign_mask() if negative else UInt64(0)
         return self.interval_inclusive(lo | sign, (hi - 1) | sign, format.width())
 
-    def union(mut self, a: BitSet, b: BitSet) -> BitSet:
+    def _combined[op: Combine](mut self, a: BitSet, b: BitSet) -> BitSet:
         try:
-            return BitSet(a.width, union(self.arena, a.root, b.root))
+            return BitSet(a.width, op(self.arena, a.root, b.root))
         except:
-            abort("union interrupted")
+            abort("set operation interrupted")
+
+    def _related[relation: Relation](mut self, a: BitSet, b: BitSet) -> Bool:
+        try:
+            return relation(self.arena, a.root, b.root)
+        except:
+            abort("set comparison interrupted")
+
+    def union(mut self, a: BitSet, b: BitSet) -> BitSet:
+        return self._combined[union](a, b)
 
     def intersection(mut self, a: BitSet, b: BitSet) -> BitSet:
-        try:
-            return BitSet(a.width, intersection(self.arena, a.root, b.root))
-        except:
-            abort("intersection interrupted")
+        return self._combined[intersection](a, b)
 
     def difference(mut self, a: BitSet, b: BitSet) -> BitSet:
-        try:
-            return BitSet(a.width, difference(self.arena, a.root, b.root))
-        except:
-            abort("difference interrupted")
+        return self._combined[difference](a, b)
 
     def complement(mut self, a: BitSet) -> BitSet:
         try:
@@ -193,42 +193,34 @@ struct SetContext(Movable):
         return a.root == b.root
 
     def subset(mut self, a: BitSet, b: BitSet) -> Bool:
-        try:
-            return subset(self.arena, a.root, b.root)
-        except:
-            abort("subset interrupted")
+        return self._related[subset](a, b)
 
     def disjoint(mut self, a: BitSet, b: BitSet) -> Bool:
-        try:
-            return disjoint(self.arena, a.root, b.root)
-        except:
-            abort("disjoint interrupted")
+        return self._related[disjoint](a, b)
 
-    def count(self, a: BitSet) -> BigUInt:
-        return self.arena.count(a.root, a.width)
+    def count(self, a: BitSet) -> UInt128:
+        return self.arena.count_narrow(a.root, a.width)
 
     def contains(self, a: BitSet, bits: UInt64) -> Bool:
-        if a.width < 64 and (bits >> UInt64(a.width)) != 0:
-            return False
-        return accepts[_bit](self.arena, a.root, bits)
+        return bits <= low_mask(Int(a.width)) and accepts[narrow_bit](self.arena, a.root, UInt128(bits))
 
-    def nth(self, a: BitSet, n: BigUInt) -> UInt64:
+    def nth(self, a: BitSet, n: UInt64) -> UInt64:
         """The `n`-th member in increasing order (0 if `n` is not below `count(a)`)."""
-        var small = n.uint128_or_none()
-        if small is None or small.value() >= self.arena.count_narrow(a.root, a.width):
+        if UInt128(n) >= self.count(a):
             return 0
-        return UInt64(nth_narrow(self.arena, a.root, small.value()))
+        return UInt64(nth_narrow(self.arena, a.root, UInt128(n)))
 
-    def rank(self, a: BitSet, bits: UInt64) -> BigUInt:
-        """How many members are below `bits`."""
-        var value = UInt128(bits)
-        if a.width < 64:
-            value = value & ((UInt128(1) << UInt128(a.width)) - 1)
-        return BigUInt(rank_narrow(self.arena, a.root, value, a.width))
+    def rank(self, a: BitSet, bits: UInt64) -> UInt128:
+        """How many members are below `bits`, read as a `width`-bit pattern."""
+        return rank_narrow(self.arena, a.root, bits_between(UInt128(bits), low=0, high=a.width), a.width)
 
     def members(self, a: BitSet, limit: Int) raises -> List[UInt64]:
         """Every member in increasing order; raises if there are more than `limit`."""
-        var total = self.arena.count_narrow(a.root, a.width)
-        if total > UInt128(limit):
+        if self.count(a) > UInt128(limit):
             raise Error(t"the set has more than {limit} members")
-        return [UInt64(nth_narrow(self.arena, a.root, UInt128(i))) for i in range(Int(total))]
+        var walk = Walk[Narrow](a.root, a.width)
+        var members: List[UInt64] = []
+        while case .Some(run) = walk.next_run(self.arena):
+            var first = UInt64(run.first.value)
+            members.extend([first + UInt64(k) for k in range(1 << Int(run.free))])
+        return members^

@@ -1,15 +1,10 @@
 from std.testing import assert_equal, assert_true, TestSuite
 from std.time import perf_counter_ns
 
-from bigint import BigUInt
 from numeric.formats import BF16, F16, F32, F64, FloatFormat
-from sets import BitSet, SetContext
+from sets import SetContext
 
 comptime NAMES = ["nan", "inf", "zero", "subnormal", "normal", "finite", "positive", "negative"]
-
-
-def _count(c: SetContext, s: BitSet) -> UInt128:
-    return c.count(s).uint128_or_none().value()
 
 
 def _is_nan(f: FloatFormat, v: UInt64) -> Bool:
@@ -79,11 +74,11 @@ def test_f16_against_brute_force() raises:
         if _is_normal(f, v):
             n4 += 1
     assert_equal(wrong, 0)
-    assert_equal(_count(c, nan), UInt128(n0))
-    assert_equal(_count(c, inf), UInt128(n1))
-    assert_equal(_count(c, zero), UInt128(n2))
-    assert_equal(_count(c, sub), UInt128(n3))
-    assert_equal(_count(c, normal), UInt128(n4))
+    assert_equal(c.count(nan), UInt128(n0))
+    assert_equal(c.count(inf), UInt128(n1))
+    assert_equal(c.count(zero), UInt128(n2))
+    assert_equal(c.count(sub), UInt128(n3))
+    assert_equal(c.count(normal), UInt128(n4))
     assert_equal(n0, 2046)
     assert_equal(n4, 2 * 30 * 1024)
 
@@ -124,12 +119,12 @@ def test_partitions_every_format() raises:
 
 def test_counts() raises:
     var c = SetContext()
-    assert_equal(_count(c, c.float_named(F64, "normal")), UInt128(18428729675200069632))
-    assert_equal(_count(c, c.float_named(F64, "nan")), UInt128(2) * ((UInt128(1) << 52) - 1))
-    assert_equal(_count(c, c.float_named(F64, "inf")), UInt128(2))
-    assert_equal(_count(c, c.float_named(F32, "normal")), UInt128(2) * 254 * (UInt128(1) << 23))
-    assert_equal(_count(c, c.float_named(BF16, "normal")), UInt128(2) * 254 * 128)
-    assert_equal(_count(c, c.float_named(F64, "positive")), UInt128(1) << 63)
+    assert_equal(c.count(c.float_named(F64, "normal")), UInt128(18428729675200069632))
+    assert_equal(c.count(c.float_named(F64, "nan")), UInt128(2) * ((UInt128(1) << 52) - 1))
+    assert_equal(c.count(c.float_named(F64, "inf")), UInt128(2))
+    assert_equal(c.count(c.float_named(F32, "normal")), UInt128(2) * 254 * (UInt128(1) << 23))
+    assert_equal(c.count(c.float_named(BF16, "normal")), UInt128(2) * 254 * 128)
+    assert_equal(c.count(c.float_named(F64, "positive")), UInt128(1) << 63)
 
 
 def test_unknown_name() raises:
@@ -146,13 +141,13 @@ def test_magnitudes() raises:
     var c = SetContext()
     var one = UInt64(0x3C00)
     var s = c.float_magnitudes(F16, 0, one, False)
-    assert_equal(_count(c, s), UInt128(one))
+    assert_equal(c.count(s), UInt128(one))
     assert_true(c.contains(s, 0))
     assert_true(c.contains(s, one - 1))
     assert_false_(c.contains(s, one))
     assert_false_(c.contains(s, 0x8000))
     var n = c.float_magnitudes(F16, 5, 10, True)
-    assert_equal(_count(c, n), UInt128(5))
+    assert_equal(c.count(n), UInt128(5))
     assert_true(c.contains(n, 0x8005))
     assert_true(c.contains(n, 0x8009))
     assert_false_(c.contains(n, 0x800A))
