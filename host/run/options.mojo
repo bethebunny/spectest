@@ -1,6 +1,9 @@
 """The options of a run (docs/v2/host-api.md, Options)."""
 
+from mcheck.settings import Settings
 from wire.value import Value
+
+from .load import fnv
 
 
 struct RunOptions(Copyable, Movable):
@@ -8,9 +11,8 @@ struct RunOptions(Copyable, Movable):
     var max_examples: Int
     var exhaustive_limit: Int
     var store: Optional[String]
-    var inst_names: List[String]
-    var inst_types: List[String]
-    """Type arguments of a generic declaration, as the spec writes the types."""
+    var instantiation: Dict[String, String]
+    """Each type parameter of a generic declaration and its type, as the spec writes types."""
     var examples: List[Value]
     """Explicit inputs, judged before the search: each a MAP from parameter name to
     wire value."""
@@ -26,13 +28,24 @@ struct RunOptions(Copyable, Movable):
         self.max_examples = 100
         self.exhaustive_limit = 65536
         self.store = None
-        self.inst_names = List[String]()
-        self.inst_types = List[String]()
-        self.examples = List[Value]()
-        self.strength = String("dev")
+        self.instantiation = {}
+        self.examples = []
+        self.strength = "dev"
         self.aggregate_samples = 10000
         self.steps = 30
         self.max_handles = 2
 
-    def shrink_steps(self) -> Int:
-        return 20000 if self.strength == "full" else 5000
+    def settings(self, decl: String) -> Settings:
+        """The search settings of a run of `decl`, seeded by the run's seed and the name."""
+        var settings = Settings()
+        settings.seed = fnv(String(self.seed, ":", decl))
+        settings.max_examples = self.max_examples
+        settings.max_shrink_steps = 20000 if self.strength == "full" else 5000
+        return settings^
+
+    def store_key(self, spec_hash: String, clause_id: String) -> String:
+        """Where the failure store keeps a failure of the clause under this instantiation."""
+        var key = String(spec_hash, "/", clause_id)
+        for e in self.instantiation.items():
+            key += String(t"[{e.key}={e.value}]")
+        return key^

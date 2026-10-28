@@ -125,7 +125,18 @@ def test_options_default_to_the_documented_values() raises:
     assert_equal(o.exhaustive_limit, 65536)
     assert_false(o.store.__bool__())
     assert_equal(o.strength, "dev")
-    assert_true(o.shrink_steps() < RunOptions().shrink_steps() + 1)
+    assert_equal(o.settings("pkg.f").max_shrink_steps, 5000)
+    o.strength = "full"
+    assert_equal(o.settings("pkg.f").max_shrink_steps, 20000)
+    assert_equal(o.settings("pkg.f").seed, fnv("0:pkg.f"))
+
+
+def test_store_keys_name_the_instantiation() raises:
+    var o = RunOptions()
+    assert_equal(o.store_key("h", "pkg.f.c"), "h/pkg.f.c")
+    o.instantiation["T"] = "i64"
+    o.instantiation["U"] = "list<i8>"
+    assert_equal(o.store_key("h", "pkg.f.c"), "h/pkg.f.c[T=i64][U=list<i8>]")
 
 
 def test_results_convert_to_nested_maps() raises:
@@ -134,18 +145,13 @@ def test_results_convert_to_nested_maps() raises:
     var c = ClauseResult("pkg.f.c", "ensures c: true", "ensures", "pkg.f")
     c.passed = 2
     c.failed = 1
-    c.coverage_names.append("x: a")
-    c.coverage_counts.append(3)
-    c.skip_names.append("requires")
-    c.skip_counts.append(2)
+    c.coverage.append(("x: a", 3))
+    c.skips.append(("requires", 2))
     var cx = Counterexample()
-    cx.input_names.append("x")
-    cx.input_values.append("1")
+    cx.inputs.append(("x", "1"))
     cx.observation = "result = 2"
-    cx.expl_source.append("result")
-    cx.expl_value.append("2")
-    cx.part_names.append("x")
-    cx.part_classes.append("a")
+    cx.explanation.append(("result", "2"))
+    cx.partitions.append(("x", "a"))
     cx.seed = 5
     cx.reproduce = "seed=5"
     c.counterexample = cx^
@@ -154,8 +160,7 @@ def test_results_convert_to_nested_maps() raises:
     var summary = AggregateSummary()
     summary.value = "3"
     summary.bound = "4"
-    summary.worst_members.append("1")
-    summary.worst_terms.append("3")
+    summary.worst.append(("1", "3"))
     agg.aggregate = summary^
     run.clauses.append(agg^)
     var v = run.to_value()

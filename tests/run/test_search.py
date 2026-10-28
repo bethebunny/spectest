@@ -202,6 +202,18 @@ def test_a_failure_is_stored_and_replayed_first(spec, tmp_path):
     assert third.passed_all() and third.mode == "search"
 
 
+def test_the_store_keeps_each_instantiation_apart(spec, tmp_path):
+    store = str(tmp_path / "store")
+    clause = "runimpls.ident_generic_bug.same_value"
+    first = spec.run("runimpls.ident_generic_bug", instantiation={"T": "i64"}, max_examples=3000, store=store)
+    assert first.failed() == [clause]
+    # The failure stored for i64 is not replayed for i32.
+    other = spec.run("runimpls.ident_generic_bug", instantiation={"T": "i32"}, seed=99, max_examples=1, store=store)
+    assert other.passed_all() and other.mode == "search"
+    again = spec.run("runimpls.ident_generic_bug", instantiation={"T": "i64"}, seed=99, max_examples=1, store=store)
+    assert again.mode == "replay"
+
+
 def test_explicit_examples_are_judged_first_and_kept_as_given(spec):
     r = spec.run("runimpls.ident_plus_one_from_five", examples=[{"x": 9}], max_examples=1)
     cx = r.cx("runimpls.ident_plus_one_from_five.same_value")

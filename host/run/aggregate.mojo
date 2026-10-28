@@ -212,8 +212,7 @@ def run_aggregate(
         summary.skipped = skipped
         summary.total = total
         summary.sampled = sampled
-        summary.worst_members = [format_value(m) for m in worst_members]
-        summary.worst_terms = [format_value(t) for t in worst_terms]
+        summary.worst = [(format_value(m), format_value(t)) for m, t in zip(worst_members, worst_terms)]
         var holds: Bool
         var value_text: String
         if kind == .ALL:
@@ -250,8 +249,7 @@ def run_aggregate(
             result.failing_inputs = 1
             var cx = Counterexample()
             var how = String("a seeded sample of ", evaluated + skipped, " of") if sampled else String("every member of")
-            cx.input_names.append(comp.text.copy())
-            cx.input_values.append(String(how, " ", source_text(spec, iterable), " (", total, " members)"))
+            cx.inputs.append((comp.text.copy(), String(how, " ", source_text(spec, iterable), " (", total, " members)")))
             cx.observation = String(kind, " = ", value_text, ", against the bound ", summary.bound)
             cx.seed = Int(options.seed)
             cx.reproduce = String("seed=", options.seed, " decl=", spec.fns[f].decl_id, " clause=", cl.id)

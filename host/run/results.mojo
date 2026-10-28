@@ -8,19 +8,15 @@ from numeric.formats import F64
 from wire.value import Value
 
 
-struct Obj(Movable):
+struct Obj(Defaultable, Movable):
     """An ordered map under construction."""
 
     var keys: List[Value]
-    var vals: List[Value]
-
-    def __init__(out self):
-        self.keys = []
-        self.vals = []
+    var values: List[Value]
 
     def put(mut self, key: String, var value: Value):
         self.keys.append(Value.string(key))
-        self.vals.append(value^)
+        self.values.append(value^)
 
     def text(mut self, key: String, value: String):
         self.put(key, Value.string(value))
@@ -35,83 +31,62 @@ struct Obj(Movable):
         self.put(key, Value.float(F64, bitcast[DType.uint64](value)))
 
     def build(deinit self) raises -> Value:
-        return Value.map(self.keys^, self.vals^)
+        return Value.map(self.keys^, self.values^)
 
 
 def strings(items: List[String]) -> Value:
     return Value.list([Value.string(s) for s in items])
 
 
-def counted(names: List[String], counts: List[Int]) raises -> Value:
+def _texts(pairs: List[Tuple[String, String]]) raises -> Value:
     var o = Obj()
-    for name, count in zip(names, counts):
-        o.num(name, count)
+    for key, text in pairs:
+        o.text(key, text)
     return o^.build()
 
 
-def _texts(names: List[String], values: List[String]) raises -> Value:
+def _counts(pairs: List[Tuple[String, Int]]) raises -> Value:
     var o = Obj()
-    for name, value in zip(names, values):
-        o.text(name, value)
+    for key, count in pairs:
+        o.num(key, count)
     return o^.build()
 
 
-def _string_pairs(firsts: List[String], seconds: List[String]) -> Value:
-    return Value.list([Value.list([Value.string(a), Value.string(b)]) for a, b in zip(firsts, seconds)])
+def _pair_list(pairs: List[Tuple[String, String]]) -> Value:
+    return Value.list([Value.list([Value.string(a), Value.string(b)]) for a, b in pairs])
 
 
-struct Counterexample(Copyable, Movable):
-    var input_names: List[String]
-    var input_values: List[String]
+struct Counterexample(Copyable, Defaultable):
+    var inputs: List[Tuple[String, String]]
+    """Each parameter and its value."""
     var observation: String
-    var part_names: List[String]
-    var part_classes: List[String]
-    var expl_source: List[String]
-    var expl_value: List[String]
+    var partitions: List[Tuple[String, String]]
+    """Each partitioned parameter and the class of its value."""
+    var explanation: List[Tuple[String, String]]
+    """Each subexpression and its value."""
     var seed: Int
     var reproduce: String
 
-    def __init__(out self):
-        self.input_names = []
-        self.input_values = []
-        self.observation = ""
-        self.part_names = []
-        self.part_classes = []
-        self.expl_source = []
-        self.expl_value = []
-        self.seed = 0
-        self.reproduce = ""
-
     def to_value(self) raises -> Value:
         var o = Obj()
-        o.put("inputs", _texts(self.input_names, self.input_values))
+        o.put("inputs", _texts(self.inputs))
         o.text("observation", self.observation)
-        o.put("partitions", _texts(self.part_names, self.part_classes))
-        o.put("explanation", _string_pairs(self.expl_source, self.expl_value))
+        o.put("partitions", _texts(self.partitions))
+        o.put("explanation", _pair_list(self.explanation))
         o.num("seed", self.seed)
         o.text("reproduce", self.reproduce)
         return o^.build()
 
 
-struct AggregateSummary(Copyable, Movable):
+struct AggregateSummary(Copyable, Defaultable):
     var value: String
     var bound: String
     var evaluated: Int
     var skipped: Int
     var total: Int
     var sampled: Bool
-    var worst_members: List[String]
-    var worst_terms: List[String]
-
-    def __init__(out self):
-        self.value = ""
-        self.bound = ""
-        self.evaluated = 0
-        self.skipped = 0
-        self.total = 0
-        self.sampled = False
-        self.worst_members = []
-        self.worst_terms = []
+    var worst: List[Tuple[String, String]]
+    """The members with the largest terms, and their terms."""
 
     def to_value(self) raises -> Value:
         var o = Obj()
@@ -121,7 +96,7 @@ struct AggregateSummary(Copyable, Movable):
         o.num("skipped", self.skipped)
         o.num("total", self.total)
         o.flag("sampled", self.sampled)
-        o.put("worst", _string_pairs(self.worst_members, self.worst_terms))
+        o.put("worst", _pair_list(self.worst))
         return o^.build()
 
 
@@ -130,23 +105,23 @@ struct ClauseResult(Copyable, Movable):
     var clause_text: String
     var kind: String
     var decl: String
-    var instantiation_names: List[String]
-    var instantiation_types: List[String]
+    var instantiation: List[Tuple[String, String]]
+    """Each type parameter and the type the run gave it."""
     var mode: String
     var passed: Int
     var failed: Int
     var skipped: Int
     var spec_error: Int
     var inconclusive: Int
-    var coverage_names: List[String]
-    var coverage_counts: List[Int]
+    var coverage: List[Tuple[String, Int]]
+    """Each partition class, as `param: class`, and its count."""
     var counterexample: Optional[Counterexample]
     var failing_inputs: Int
     var spec_errors: List[String]
     var aggregate: Optional[AggregateSummary]
     var replayed: Bool
-    var skip_names: List[String]
-    var skip_counts: List[Int]
+    var skips: List[Tuple[String, Int]]
+    """Each skip cause and its count."""
     var duration: Float64
 
     def __init__(out self, var clause_id: String, var clause_text: String, var kind: String, var decl: String):
@@ -154,23 +129,20 @@ struct ClauseResult(Copyable, Movable):
         self.clause_text = clause_text^
         self.kind = kind^
         self.decl = decl^
-        self.instantiation_names = []
-        self.instantiation_types = []
+        self.instantiation = []
         self.mode = "hypothesis"
         self.passed = 0
         self.failed = 0
         self.skipped = 0
         self.spec_error = 0
         self.inconclusive = 0
-        self.coverage_names = []
-        self.coverage_counts = []
+        self.coverage = []
         self.counterexample = None
         self.failing_inputs = 0
         self.spec_errors = []
         self.aggregate = None
         self.replayed = False
-        self.skip_names = []
-        self.skip_counts = []
+        self.skips = []
         self.duration = 0.0
 
     def to_value(self) raises -> Value:
@@ -186,17 +158,17 @@ struct ClauseResult(Copyable, Movable):
         o.text("clause_text", self.clause_text)
         o.text("kind", self.kind)
         o.text("decl", self.decl)
-        o.put("instantiation", _texts(self.instantiation_names, self.instantiation_types))
+        o.put("instantiation", _texts(self.instantiation))
         o.text("mode", self.mode)
         o.put("counts", counts^.build())
-        o.put("coverage", counted(self.coverage_names, self.coverage_counts))
+        o.put("coverage", _counts(self.coverage))
         o.put("counterexample", self.counterexample.value().to_value() if self.counterexample is not None else Value.none())
         o.num("failing_inputs", self.failing_inputs)
         o.put("spec_errors", strings(self.spec_errors))
-        o.put("failing_examples", Value.list(List[Value]()))
+        o.put("failing_examples", Value.list([]))
         o.put("aggregate", self.aggregate.value().to_value() if self.aggregate is not None else Value.none())
         o.flag("replayed", self.replayed)
-        o.put("skips", counted(self.skip_names, self.skip_counts))
+        o.put("skips", _counts(self.skips))
         o.real("duration", self.duration)
         return o^.build()
 

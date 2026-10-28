@@ -21,13 +21,12 @@ from gen.models import is_default, is_not_drawn
 from mcheck.choices import Choices
 from mcheck.property import FAILED, PASSED, SKIPPED, Outcome, Property
 from mcheck.search import SearchResult, search
-from mcheck.settings import Settings
 from mcheck.source import Many, Source
 from syntax import ast
 from wire.value import Value
 
 from .host import RunHost
-from .load import Loaded, fnv
+from .load import Loaded
 from .options import RunOptions
 from .results import ClauseResult, Counterexample, RunResult
 from .runner import run as run_function
@@ -497,13 +496,9 @@ struct Machine(Property):
         var d = Counterexample()
         d.seed = self.seed
         for k in range(len(live)):
-            d.input_names.append(names[k].copy())
-            d.input_values.append(self.props[0].show(live[k], self.props[0].iface))
+            d.inputs.append((names[k].copy(), self.props[0].show(live[k], self.props[0].iface)))
         d.observation = String("after the last step, ", self.invs[q].id, " is false on ", names[bad])
-        var pairs = explain(spec, self.invs[q].clause, env, self.inv_host)
-        for pair in pairs:
-            d.expl_source.append(pair[0])
-            d.expl_value.append(pair[1])
+        d.explanation = explain(spec, self.invs[q].clause, env, self.inv_host)
         d.reproduce = String("seed=", self.seed, " decl=", self.name, " clause=", self.invs[q].id)
         self.invs[q].detail.present = True
         self.invs[q].detail.cx = d^
@@ -528,8 +523,8 @@ struct Machine(Property):
             d = prop.details[local].cx.copy()
             if prop.infos[local].kind != K_TYPE:
                 note = prop.vnote[local].copy()
-            if c >= self.n_ctors and len(d.input_names) > 0 and d.input_names[0] == "self":
-                d.input_values[0] = String(self.fail_receiver, " = ", d.input_values[0])
+            if c >= self.n_ctors and d.inputs and d.inputs[0][0] == "self":
+                d.inputs[0] = ("self", String(self.fail_receiver, " = ", d.inputs[0][1]))
         var steps = String("steps:")
         for k in range(len(self.log)):
             steps += String("\n", k + 1, ". ", self.log[k])
@@ -557,8 +552,7 @@ struct Machine(Property):
         for q in range(len(self.invs)):
             ref inv = self.invs[q]
             var cr = ClauseResult(inv.id.copy(), inv.text.copy(), "invariant", self.name.copy())
-            cr.instantiation_names = self.props[0].host.tnames.copy()
-            cr.instantiation_types = [loaded.spec.types.text(t) for t in self.props[0].host.tids]
+            cr.instantiation = [(name.copy(), loaded.spec.types.text(t)) for name, t in zip(self.props[0].host.tnames, self.props[0].host.tids)]
             cr.mode = "stateful"
             cr.passed = inv.tp
             cr.failed = inv.tf
@@ -570,8 +564,7 @@ struct Machine(Property):
                 cr.spec_errors.append(failure.copy())
             cr.spec_errors += inv.errors.copy()
             if inv.ts > 0:
-                cr.skip_names.append("other")
-                cr.skip_counts.append(inv.ts)
+                cr.skips.append(("other", inv.ts))
             self._finish(cr, self.inv_base + q, inv.tf, inv.replayed, found, options, elapsed)
             result.clauses.append(cr^)
 
@@ -702,13 +695,6 @@ def interface_named(loaded: Loaded, decl: String) -> Optional[Int]:
     return m if m is not None and loaded.spec.models[m.value()].is_interface else None
 
 
-def _key(loaded: Loaded, options: RunOptions, id: String) -> String:
-    var key = String(loaded.hash, "/", id)
-    for name, type in zip(options.inst_names, options.inst_types):
-        key += String("[", name, "=", type, "]")
-    return key^
-
-
 def run_interface(
     mut loaded: Loaded,
     iface: Int,
@@ -722,12 +708,8 @@ def run_interface(
     var name = loaded.spec.models[iface].name.copy()
     var result = RunResult(name.copy())
     var m = Machine(loaded, driver, iface, options)
-    var seed = fnv(String(options.seed, ":", name))
-    var settings = Settings()
-    settings.seed = seed
-    settings.max_examples = options.max_examples
+    var settings = options.settings(name)
     settings.max_choices = 1 << 20
-    settings.max_shrink_steps = options.shrink_steps()
     var n = m.gid_count()
     var found = List[Optional[Found]]()
     for _ in range(n):
@@ -737,7 +719,7 @@ def run_interface(
     try:
         if options.store is not None:
             for g in range(n):
-                var stored = load_stored(options.store.value(), _key(loaded, options, m.gid_id(g)))
+                var stored = load_stored(options.store.value(), options.store_key(loaded.hash, m.gid_id(g)))
                 if stored is None:
                     continue
                 var program = m.from_stored(stored.value())
@@ -762,7 +744,7 @@ def run_interface(
                 try:
                     save_stored(
                         options.store.value(),
-                        _key(loaded, options, m.gid_id(pr.id)),
+                        options.store_key(loaded.hash, m.gid_id(pr.id)),
                         m.stored_form(found[pr.id].value()),
                     )
                 except:

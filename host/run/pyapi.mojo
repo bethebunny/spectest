@@ -10,7 +10,6 @@ from std.python._cpython import (
 
 from bridge.capi import (
     Py_DecRef,
-    PyBool_FromLong,
     PyDict_New,
     PyDict_Next,
     PyDict_SetItemString,
@@ -23,7 +22,7 @@ from bridge.capi import (
     ob_type,
 )
 from bridge.convert import from_python, to_python
-from bridge.pyutil import Owned, checked, python_error, string_of, wire
+from bridge.pyutil import checked, python_error, string_of, wire
 from wire.value import Value
 
 from .options import RunOptions
@@ -46,7 +45,7 @@ def _int(o: PyObjectPtr, what: String) raises -> Int:
 
 
 def _items(d: PyObjectPtr) -> List[Tuple[PyObjectPtr, PyObjectPtr]]:
-    var items = List[Tuple[PyObjectPtr, PyObjectPtr]]()
+    var items: List[Tuple[PyObjectPtr, PyObjectPtr]] = []
     var pos = 0
     var key = PyObjectPtr()
     var value = PyObjectPtr()
@@ -86,8 +85,7 @@ def parse_options(o: PyObjectPtr) raises -> RunOptions:
                     if not _is_dict(value):
                         raise Error("TypeError: instantiation must be a dict")
                     for param, arg in _items(value):
-                        opts.inst_names.append(_text(param, "a type parameter name"))
-                        opts.inst_types.append(_text(arg, "a type argument"))
+                        opts.instantiation[_text(param, "a type parameter name")] = _text(arg, "a type argument")
             case "examples":
                 if not is_none:
                     if not (PyType_GetFlags(ob_type(value)) & Py_TPFLAGS_LIST_SUBCLASS):
@@ -96,12 +94,12 @@ def parse_options(o: PyObjectPtr) raises -> RunOptions:
                         var example = PyList_GetItem(value, i)
                         if not _is_dict(example):
                             raise Error("TypeError: an example must be a dict")
-                        var keys = List[Value]()
-                        var vals = List[Value]()
+                        var keys: List[Value] = []
+                        var values: List[Value] = []
                         for param, arg in _items(example):
                             keys.append(Value.string(_text(param, "a parameter name")))
-                            vals.append(from_python(arg))
-                        opts.examples.append(Value.map(keys^, vals^))
+                            values.append(from_python(arg))
+                        opts.examples.append(Value.map(keys^, values^))
             case _:
                 pass
     return opts^
@@ -110,38 +108,38 @@ def parse_options(o: PyObjectPtr) raises -> RunOptions:
 def result_to_python(v: Value) raises -> PyObjectPtr:
     """A result `Value` tree as Python: MAP with string keys as dict, LIST as list,
     an empty OPTION as None, an f64 FLOAT as float; scalars as themselves."""
-    var kind = v.kind
-    if kind == .MAP:
-        var d = checked(PyDict_New())
-        for i in range(v.count()):
-            var item: PyObjectPtr
-            try:
-                item = result_to_python(v.item(2 * i + 1))
-            except e:
-                Py_DecRef(d)
-                raise e^
-            var rc = PyDictSetItem(d, v.item(2 * i).text(), item)
-            Py_DecRef(item)
-            if rc != 0:
-                Py_DecRef(d)
-                raise python_error()
-        return d
-    if kind == .LIST:
-        var n = v.count()
-        var out = checked(PyList_New(n))
-        for i in range(n):
-            var item: PyObjectPtr
-            try:
-                item = result_to_python(v.item(i))
-            except e:
-                Py_DecRef(out)
-                raise e^
-            _ = PyList_SetItem(out, i, item)
-        return out
-    if kind == .FLOAT:
-        return checked(PyFloat_FromDouble(bitcast[DType.float64](v.float_bits())))
-    return to_python(v)
+    match v.kind:
+        case .MAP:
+            var d = checked(PyDict_New())
+            for key, value in v.pairs():
+                var item: PyObjectPtr
+                try:
+                    item = result_to_python(value)
+                except e:
+                    Py_DecRef(d)
+                    raise e^
+                var status = _set_item(d, key.text(), item)
+                Py_DecRef(item)
+                if status != 0:
+                    Py_DecRef(d)
+                    raise python_error()
+            return d
+        case .LIST:
+            var out = checked(PyList_New(v.count()))
+            for i, value in enumerate(v.items()):
+                var item: PyObjectPtr
+                try:
+                    item = result_to_python(value)
+                except e:
+                    Py_DecRef(out)
+                    raise e^
+                _ = PyList_SetItem(out, i, item)
+            return out
+        case .FLOAT:
+            return checked(PyFloat_FromDouble(bitcast[DType.float64](v.float_bits())))
+        case _:
+            return to_python(v)
 
 
-def PyDictSetItem(d: PyObjectPtr, var key: String, value: PyObjectPtr) -> Int:
+def _set_item(d: PyObjectPtr, var key: String, value: PyObjectPtr) -> Int:
     return Int(PyDict_SetItemString(d, key.as_c_string_span(), value))

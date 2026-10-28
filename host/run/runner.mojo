@@ -48,7 +48,7 @@ from wire.value import Value
 from .aggregate import run_aggregate
 from .decode import decode, describe
 from .host import TIMEOUT, RunHost
-from .load import Loaded, fnv
+from .load import Loaded
 from .options import RunOptions
 from .util import (
     N_CAUSES,
@@ -156,8 +156,7 @@ struct Prop(Property, Movable):
     """While shrinking a spec error, its shape: an example then fails when it raises that error."""
     var hit_message: String
     var hit_input: String
-    var inv_source: List[String]
-    var inv_value: List[String]
+    var inv_explanation: List[Tuple[String, String]]
     """The explanation of the invariant that failed in the current example."""
     # Per example scratch
     var vkind: List[Int]
@@ -216,9 +215,10 @@ struct Prop(Property, Movable):
         self.decl = func.decl_id.copy()
         self.tenv = []
         for tparam in func.tparams:
-            if tparam not in options.inst_names:
+            var arg = options.instantiation.get(tparam)
+            if arg is None:
                 raise Error(String(func.decl_id, " is generic: the run needs a type for ", tparam))
-            var t = parse_type(options.inst_types[options.inst_names.index(tparam)], loaded.spec.types)
+            var t = parse_type(arg.value(), loaded.spec.types)
             self.tenv.append(t)
             self.host.tnames.append(tparam)
             self.host.tids.append(t)
@@ -255,8 +255,7 @@ struct Prop(Property, Movable):
         self.target = ""
         self.hit_message = ""
         self.hit_input = ""
-        self.inv_source = []
-        self.inv_value = []
+        self.inv_explanation = []
         self.vkind = []
         self.vnote = []
         self.part_class = []
@@ -338,9 +337,6 @@ struct Prop(Property, Movable):
             var size = product_size(spec.types, self.ptypes, limit=UInt64(options.exhaustive_limit))
             if size is not None:
                 self.domain = size.value()
-
-    def keys(self) -> List[String]:
-        return [String(self.loaded[].hash, "/", info.id) for info in self.infos]
 
     # Drawing
 
@@ -956,14 +952,8 @@ struct Prop(Property, Movable):
                 self.vkind[i] = V_FAIL
                 self.vnote[i] = String(spec.clauses[c].id, " is false on ", where[q], due_notes)
                 if self.explain_all or self.focus == i:
-                    self.inv_source.clear()
-                    self.inv_value.clear()
-                    self.inv_source.append(where[q].copy())
-                    self.inv_value.append(self.show(hs[q], self._model_type(name)))
-                    var pairs = explain(spec, c, env, self.host)
-                    for pair in pairs:
-                        self.inv_source.append(pair[0])
-                        self.inv_value.append(pair[1])
+                    self.inv_explanation = [(where[q].copy(), self.show(hs[q], self._model_type(name)))]
+                    self.inv_explanation += explain(spec, c, env, self.host)
                 return
             self._unjudged(i, j, due_ids)
             return
@@ -1018,11 +1008,7 @@ struct Prop(Property, Movable):
         var d = Counterexample()
         d.seed = self.seed
         for p in range(len(args)):
-            d.input_names.append(func.params[p].name.copy())
-            if self.defaulted[p]:
-                d.input_values.append(String("default (", input_text[p], ")"))
-            else:
-                d.input_values.append(input_text[p].copy())
+            d.inputs.append((func.params[p].name.copy(), String("default (", input_text[p], ")") if self.defaulted[p] else input_text[p].copy()))
         # What the call did.
         var obs = String()
         if raised:
@@ -1067,26 +1053,18 @@ struct Prop(Property, Movable):
         d.observation = obs^
         for p in range(len(self.part_class)):
             if self.part_class[p] >= 0:
-                d.part_names.append(func.params[func.partitions[p].param].name.copy())
-                d.part_classes.append(func.partitions[p].classes[self.part_class[p]].name.copy())
+                d.partitions.append((func.params[func.partitions[p].param].name.copy(), func.partitions[p].classes[self.part_class[p]].name.copy()))
         var kind = self.infos[i].kind
         if kind == K_COND:
-            var pairs = explain(spec, self.infos[i].clause, env, self.host)
-            for q in pairs:
-                d.expl_source.append(q[0])
-                d.expl_value.append(q[1])
+            d.explanation = explain(spec, self.infos[i].clause, env, self.host)
         elif kind == K_INVARIANT:
-            d.expl_source = self.inv_source.copy()
-            d.expl_value = self.inv_value.copy()
+            d.explanation = self.inv_explanation.copy()
         elif kind == K_RAISES or kind == K_ANY_RAISES:
             for k in range(len(self.cond_clauses)):
                 ref cl = spec.clauses[self.cond_clauses[k]]
-                d.expl_source.append(String(cl.kind, " ", cl.error, " when ", source_text(spec, cl.expr) if cl.expr != 0 else String("true")))
-                d.expl_value.append(String("true") if conds[k] == 1 else (String("false") if conds[k] == 0 else String("error: ", cond_msg[k])))
-            d.expl_source.append("errors that must be raised (R)")
-            d.expl_value.append(names_text(must))
-            d.expl_source.append("errors that may be raised (M)")
-            d.expl_value.append(names_text(may))
+                d.explanation.append((String(cl.kind, " ", cl.error, " when ", source_text(spec, cl.expr) if cl.expr != 0 else String("true")), String("true") if conds[k] == 1 else (String("false") if conds[k] == 0 else String("error: ", cond_msg[k]))))
+            d.explanation.append(("errors that must be raised (R)", names_text(must)))
+            d.explanation.append(("errors that may be raised (M)", names_text(may)))
         d.reproduce = String("seed=", self.seed, " decl=", self.decl, " clause=", self.infos[i].id)
         self.details[i].present = True
         self.details[i].cx = d^
@@ -1096,8 +1074,7 @@ struct Prop(Property, Movable):
         """The counts of clause `i`; the caller adds the counterexample and the duration."""
         ref info = self.infos[i]
         var result = ClauseResult(info.id.copy(), info.text.copy(), info.label.copy(), self.decl.copy())
-        result.instantiation_names = self.host.tnames.copy()
-        result.instantiation_types = [self.loaded[].spec.types.text(t) for t in self.host.tids]
+        result.instantiation = [(name.copy(), self.loaded[].spec.types.text(t)) for name, t in zip(self.host.tnames, self.host.tids)]
         result.mode = mode
         result.passed = self.tp[i]
         result.failed = self.tf[i]
@@ -1108,15 +1085,13 @@ struct Prop(Property, Movable):
             result.spec_error += 1
             result.spec_errors.append(failure.copy())
         var slots = len(self.cov_names)
-        result.coverage_names = self.cov_names.copy()
-        result.coverage_counts = [self.cov[i * slots + s] for s in range(slots)]
+        result.coverage = [(self.cov_names[s].copy(), self.cov[i * slots + s]) for s in range(slots)]
         for q in range(N_CAUSES):
             var count = self.causes[i * N_CAUSES + q]
             count += self.req_skips if q == cause_index("requires") else 0
             count += self.unrep_skips if q == cause_index("unrepresentable") else 0
             if count > 0:
-                result.skip_names.append(cause_name(q))
-                result.skip_counts.append(count)
+                result.skips.append((cause_name(q), count))
         for k in range(len(self.se_pid)):
             if self.se_pid[k] == i:
                 result.spec_errors.append(String(self.se_msg[k], "\nexample: ", self.se_input[k]))
@@ -1259,11 +1234,8 @@ def run(
     var f = _declaration(loaded.spec, decl)
     var prop = Prop(loaded, driver, f, options)
     var result = RunResult(prop.decl.copy())
-    var seed = fnv(String(options.seed, ":", prop.decl))
-    var settings = Settings()
-    settings.seed = seed
-    settings.max_examples = options.max_examples
-    settings.max_shrink_steps = options.shrink_steps()
+    var settings = options.settings(prop.decl)
+    var seed = settings.seed
     prop.seed = Int(options.seed)
     var n = len(prop.infos)
     var res = SearchResult()
@@ -1280,7 +1252,7 @@ def run(
         else:
             if options.store is not None:
                 settings.store_dir = options.store.value()
-                settings.keys = prop.keys()
+                settings.keys = [options.store_key(loaded.hash, info.id) for info in prop.infos]
             res = search(prop, settings)
         # The shrunk failures, replayed once to show what happened.
         for k in range(len(res.properties)):
