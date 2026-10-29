@@ -110,10 +110,10 @@ and a Python driver that calls the code under test. v1, the pure-Python engine b
 ## Install
 
 ```
-pip install spectest
+pip install pytest-spectest
 ```
 
-0.0.1 is an early release. It has wheels for Linux on x86-64 (glibc 2.35 or later) and
+The package installs as `pytest-spectest` and imports as `spectest`. 0.0.1 is an early release. It has wheels for Linux on x86-64 (glibc 2.35 or later) and
 needs Python 3.12 or later. The wheel depends on mojo-compiler for the Mojo runtime
 libraries.
 

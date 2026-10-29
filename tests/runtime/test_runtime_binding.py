@@ -1089,7 +1089,7 @@ def test_impl_lookup(spec):
 
 
 def test_public_package_exports():
-    assert spectest.__version__ == metadata.version("spectest")
+    assert spectest.__version__ == metadata.version("pytest-spectest")
     assert spectest.conformance is conformance
     assert spectest.ModelBinding is ModelBinding and spectest.InterfaceBinding is InterfaceBinding
     assert spectest.Conformance is Conformance and spectest.Unrepresentable is Unrepresentable

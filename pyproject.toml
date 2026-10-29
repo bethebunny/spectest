@@ -1,5 +1,5 @@
 [project]
-name = "spectest"
+name = "pytest-spectest"
 version = "0.0.1"
 description = "A formal specification language and the tooling to test implementations against specs"
 readme = "README.md"
