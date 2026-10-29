@@ -80,17 +80,17 @@ def _undecided(j: Judgment) -> Bool:
 __enum Check(Equatable, ImplicitlyCopyable):
     """How the property judges a clause."""
 
-    case CONDITION
+    case Condition
     """An ensures or relates clause."""
-    case RAISES
-    case MODIFIES
-    case TYPE
+    case Raises
+    case Modifies
+    case Type
     """The built-in `#type`."""
-    case ANY_RAISES
+    case AnyRaises
     """The built-in `#raises`."""
-    case FRAME
+    case Frame
     """The built-in `#frame`."""
-    case INVARIANT
+    case Invariant
     """An invariant of a model the call returns or modifies."""
 
     def __eq__(self, other: Self) -> Bool:
@@ -141,28 +141,28 @@ def _plan(spec: Spec, f: Int, param_types: List[Int], result_type: Int, *, state
             case .REQUIRES:
                 plan.requires.append(c)
             case .ENSURES | .RELATES:
-                plan.infos.append(ClauseInfo(.CONDITION, c, cl.id.copy(), source_text(spec, cl.node), String(cl.kind), -1))
+                plan.infos.append(ClauseInfo(.Condition, c, cl.id.copy(), source_text(spec, cl.node), String(cl.kind), -1))
                 if cl.expr != 0 and old_calls(spec, cl.expr):
                     plan.old_clauses.append(c)
             case .RAISES:
-                plan.infos.append(ClauseInfo(.RAISES, c, cl.id.copy(), source_text(spec, cl.node), "raises", -1))
+                plan.infos.append(ClauseInfo(.Raises, c, cl.id.copy(), source_text(spec, cl.node), "raises", -1))
                 plan.conditions.append(c)
             case .MAY_RAISE:
                 plan.conditions.append(c)
             case .MODIFIES:
                 modifies = True
                 plan.modified += cl.names.copy()
-                plan.infos.append(ClauseInfo(.MODIFIES, c, cl.id.copy(), source_text(spec, cl.node), "modifies", -1))
+                plan.infos.append(ClauseInfo(.Modifies, c, cl.id.copy(), source_text(spec, cl.node), "modifies", -1))
             case _:
                 pass
     var decl = func.decl_id
-    plan.infos.append(ClauseInfo(.TYPE, -1, decl + "#type", String("built-in: the result of ", func.name, " reads as ", spec.types.text(result_type)), "type", -1))
-    plan.infos.append(ClauseInfo(.ANY_RAISES, -1, decl + "#raises", String("built-in: ", func.name, " raises only what a raises or may_raise admits"), "raises", -1))
+    plan.infos.append(ClauseInfo(.Type, -1, decl + "#type", String("built-in: the result of ", func.name, " reads as ", spec.types.text(result_type)), "type", -1))
+    plan.infos.append(ClauseInfo(.AnyRaises, -1, decl + "#raises", String("built-in: ", func.name, " raises only what a raises or may_raise admits"), "raises", -1))
     var handles = [i for i, t in enumerate(param_types) if is_handle(spec.types, t)]
     plan.checked = [i for i in handles if func.params[i].name not in plan.modified]
     if (handles or (stateful and func.receiver)) and not modifies:
         var names = "every live object" if stateful else ", ".join([func.params[i].name for i in plan.checked])
-        plan.infos.append(ClauseInfo(.FRAME, -1, decl + "#frame", String("built-in: ", func.name, " leaves ", names, " unchanged (no modifies clause)"), "frame", -1))
+        plan.infos.append(ClauseInfo(.Frame, -1, decl + "#frame", String("built-in: ", func.name, " leaves ", names, " unchanged (no modifies clause)"), "frame", -1))
     # Invariants of the models the function returns or modifies; an interface's are
     # judged after every step instead.
     if not stateful:
@@ -170,7 +170,7 @@ def _plan(spec: Spec, f: Int, param_types: List[Int], result_type: Int, *, state
             for c in spec.models[m].clauses:
                 ref cl = spec.clauses[c]
                 if cl.kind == .INVARIANT:
-                    plan.infos.append(ClauseInfo(.INVARIANT, c, decl + ":" + cl.id, source_text(spec, cl.node), "invariant", m))
+                    plan.infos.append(ClauseInfo(.Invariant, c, decl + ":" + cl.id, source_text(spec, cl.node), "invariant", m))
     plan.result_has_model = type_has_model(spec.types, result_type)
     for part in func.partitions:
         plan.coverage_starts.append(len(plan.coverage_names))
@@ -712,23 +712,23 @@ struct Prop[D: Driver](Movable, Property):
         var check = self.plan.infos[i].check
         var clause = self.plan.infos[i].clause
         match check:
-            case .CONDITION:
+            case .Condition:
                 if call.raised:
                     return .SKIP(.RAISED)
                 if call.type_error is not None:
                     return .SKIP(.WRONG_TYPE)
                 return self._condition(clause, env, call)
-            case .RAISES:
+            case .Raises:
                 return self._raises(clause, call)
-            case .ANY_RAISES:
+            case .AnyRaises:
                 return self._any_raises(call)
-            case .TYPE:
+            case .Type:
                 return self._type_verdict(call)
-            case .MODIFIES | .FRAME:
+            case .Modifies | .Frame:
                 if changes is None:
                     changes = self._changes(args, frame)
                 return self._frame_verdict(changes.value())
-            case .INVARIANT:
+            case .Invariant:
                 return self._invariant(i, clause, self.plan.infos[i].model, args, call)
 
     def _error(mut self, message: String) -> Verdict:
@@ -905,11 +905,11 @@ struct Prop[D: Driver](Movable, Property):
             else:
                 observation += afters
         match check:
-            case .CONDITION | .INVARIANT:
+            case .Condition | .Invariant:
                 for line in call.due_notes.split("\n"):
                     if line.startswith("note: "):
                         observation += "\n" + String(line)
-            case .MODIFIES | .FRAME:
+            case .Modifies | .Frame:
                 if self.stateful:
                     for name in changed:
                         for k in range(min(len(self.live), len(self.live_before))):
@@ -929,11 +929,11 @@ struct Prop[D: Driver](Movable, Property):
                 ref part = func.partitions[p]
                 d.partitions.append((func.params[part.param].name.copy(), part.classes[k].name.copy()))
         match check:
-            case .CONDITION:
+            case .Condition:
                 d.explanation = explain(spec, self.plan.infos[i].clause, env, self.host)
-            case .INVARIANT:
+            case .Invariant:
                 d.explanation = self.invariant_explanation.copy()
-            case .RAISES | .ANY_RAISES:
+            case .Raises | .AnyRaises:
                 for c, j in zip(self.plan.conditions, call.conditions):
                     ref cl = spec.clauses[c]
                     var when = source_text(spec, cl.expr) if cl.expr != 0 else String("true")

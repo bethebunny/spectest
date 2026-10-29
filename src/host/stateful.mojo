@@ -463,7 +463,7 @@ struct Machine[D: Driver](Property):
             if prop.details[local] is None:
                 return
             d = prop.details[local].value().copy()
-            if prop.plan.infos[local].check != .TYPE:
+            if prop.plan.infos[local].check != .Type:
                 note = prop.verdicts[local].note()
             if c >= self.constructors and d.inputs and d.inputs[0][0] == "self":
                 d.inputs[0] = ("self", String(self.fail_receiver, " = ", d.inputs[0][1]))
