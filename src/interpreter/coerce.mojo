@@ -101,7 +101,7 @@ def has_real(types: ty.Types, t: Int) -> Bool:
 
 
 def fit(types: ty.Types, v: Value, t: Int) -> Value:
-    """`v` with integers where `t` expects a `real` made REAL."""
+    """`v` with integers where `t` expects a `real` made Real."""
     var k = types.kind(t)
     if k == .Real:
         return to_real_kind(v)
@@ -122,7 +122,7 @@ def fit(types: ty.Types, v: Value, t: Int) -> Value:
                     [fit(types, value, info.args[1]) for value in v.values()],
                 )
             except:
-                # Keys made REAL can collide, eg. the int 1 and the real 1.
+                # Keys made Real can collide, eg. the int 1 and the real 1.
                 return v.copy()
         case _:
             return v.copy()

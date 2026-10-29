@@ -108,8 +108,8 @@ def parse_options(o: PyObjectPtr) raises -> RunOptions:
 
 
 def result_to_python(v: Value) raises -> PyObjectPtr:
-    """A result `Value` tree as Python: MAP with string keys as dict, LIST as list,
-    an empty OPTION as None, an f64 FLOAT as float; scalars as themselves."""
+    """A result `Value` tree as Python: Map with string keys as dict, List as list,
+    an empty Option as None, an f64 Float as float; scalars as themselves."""
     match v.kind:
         case .Map:
             var d = checked(PyDict_New())

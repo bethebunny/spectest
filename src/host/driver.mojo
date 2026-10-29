@@ -12,7 +12,7 @@ trait Driver:
         ...
 
     def call(mut self, target: Int, args: List[Value]) raises -> Value:
-        """Calls a target. An exception the call raised comes back as an ERROR Value."""
+        """Calls a target. An exception the call raised comes back as an Error Value."""
         ...
 
     def get(mut self, target: Int) raises -> Value:

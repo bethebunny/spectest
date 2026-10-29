@@ -118,7 +118,7 @@ struct Var(Copyable):
     var name: String
     var type: Int
     var node: Int
-    """A class's CLASS node, or the LET or COMPREHENSION that binds a local; else 0."""
+    """A class's Class node, or the Let or Comprehension that binds a local; else 0."""
 
 
 def _position(vars: List[Var], name: StringSlice) -> Int:
@@ -322,7 +322,7 @@ struct Checker:
         return self.spec.ast.nodes[n].children.copy()
 
     def call_args(self, call: Int) -> List[Int]:
-        """The ARG nodes of a CALL."""
+        """The Arg nodes of a Call."""
         return List(self.spec.ast.nodes[call].children[2:])
 
     def line_of(self, n: Int) -> Int:

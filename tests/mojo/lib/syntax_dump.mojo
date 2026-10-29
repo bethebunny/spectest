@@ -1,7 +1,7 @@
 """A one-line text form of the tree: `(kind op "text" child child ...)`.
 
 The op is left out when it is `NO_OP` and the text when it is empty. An absent part
-(`EMPTY`) is `_`. Example: `(binary + (name "x") (num "1"))`.
+(`Empty`) is `_`. Example: `(binary + (name "x") (num "1"))`.
 """
 
 from spec.ast import Ast, NIL

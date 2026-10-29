@@ -13,7 +13,7 @@ trait EvalHost:
         ...
 
     def call_fn(mut self, function: Int, args: List[Value]) raises -> Value:
-        """A planned call of Spec.fns[function]. A library error comes back as an ERROR value."""
+        """A planned call of Spec.fns[function]. A library error comes back as an Error value."""
         ...
 
     def constant(mut self, index: Int) raises -> Value:

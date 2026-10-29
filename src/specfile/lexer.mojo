@@ -3,7 +3,7 @@
 Blocks are indentation-based. A logical line starts at the beginning of a physical
 line outside brackets. A line whose first word is a block opener (`fn`, `new`,
 `method`, `model`, `interface`, `partition`, followed by a name) opens a block when
-the next line is indented deeper: the lexer emits INDENT, and DEDENT when the
+the next line is indented deeper: the lexer emits Indent, and Dedent when the
 indentation returns. Following lines indented deeper than any other line continue
 it. Newlines inside `()`, `[]` and `{}` are ignored, as are blank and comment-only
 lines. `perf` takes the rest of its line raw.
@@ -55,7 +55,7 @@ def syntax_error(path: String, span: Span, message: String) -> Error:
 
 
 def tokens(text: StringSpan, path: String) raises -> List[Token]:
-    """Tokens of a spec source, with NEWLINE, INDENT and DEDENT from the layout rule."""
+    """Tokens of a spec source, with Newline, Indent and Dedent from the layout rule."""
     var lexer = _Lexer(text, path)
     var start = 0
     for number, line in enumerate(text.split("\n"), start=1):
@@ -150,7 +150,7 @@ struct _LogicalLine(TrivialRegisterPassable):
     var perf: Bool
     """It is a `perf` clause, whose continuation lines are raw text."""
     var end: Span
-    """Where its NEWLINE goes: after its last token."""
+    """Where its Newline goes: after its last token."""
 
 
 struct _Lexer[origin: ImmOrigin]:
@@ -217,7 +217,7 @@ struct _Lexer[origin: ImmOrigin]:
         self.logical.value().end = after
 
     def layout(mut self, kind: TokenKind, at: Span):
-        """Appends a NEWLINE, INDENT, DEDENT or EOF, which stand for no text."""
+        """Appends a Newline, Indent, Dedent or Eof, which stand for no text."""
         self.tokens.append(Token(kind, "\n" if kind == .Newline else "", at, at.column))
 
     def dedent(mut self, indent: Int, at: Span):
@@ -279,7 +279,7 @@ struct _Lexer[origin: ImmOrigin]:
             self.scan(i)
 
     def finished(mut self) raises -> List[Token]:
-        """The tokens, ended by the last NEWLINE, a DEDENT per open block and EOF."""
+        """The tokens, ended by the last Newline, a Dedent per open block and Eof."""
         if case [*_, bracket] = self.brackets:
             raise self.error_at(bracket.span, t"'{chr(bracket.open)}' is never closed")
         if self.logical is not None:
@@ -293,7 +293,7 @@ struct _Lexer[origin: ImmOrigin]:
         return tokens^
 
     def scan_perf(mut self, start: Int):
-        """The rest of the line as one PERF token, blanks stripped."""
+        """The rest of the line as one Perf token, blanks stripped."""
         var left = self.rest_of_line(start).lstrip(_SPACES)
         var a = self.line.end - left.byte_length()
         var b = a + left.rstrip(_SPACES).byte_length()

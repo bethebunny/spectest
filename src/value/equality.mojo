@@ -5,7 +5,7 @@ sits anywhere inside either operand, because the checker keeps such `==` out of 
 `same` is bit-identical equality on every kind. Maps and records compare without
 regard to the order of their pairs in both.
 
-An INT and a REAL are equal under `canonical_eq` when the real is a whole number of
+An Int and a Real are equal under `canonical_eq` when the real is a whole number of
 the int's value, so promotion never changes the answer.
 """
 

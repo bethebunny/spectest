@@ -59,7 +59,7 @@ struct Env(Movable):
 @fieldwise_init
 struct Local(Copyable):
     var node: Int
-    """The LET or COMPREHENSION that binds it."""
+    """The Let or Comprehension that binds it."""
     var value: Value
 
 

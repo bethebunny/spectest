@@ -115,7 +115,7 @@ struct RunHost[D: Driver](Builder, EvalHost):
         return target
 
     def call(mut self, f: Int, args: List[Value]) raises -> Value:
-        """Calls Spec.fns[f]; a library error comes back as an ERROR value."""
+        """Calls Spec.fns[f]; a library error comes back as an Error value."""
         return self._reply(self.client[].call(self.fn_target(f), args))
 
     # Builder

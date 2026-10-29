@@ -48,7 +48,7 @@ def is_number(v: Value) -> Bool:
 
 
 def real_of(v: Value) raises -> Real:
-    """An INT, REAL or FLOAT as an extended real. Promoting a NaN is an error."""
+    """An Int, Real or Float as an extended real. Promoting a NaN is an error."""
     match v.kind:
         case .Int | .Real:
             return v.as_real()
@@ -62,17 +62,17 @@ def real_of(v: Value) raises -> Real:
 
 
 def promote(v: Value) raises -> Value:
-    """A FLOAT as the REAL it denotes; INT and REAL unchanged."""
+    """A Float as the Real it denotes; Int and Real unchanged."""
     return real_value(real_of(v)) if v.kind == .Float else v.copy()
 
 
 def to_real_kind(v: Value) -> Value:
-    """An INT as the REAL of the same value; every other value unchanged."""
+    """An Int as the Real of the same value; every other value unchanged."""
     return Value.real(v.as_bigint(), BigInt(1)) if v.kind == .Int else v.copy()
 
 
 def integer_of(v: Value) -> Optional[BigInt]:
-    """An INT, or a REAL that is a whole number, as an integer."""
+    """An Int, or a Real that is a whole number, as an integer."""
     if v.kind == .Int:
         return v.as_bigint()
     if v.kind == .Real and v.item(1).as_bigint() == 1:
@@ -88,7 +88,7 @@ def _integer(v: Value, what: String) raises -> BigInt:
 
 
 def _index(v: Value, what: String) raises -> Int:
-    """An INT index, or -1 for one too large for an Int, which no sequence has."""
+    """An Int index, or -1 for one too large for an Int, which no sequence has."""
     if v.kind != .Int:
         raise Error(t"{what} must be an integer, but it is {show(v)}")
     return v.small_int().or_else(-1)
@@ -147,8 +147,8 @@ def _bitwise(a: BigInt, b: BigInt, op: Op) -> BigInt:
 
 
 def arith(op: Op, a: Value, b: Value) raises -> Value:
-    """`+ - * / // % ** << >> & |` on numbers. INT with INT stays INT; any REAL or
-    FLOAT operand gives a REAL."""
+    """`+ - * / // % ** << >> & |` on numbers. Int with Int stays Int; any Real or
+    Float operand gives a Real."""
     match op:
         case .FLOORDIV | .MOD:
             var x = _integer(a, String(t"the left operand of {op}"))

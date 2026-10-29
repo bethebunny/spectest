@@ -1,8 +1,8 @@
 """Conversion between `Value` and wire objects (the Python form of wire values, see
 docs/v2/protocol.md).
 
-Untyped: a wire object becomes the Value of its own kind, `None` an empty OPTION, and
-`Converted(cls, v)` the Value of `v` (the class is dropped). A present OPTION goes to
+Untyped: a wire object becomes the Value of its own kind, `None` an empty Option, and
+`Converted(cls, v)` the Value of `v` (the class is dropped). A present Option goes to
 Python unwrapped.
 """
 

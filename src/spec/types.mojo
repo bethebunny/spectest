@@ -1,7 +1,7 @@
 """Static types of the spec language, interned in a table.
 
 A type is an `Int`, its index in `Types`. Constructors intern, so two types are the
-same type exactly when their ids are equal. Id 0 is `ANY`, the placeholder for a type
+same type exactly when their ids are equal. Id 0 is `Any`, the placeholder for a type
 that could not be inferred; the checker reports an error wherever it would decide
 something.
 
@@ -9,22 +9,22 @@ something.
 
 | kind      | bits / signed            | name              | args                       | names                 |
 | --------- | ------------------------ | ----------------- | -------------------------- | --------------------- |
-| FIXED_INT | width (8..64), signed    |                   |                            |                       |
-| FLOAT     | bits = format id (1..4)  |                   |                            |                       |
-| LIST      |                          |                   | [elem]                     |                       |
-| MAP       |                          |                   | [key, value]               |                       |
-| TUPLE     |                          |                   | elems                      |                       |
-| OPTION    |                          |                   | [elem]                     |                       |
-| SET       |                          |                   | [elem]                     |                       |
-| LITERAL   |                          |                   |                            | the strings, in order |
-| ENUM      |                          | qualified name    |                            | members               |
-| RECORD    |                          | qualified name    | field types                | field names           |
-| MODEL     | signed = is an interface | qualified name    | type arguments             |                       |
-| TYPEVAR   |                          | name              |                            | [bound] or []         |
-| FN        |                          |                   | params, then the result    | parameter names       |
-| CHOICE    |                          |                   | [type of the constants]    | the constants' names  |
+| FixedInt  | width (8..64), signed    |                   |                            |                       |
+| Float     | bits = format id (1..4)  |                   |                            |                       |
+| List      |                          |                   | [elem]                     |                       |
+| Map       |                          |                   | [key, value]               |                       |
+| Tuple     |                          |                   | elems                      |                       |
+| Option    |                          |                   | [elem]                     |                       |
+| Set       |                          |                   | [elem]                     |                       |
+| Literal   |                          |                   |                            | the strings, in order |
+| Enum      |                          | qualified name    |                            | members               |
+| Record    |                          | qualified name    | field types                | field names           |
+| Model     | signed = is an interface | qualified name    | type arguments             |                       |
+| TypeVar   |                          | name              |                            | [bound] or []         |
+| Fn        |                          |                   | params, then the result    | parameter names       |
+| Choice    |                          |                   | [type of the constants]    | the constants' names  |
 
-ENUM, RECORD and MODEL are nominal: interned by name, so declare each once.
+Enum, Record and Model are nominal: interned by name, so declare each once.
 """
 
 from std.hash import Hasher
@@ -32,7 +32,7 @@ from std.hash import Hasher
 from value.float_formats import FORMATS, FloatFormat
 
 comptime ANY_TYPE = 0
-"""The id of ANY."""
+"""The id of Any."""
 
 comptime _KIND_NAMES: Array[StaticString, 22] = [
     "any", "bool", "int", "fixed_int", "float", "real", "string", "bytes", "unit", "qerr",
@@ -247,7 +247,7 @@ struct Types(Movable):
         return self.infos[t]
 
     def format(self, t: Int) -> FloatFormat:
-        """The format of a FLOAT type."""
+        """The format of a Float type."""
         return materialize[FORMATS]()[self.infos[t].bits - 1]
 
     def text(self, t: Int) -> String:

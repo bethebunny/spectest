@@ -1,6 +1,6 @@
 """The language's `Ord` on `Value`.
 
-Integers of every width and reals compare by value, an INT against a REAL
+Integers of every width and reals compare by value, an Int against a Real
 mathematically with -inf and +inf at the ends. `false < true`. Strings compare by code
 point, which is the byte order of their UTF-8; bytes by unsigned byte. Tuples and
 lists compare lexicographically, a proper prefix first. Every other kind raises.

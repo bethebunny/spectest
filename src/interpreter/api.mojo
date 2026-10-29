@@ -186,7 +186,7 @@ def class_holds[
     H: EvalHost
 ](spec: Spec, class_node: Int, value: Value, mut host: H) raises -> Bool:
     """Is `value`, a value of the partitioned parameter, in the partition class at
-    `class_node` (a CLASS node)?"""
+    `class_node` (a Class node)?"""
     for func in spec.fns:
         for part in func.partitions:
             for c, cls in enumerate(part.classes):

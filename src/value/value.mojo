@@ -13,27 +13,27 @@ Layout by kind:
 
 | kind     | word                  | heap                                            |
 | -------- | --------------------- | ----------------------------------------------- |
-| BOOL     | 0 or 1                | none                                            |
-| INT      | the value, if it fits | `big` when it doesn't fit an Int64              |
+| Bool     | 0 or 1                | none                                            |
+| Int      | the value, if it fits | `big` when it doesn't fit an Int64              |
 |          | an Int64              |                                                 |
-| FLOAT    | bit pattern           | none; `sub` is the format id (float_formats)    |
-| STRING   |                       | `text`                                          |
-| BYTES    |                       | `data`                                          |
-| LIST     |                       | `items`                                         |
-| TUPLE    |                       | `items`                                         |
-| MAP      |                       | `items`: key, value, key, value... in order     |
-| OPTION   |                       | `items`: empty for none, one item for some      |
-| RECORD   |                       | `name`: qualified type; `items`: STRING field   |
+| Float    | bit pattern           | none; `sub` is the format id (float_formats)    |
+| String   |                       | `text`                                          |
+| Bytes    |                       | `data`                                          |
+| List     |                       | `items`                                         |
+| Tuple    |                       | `items`                                         |
+| Map      |                       | `items`: key, value, key, value... in order     |
+| Option   |                       | `items`: empty for none, one item for some      |
+| Record   |                       | `name`: qualified type; `items`: String field   |
 |          |                       | name, value, field name, value...               |
-| ENUM     |                       | `name`: qualified type ("" for a literal union) |
+| Enum     |                       | `name`: qualified type ("" for a literal union) |
 |          |                       | `text`: the member                              |
-| HANDLE   | the driver's id       | `name`: the object's qualified class            |
-| ERROR    |                       | `name`: qualified class; `text`: message;       |
-|          |                       | `items`: STRING bases, nearest first            |
-| REAL     |                       | `items`: INT numerator, INT denominator. The    |
+| Handle   | the driver's id       | `name`: the object's qualified class            |
+| Error    |                       | `name`: qualified class; `text`: message;       |
+|          |                       | `items`: String bases, nearest first            |
+| Real     |                       | `items`: Int numerator, Int denominator. The    |
 |          |                       | fraction is in lowest terms with a positive     |
 |          |                       | denominator; +inf and -inf are 1/0 and -1/0     |
-| QERR     |                       | `items`: INT steps, INT nans                    |
+| Qerr     |                       | `items`: Int steps, Int nans                    |
 
 A value with no heap part has `heap` empty. Constructors keep every form canonical, so
 structural identity is never fooled by two spellings of one value.
@@ -48,7 +48,7 @@ from value.real import Real
 
 
 __enum Kind(Equatable, Hashable, ImplicitlyCopyable, Writable):
-    """What a value is. `INVALID` is no value: it marks a slot, eg. an argument left to
+    """What a value is. `Invalid` is no value: it marks a slot, eg. an argument left to
     its default."""
 
     case Invalid
@@ -83,7 +83,7 @@ __enum Kind(Equatable, Hashable, ImplicitlyCopyable, Writable):
         writer.write(materialize[NAMES]()[Int(self._get_enum_discriminant())])
 
     def holds_pairs(self) -> Bool:
-        """MAP and RECORD items are key and value (or field name and value) pairs."""
+        """Map and Record items are key and value (or field name and value) pairs."""
         return self in [Kind.Map, Kind.Record]
 
 
@@ -104,7 +104,7 @@ struct Payload(Movable):
 struct Value(Copyable, Equatable, Hashable, Movable, Writable):
     var kind: Kind
     var sub: UInt8
-    """FLOAT: the format id. Otherwise 0."""
+    """Float: the format id. Otherwise 0."""
     var word: UInt64
     var heap: Optional[ArcPointer[Payload]]
 
@@ -230,19 +230,19 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
         return self.word != 0
 
     def small_int(self) -> Optional[Int]:
-        """INT: the value when it fits an Int64, else None."""
+        """Int: the value when it fits an Int64, else None."""
         if self.heap is not None:
             return None
         return Int(bitcast[DType.int64](self.word))
 
     def as_bigint(self) -> BigInt:
-        """INT: the value, at any size."""
+        """Int: the value, at any size."""
         if self.heap is not None:
             return self.heap.value()[].big.copy()
         return BigInt(Int(bitcast[DType.int64](self.word)))
 
     def as_real(self) -> Real:
-        """INT or REAL: the value as a `Real`."""
+        """Int or Real: the value as a `Real`."""
         if self.kind == .Int:
             return Real(self.as_bigint())
         return Real(
@@ -263,32 +263,32 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
         return self.word
 
     def name(self) -> ref [self.heap.value()[].name] String:
-        """RECORD, ENUM, HANDLE, ERROR: the qualified type or class."""
+        """Record, Enum, Handle, Error: the qualified type or class."""
         return self.heap.value()[].name
 
     def text(self) -> ref [self.heap.value()[].text] String:
-        """STRING: the string. ENUM: the member. ERROR: the message."""
+        """String: the string. Enum: the member. Error: the message."""
         return self.heap.value()[].text
 
     def data(self) -> ref [self.heap.value()[].data] List[UInt8]:
-        """BYTES: the bytes."""
+        """Bytes: the bytes."""
         return self.heap.value()[].data
 
     def error_text(self) -> String:
-        """ERROR: `Class: message`."""
+        """Error: `Class: message`."""
         return String(self.name(), ": ", self.text())
 
     def item(self, i: Int) -> Value:
-        """Item `i` in the layout of the table above (a MAP or RECORD has keys or field
+        """Item `i` in the layout of the table above (a Map or Record has keys or field
         names at even positions and values at odd ones). A copy costs a reference count."""
         return self.heap.value()[].items[i][].copy()
 
     def items(self) -> List[Value]:
-        """Every heap item, counting MAP and RECORD pairs as two each."""
+        """Every heap item, counting Map and Record pairs as two each."""
         return [item[].copy() for item in self.heap.value()[].items] if self.heap is not None else []
 
     def pairs(self) -> List[Tuple[Value, Value]]:
-        """MAP: (key, value) pairs. RECORD: (field name, value) pairs."""
+        """Map: (key, value) pairs. Record: (field name, value) pairs."""
         return [(self.item(i), self.item(i + 1)) for i in range(0, self.item_count(), 2)]
 
     def keys(self) -> List[Value]:
@@ -300,18 +300,18 @@ struct Value(Copyable, Equatable, Hashable, Movable, Writable):
         return [self.item(2 * i + 1) for i in range(self.count())]
 
     def field(self, name: StringSlice) -> Optional[Value]:
-        """RECORD: the value of the field `name`, if it has one."""
+        """Record: the value of the field `name`, if it has one."""
         for field_name, value in self.pairs():
             if field_name.text() == name:
                 return value.copy()
         return None
 
     def item_count(self) -> Int:
-        """How many heap items, counting MAP and RECORD pairs as two each."""
+        """How many heap items, counting Map and Record pairs as two each."""
         return len(self.heap.value()[].items) if self.heap is not None else 0
 
     def count(self) -> Int:
-        """How many elements, or pairs for MAP and fields for RECORD."""
+        """How many elements, or pairs for Map and fields for Record."""
         return self.item_count() // 2 if self.kind.holds_pairs() else self.item_count()
 
     # Structural identity

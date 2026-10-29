@@ -24,7 +24,7 @@ def float_of(v: Value, who: String) raises -> FloatFormat:
 
 
 def real_of(v: Value, who: String) raises -> Real:
-    """An INT, REAL or FLOAT as an extended real. A NaN raises."""
+    """An Int, Real or Float as an extended real. A NaN raises."""
     match v.kind:
         case .Int | .Real:
             return v.as_real()

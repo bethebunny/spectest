@@ -64,7 +64,7 @@ struct TypeParams(Copyable):
 
 
 def type_params(mut c: Checker, tparams: Int) -> TypeParams:
-    """The type parameters of a TPARAMS node."""
+    """The type parameters of a TypeParams node."""
     var out = TypeParams([], [])
     for tp in c.children(tparams):
         var name = c.text_of(tp)

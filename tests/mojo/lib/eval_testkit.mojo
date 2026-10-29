@@ -185,7 +185,7 @@ def bytes_of(text: String) -> Value:
 
 
 def real_v(n: Int, d: Int = 1) -> Value:
-    """The REAL n/d, in lowest terms with a positive denominator (d may be 0 for the
+    """The Real n/d, in lowest terms with a positive denominator (d may be 0 for the
     infinities: n is then 1 or -1)."""
     return Value.real(BigInt(n), BigInt(d))
 

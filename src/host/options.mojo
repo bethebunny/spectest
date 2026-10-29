@@ -14,7 +14,7 @@ struct RunOptions(Copyable, Movable):
     var instantiation: Dict[String, String]
     """Each type parameter of a generic declaration and its type, as the spec writes types."""
     var examples: List[Value]
-    """Explicit inputs, judged before the search: each a MAP from parameter name to
+    """Explicit inputs, judged before the search: each a Map from parameter name to
     wire value."""
     var strength: String
     var aggregate_samples: Int

@@ -23,14 +23,14 @@ comptime _RESOLUTION_NAMES: Array[StaticString, 18] = [
 
 
 __enum ResolutionKind(Equatable, ImplicitlyCopyable, Intable, Writable):
-    """What a NAME, ATTR or CALL node refers to. Writes as its lowercase name.
+    """What a Name, Attribute or Call node refers to. Writes as its lowercase name.
 
     By kind, what it is, and its Resolution's `index`, `owner` and `name`:
       - Param: a parameter; index its position in the enclosing callable's params
       - Result: the return value, or in a constructor the new handle
       - Receiver: `self`, the receiver of a method, or the model's handle inside its own
         invariants
-      - Local: a `let` or comprehension variable; index the LET or COMPREHENSION node
+      - Local: a `let` or comprehension variable; index the Let or Comprehension node
       - Field: a bare zero-argument observer inside a model's own clauses; index the
         observer's position, owner the model's
       - Prelude: a system prelude function; index its id in prelude.names
@@ -44,7 +44,7 @@ __enum ResolutionKind(Equatable, ImplicitlyCopyable, Intable, Writable):
         model's
       - RecordField: `r.f` on a record; index the field's position, owner the record type
       - Old: `old(e)`
-      - Class: an earlier partition class; index the CLASS node
+      - Class: an earlier partition class; index the Class node
       - EnumMember: `Color.Red` or a bare member; index the member's position, owner the
         enum type
       - Const: a declared library constant; index its position in Spec.consts
@@ -165,7 +165,7 @@ struct Fn(Copyable):
     var decl_id: String
     """The prefix of its clause ids: `cos`, `Deque.pop`."""
     var kind: NodeKind
-    """FN, CTOR or METHOD (node kinds of spec.ast)."""
+    """Fn, Ctor or Method (node kinds of spec.ast)."""
     var node: Int
     var owner: Int
     """Position in Spec.models of the enclosing interface, or of the model a qualified
@@ -177,7 +177,7 @@ struct Fn(Copyable):
     var receiver: Bool
     """Whether params[0] is `self`."""
     var result: Int
-    """The return type; UNIT when the function returns nothing."""
+    """The return type; Unit when the function returns nothing."""
     var partitions: List[Partition]
     var clauses: List[Int]
     """Positions in Spec.clauses."""
@@ -244,7 +244,7 @@ struct Spec(Movable):
     var node_types: List[Int]
     """The type of each expression node, by node id; ANY_TYPE for other nodes."""
     var resolutions: Dict[Int, Resolution]
-    """What each NAME, ATTR and CALL node that names something refers to."""
+    """What each Name, Attribute and Call node that names something refers to."""
 
     def __init__(out self, var name: String, var ast: Ast, var types: Types):
         self.name = name^

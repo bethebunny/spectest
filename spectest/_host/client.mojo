@@ -22,7 +22,7 @@ from .pyutil import (
 
 
 struct DriverClient(Driver, Movable):
-    """Wraps the driver object. A wire `Error` that comes back is an ERROR Value; a
+    """Wraps the driver object. A wire `Error` that comes back is an Error Value; a
     Python exception that escapes a driver method raises a Mojo error naming its type
     and message."""
 

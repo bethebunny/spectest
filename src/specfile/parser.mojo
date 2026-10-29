@@ -72,7 +72,7 @@ struct Parser:
         return self.current().kind
 
     def peek(self, k: Int) -> ref [self.tokens[0]] Token:
-        """The token `k` ahead, or EOF past the end."""
+        """The token `k` ahead, or Eof past the end."""
         return self.tokens[min(self.pos + k, len(self.tokens) - 1)]
 
     def skip(mut self):

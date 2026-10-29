@@ -28,7 +28,7 @@ struct Elem(Equatable, ImplicitlyCopyable):
     """A fixed-width element type: bool, a fixed integer or a float."""
 
     var kind: ty.TypeKind
-    """BOOL, FIXED_INT or FLOAT."""
+    """Bool, FixedInt or Float."""
     var width: Int
     var signed: Bool
     var format: FloatFormat
@@ -124,7 +124,7 @@ def describe(ast: Ast, e: Int) -> String:
 
 
 def positional_args(ast: Ast, call: Int) -> Optional[List[Int]]:
-    """The argument values of a CALL node (`[callee, TYPEARGS, ARG...]`), or None when
+    """The argument values of a Call node (`[callee, TypeArgs, Arg...]`), or None when
     an argument is named."""
     var args = ast.nodes[call].children[2:]
     if any([ast.nodes[arg].text != "" for arg in args]):

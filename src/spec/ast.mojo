@@ -1,6 +1,6 @@
 """Syntax tree of spec files and user preludes, stored flat.
 
-Every node lives in `Ast.nodes` and is named by its index. Node 0 is `EMPTY`, which
+Every node lives in `Ast.nodes` and is named by its index. Node 0 is `Empty`, which
 stands for any absent optional part, so a node's children have fixed positions. A node
 has a kind, an `op` (an operator, clause kind, comprehension kind or bool), a span, a
 `text`, its children's indices and the index of its file.
@@ -8,70 +8,70 @@ has a kind, an `op` (an operator, clause kind, comprehension kind or bool), a sp
 Children by kind (`[...]` lists children in order; `text` is the node's text):
 
 Files
-  FILE            text spec name; [decl...]
-  PRELUDE_FILE    [decl...]: DEF and USE only
+  File            text spec name; [decl...]
+  PreludeFile     [decl...]: Def and Use only
 
 Declarations
-  USE             text path
-  PRELUDE         text path (`prelude "x.prelude"` attaches a user prelude)
-  ERROR           text qualified name
-  CONST           text qualified name; [type]
-  ENUM            text name; [NAME member...]
-  RECORD          text name; [PARAM field...]
-  ALIAS           text name; [type]
-  MODEL           text qualified name; [TPARAMS, member...]; members are OBSERVE, BUILD,
-                  CLAUSE
-  INTERFACE       text qualified name; [TPARAMS, member...]; members are OBSERVE, CTOR,
-                  METHOD, CLAUSE
-  FN              text qualified name; [TPARAMS, PARAMS, return type or EMPTY, body...];
-                  body items are PARTITION and CLAUSE
-  CTOR            text name; layout of FN
-  METHOD          text name; layout of FN, PARAMS starting with `self`
-  DEF             text name; [TPARAMS, PARAMS, return type, body expr]
+  Use             text path
+  Prelude         text path (`prelude "x.prelude"` attaches a user prelude)
+  Error           text qualified name
+  Const           text qualified name; [type]
+  Enum            text name; [Name member...]
+  Record          text name; [Param field...]
+  Alias           text name; [type]
+  Model           text qualified name; [TypeParams, member...]; members are Observe, Build,
+                  Clause
+  Interface       text qualified name; [TypeParams, member...]; members are Observe, Ctor,
+                  Method, Clause
+  Fn              text qualified name; [TypeParams, Params, return type or Empty, body...];
+                  body items are Partition and Clause
+  Ctor            text name; layout of Fn
+  Method          text name; layout of Fn, Params starting with `self`
+  Def             text name; [TypeParams, Params, return type, body expr]
 
 Members and parts
-  OBSERVE         text name; [PARAMS or EMPTY, type, expr or EMPTY]
-  BUILD           text qualified callable; [PARAMS]
-  PARTITION       text parameter name; [CLASS...]
-  CLASS           text class name; [expr]
-  CLAUSE          op clause kind; text label or ""; children by kind:
+  Observe         text name; [Params or Empty, type, expr or Empty]
+  Build           text qualified callable; [Params]
+  Partition       text parameter name; [Class...]
+  Class           text class name; [expr]
+  Clause          op clause kind; text label or ""; children by kind:
                     REQUIRES ENSURES RELATES INVARIANT AGGREGATE   [expr]
-                    RAISES                                         [QNAME error, expr]
-                    MAY_RAISE                                      [QNAME error, expr or EMPTY]
-                    MODIFIES                                       [NAME...]
-                    UNSPECIFIED IMPL_DEFINED                       [NAME]
-                    PERF                                           [STR the rest of the line]
-  PARAMS          [PARAM...]
-  PARAM           text name; [type or EMPTY, default expr or EMPTY]; `self` has no type
-  TPARAMS         [TPARAM...]
-  TPARAM          text name; [QNAME bound] or []
-  QNAME           text dotted name
+                    RAISES                                         [QualifiedName error, expr]
+                    MAY_RAISE                                      [QualifiedName error, expr or Empty]
+                    MODIFIES                                       [Name...]
+                    UNSPECIFIED IMPL_DEFINED                       [Name]
+                    PERF                                           [String the rest of the line]
+  Params          [Param...]
+  Param           text name; [type or Empty, default expr or Empty]; `self` has no type
+  TypeParams      [TypeParam...]
+  TypeParam       text name; [QualifiedName bound] or []
+  QualifiedName   text dotted name
 
 Types
-  TYPE            text (qualified) name; [type argument...]
-  TUPLE_TYPE      [element type...], at least two
-  CHOICE_TYPE     [STR or QNAME...]: `"any" | "all"`, `pkg.a | pkg.b`, or one STR
+  Type            text (qualified) name; [type argument...]
+  TupleType       [element type...], at least two
+  ChoiceType      [String or QualifiedName...]: `"any" | "all"`, `pkg.a | pkg.b`, or one String
 
 Expressions
-  NUM             text the literal as written
-  STR             text the decoded string
-  BOOL            op TRUE or FALSE
-  NONE
-  NAME            text identifier
-  UNARY           op NEG or NOT; [operand]
-  BINARY          op; [left, right]
-  IF              [condition, then, else]
-  LET             text variable; [value, body]
-  COMPREHENSION   op ALL EXISTS COUNT SUM MAX MAP FILTER; text variable;
+  Number          text the literal as written
+  String          text the decoded string
+  Bool            op TRUE or FALSE
+  NoneLiteral
+  Name            text identifier
+  Unary           op NEG or NOT; [operand]
+  Binary          op; [left, right]
+  If              [condition, then, else]
+  Let             text variable; [value, body]
+  Comprehension   op ALL EXISTS COUNT SUM MAX MAP FILTER; text variable;
                   [iterable, body]
-  CALL            [callee, TYPEARGS, ARG...]
-  TYPEARGS        [type...], empty unless `name<T>(...)`
-  ARG             text keyword or ""; [expr]
-  ATTR            text attribute; [value]
-  TUPLE_INDEX     text digits; [value]
-  INDEX           [value, index]
-  SLICE           [value, start, stop]
-  LIST SET TUPLE  [element...]
+  Call            [callee, TypeArgs, Arg...]
+  TypeArgs        [type...], empty unless `name<T>(...)`
+  Arg             text keyword or ""; [expr]
+  Attribute       text attribute; [value]
+  TupleIndex      text digits; [value]
+  Index           [value, index]
+  Slice           [value, start, stop]
+  List Set Tuple  [element...]
 """
 
 
@@ -101,7 +101,7 @@ struct Span(Equatable, TrivialRegisterPassable, Writable):
 comptime NO_SPAN = Span(start=0, end=0, line=0, column=0)
 
 comptime NIL = 0
-"""The index of the EMPTY node."""
+"""The index of the Empty node."""
 
 comptime _KIND_NAMES: Array[StaticString, 49] = [
     "empty", "file", "prelude_file", "use", "prelude", "error", "const", "enum", "record",
@@ -281,7 +281,7 @@ struct File(Copyable):
     var start: Int
     """Where its text starts in `Ast.source`."""
     var root: Int
-    """Its FILE or PRELUDE_FILE node, or NIL until the parser sets it."""
+    """Its File or PreludeFile node, or NIL until the parser sets it."""
 
     def __init__(out self, var path: String, *, start: Int, root: Int):
         self.path = path^
@@ -302,7 +302,7 @@ struct Ast(Movable):
         self.files = [File(path^, start=0, root=NIL)]
 
     def root(self) -> Int:
-        """The first file's FILE or PRELUDE_FILE node."""
+        """The first file's File or PreludeFile node."""
         return self.files[0].root
 
     def add(
@@ -339,7 +339,7 @@ struct Ast(Movable):
         return self.files[self.nodes[id].file].path.copy()
 
     def kind_of_file(self, id: Int) -> NodeKind:
-        """FILE or PRELUDE_FILE, for the file a node is in."""
+        """File or PreludeFile, for the file a node is in."""
         return self.nodes[self.files[self.nodes[id].file].root].kind
 
     def location(self, id: Int) -> String:
