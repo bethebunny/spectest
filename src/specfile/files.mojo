@@ -66,7 +66,7 @@ def _is_prelude(ast: Ast, file: Int) -> Bool:
 
 
 def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
-    w.visits[file] = .ON_PATH
+    w.visits[file] = .OnPath
     w.stack.append(file)
     for d in ast.nodes[ast.files[file].root].children.copy():
         var kind = ast.nodes[d].kind
@@ -85,8 +85,8 @@ def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
                 continue
             target = parse_into(ast, text, key)
             w.keys.append(key^)
-            w.visits.append(.UNSEEN)
-        elif w.visits[target] == .ON_PATH:
+            w.visits.append(.Unseen)
+        elif w.visits[target] == .OnPath:
             var cycle = cycle_text([ast.files[f].path.copy() for f in w.stack[w.stack.index(target) :]])
             w.diags.append(ast.diagnostic(d, t"{word} cycle: {cycle}"))
             continue
@@ -97,11 +97,11 @@ def _visit(mut w: _Walk, mut ast: Ast, files: Files, file: Int) raises:
             else:
                 w.diags.append(ast.diagnostic(d, t"{name} is a prelude file, not a spec: attach it with prelude"))
             continue
-        if w.visits[target] == .UNSEEN:
+        if w.visits[target] == .Unseen:
             w.order.append(target)
             _visit(w, ast, files, target)
     _ = w.stack.pop()
-    w.visits[file] = .DONE
+    w.visits[file] = .Done
 
 
 def resolve_files(mut ast: Ast, files: Files, mut diags: List[Diagnostic]) raises -> List[Int]:
@@ -111,7 +111,7 @@ def resolve_files(mut ast: Ast, files: Files, mut diags: List[Diagnostic]) raise
     `diags`. Raises on a syntax error in a loaded file."""
     var w = _Walk()
     w.keys.append(normalize(ast.files[0].path))
-    w.visits.append(.UNSEEN)
+    w.visits.append(.Unseen)
     w.order.append(0)
     _visit(w, ast, files, 0)
     diags.extend(w.diags.copy())

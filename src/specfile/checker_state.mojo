@@ -23,9 +23,9 @@ comptime FLOAT_SETS: Array[StaticString, 9] = [
 __enum Visit(Equatable, ImplicitlyCopyable):
     """Where a depth-first walk is with a node."""
 
-    case UNSEEN
-    case ON_PATH
-    case DONE
+    case Unseen
+    case OnPath
+    case Done
 
     def __eq__(self, other: Self) -> Bool:
         return self._get_enum_discriminant() == other._get_enum_discriminant()

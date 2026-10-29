@@ -857,22 +857,22 @@ def check_def(mut c: Checker, d: Int):
 
 def check_def_cycles(mut c: Checker):
     """Definitions may not call themselves, directly or through others."""
-    var visits = List[Visit](length=len(c.spec.defs), fill=.UNSEEN)
+    var visits = List[Visit](length=len(c.spec.defs), fill=.Unseen)
     var reported = List[Bool](length=len(c.spec.defs), fill=False)
     for d in range(len(c.spec.defs)):
-        if visits[d] == .UNSEEN:
+        if visits[d] == .Unseen:
             var path: List[Int] = []
             _visit_def(c, d, visits, path, reported)
 
 
 def _visit_def(mut c: Checker, d: Int, mut visits: List[Visit], mut path: List[Int], mut reported: List[Bool]):
     """Reports each cycle through `d` once, at the definition it returns to."""
-    visits[d] = .ON_PATH
+    visits[d] = .OnPath
     path.append(d)
     for callee in c.def_calls[d].copy():
-        if visits[callee] == .UNSEEN:
+        if visits[callee] == .Unseen:
             _visit_def(c, callee, visits, path, reported)
-        elif visits[callee] == .ON_PATH and not reported[callee]:
+        elif visits[callee] == .OnPath and not reported[callee]:
             reported[callee] = True
             var start = path.try_index(callee).value()
             var at = c.spec.defs[callee].node
@@ -883,7 +883,7 @@ def _visit_def(mut c: Checker, d: Int, mut visits: List[Visit], mut path: List[I
                 var cycle = cycle_text([c.spec.defs[p].name.copy() for p in path[start:]])
                 c.error(at, t"definitions cannot call each other in a cycle: {cycle}")
     _ = path.pop()
-    visits[d] = .DONE
+    visits[d] = .Done
 
 
 # -- the whole file ------------------------------------------------------------------
