@@ -178,9 +178,9 @@ __enum FloatEq(Equatable, ImplicitlyCopyable):
     """How `eq` compares floats: `float="bits"`, `"ieee"` or `"nan_any"` (bits, with
     every NaN equal)."""
 
-    case BITS
-    case IEEE
-    case NAN_ANY
+    case Bits
+    case Ieee
+    case NanAny
 
     def __eq__(self, other: Self) -> Bool:
         return self._get_enum_discriminant() == other._get_enum_discriminant()
@@ -202,14 +202,14 @@ def _keyword_text(value: Value) -> String:
 def float_eq(name: Optional[Value]) raises -> FloatEq:
     """The comparison `float=` names; bits when there is no `float=`."""
     if name is None:
-        return .BITS
+        return .Bits
     match _keyword_text(name.value()):
         case "bits":
-            return .BITS
+            return .Bits
         case "ieee":
-            return .IEEE
+            return .Ieee
         case "nan_any":
-            return .NAN_ANY
+            return .NanAny
         case _:
             raise fail("eq", t"float= must be one of bits, ieee, nan_any, got {name.value()}")
 
@@ -260,11 +260,11 @@ def _equal_floats(a: Value, b: Value, floats: FloatEq) raises -> Bool:
     if f != b.float_format():
         return False
     match floats:
-        case .BITS:
+        case .Bits:
             return a.float_bits() == b.float_bits()
-        case .IEEE:
+        case .Ieee:
             return ieee_equal(a, b)
-        case .NAN_ANY:
+        case .NanAny:
             var a_nan = is_nan(f, a.float_bits())
             var b_nan = is_nan(f, b.float_bits())
             if a_nan or b_nan:
