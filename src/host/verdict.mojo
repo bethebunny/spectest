@@ -38,25 +38,25 @@ __enum Verdict(ImplicitlyCopyable):
     """What judging a clause on one example gave. A failure carries what failed, and a
     spec error its message."""
 
-    case PASS
-    case FAIL(String)
-    case SKIP(Cause)
-    case ERROR(String)
-    case TIMEOUT
+    case Pass
+    case Fail(String)
+    case Skip(Cause)
+    case Error(String)
+    case Timeout
     """A call ran past its time limit, so the example judged nothing."""
 
     def failed(self) -> Bool:
         match self:
-            case .FAIL(_):
+            case .Fail(_):
                 return True
             case _:
                 return False
 
     def note(self) -> String:
         match self:
-            case .FAIL(note):
+            case .Fail(note):
                 return note
-            case .ERROR(message):
+            case .Error(message):
                 return message
             case _:
                 return ""
@@ -64,9 +64,9 @@ __enum Verdict(ImplicitlyCopyable):
     def outcome(self) -> mcheck.Verdict:
         """For mcheck: a skip, a spec error and a timeout neither pass nor fail."""
         match self:
-            case .PASS:
+            case .Pass:
                 return mcheck.PASSED
-            case .FAIL(_):
+            case .Fail(_):
                 return mcheck.FAILED
             case _:
                 return mcheck.SKIPPED
@@ -99,17 +99,17 @@ struct Tally(Copyable):
 
     def count(mut self, verdict: Verdict, *, is_replay: Bool):
         match verdict:
-            case .PASS:
+            case .Pass:
                 self.passed += 1
-            case .FAIL(_):
+            case .Fail(_):
                 self.replayed = self.replayed or (is_replay and self.failed == 0)
                 self.failed += 1
-            case .SKIP(cause):
+            case .Skip(cause):
                 self.skipped += 1
                 self.causes[cause.index()] += 1
-            case .ERROR(_):
+            case .Error(_):
                 self.spec_error += 1
-            case .TIMEOUT:
+            case .Timeout:
                 self.inconclusive += 1
 
     def fill(self, mut result: ClauseResult, var counterexample: Optional[Counterexample], failure: String):

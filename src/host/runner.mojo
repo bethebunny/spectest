@@ -348,7 +348,7 @@ struct Prop[D: Driver](Movable, Property):
         self.details = [None for _ in range(n)]
         self.target = None
         self.hit = None
-        self.verdicts = [Verdict.PASS for _ in range(n)]
+        self.verdicts = [Verdict.Pass for _ in range(n)]
         self.classes = [-1 for _ in func.partitions]
         self.defaulted = [False for _ in func.params]
         self.invariant_explanation = []
@@ -442,7 +442,7 @@ struct Prop[D: Driver](Movable, Property):
             return out^
         for i in range(len(self.verdicts)):
             var verdict = self.verdicts[i]
-            if case .ERROR(message) = verdict:
+            if case .Error(message) = verdict:
                 if error_shape(message) == self.target.value():
                     self.hit = SpecError(i, message, self._inputs_text(shown), Choices())
                     return Outcome.single(0, FAILED)
@@ -464,13 +464,13 @@ struct Prop[D: Driver](Movable, Property):
     def _skip_all(mut self, cause: Cause):
         """Counts a skip of every clause, for an example that judged none."""
         for ref tally in self.tallies:
-            tally.count(.SKIP(cause), is_replay=False)
+            tally.count(.Skip(cause), is_replay=False)
 
     def _spec_error_all(mut self, message: String, counting: Bool, args: List[Value]) -> Outcome:
         if self.host.take_timeout():
             return self._inconclusive_all(counting, args)
         for ref verdict in self.verdicts:
-            verdict = .ERROR(message)
+            verdict = .Error(message)
         if counting:
             self._tally(args, False)
         return self._outcome()
@@ -480,7 +480,7 @@ struct Prop[D: Driver](Movable, Property):
         self.timed_out = True
         _ = self.host.take_timeout()
         for ref verdict in self.verdicts:
-            verdict = .TIMEOUT
+            verdict = .Timeout
         if counting:
             self._tally(args, False)
         return self._outcome()
@@ -575,7 +575,7 @@ struct Prop[D: Driver](Movable, Property):
         self.timed_out = False
         self.last = None
         for ref verdict in self.verdicts:
-            verdict = .PASS
+            verdict = .Pass
         self.defaulted = [is_default(a) for a in args]
         for i in range(len(args)):
             if self.defaulted[i]:
@@ -714,9 +714,9 @@ struct Prop[D: Driver](Movable, Property):
         match check:
             case .Condition:
                 if call.raised:
-                    return .SKIP(.Raised)
+                    return .Skip(.Raised)
                 if call.type_error is not None:
-                    return .SKIP(.WrongType)
+                    return .Skip(.WrongType)
                 return self._condition(clause, env, call)
             case .Raises:
                 return self._raises(clause, call)
@@ -734,24 +734,24 @@ struct Prop[D: Driver](Movable, Property):
     def _error(mut self, message: String) -> Verdict:
         """A spec error, or nothing judged when a call ran past its time limit."""
         if self.host.take_timeout():
-            return .TIMEOUT
-        return .ERROR(message)
+            return .Timeout
+        return .Error(message)
 
     def _unjudged(mut self, j: Judgment, call: Call) -> Verdict:
         """A clause that is neither true nor false: skipped when a planned call or a due raise explains it."""
         if j.is_skip():
-            return .SKIP(.PlannedCall)
+            return .Skip(.PlannedCall)
         if call.raise_due():
-            return .SKIP(.RaiseDue)
+            return .Skip(.RaiseDue)
         return self._error(j.located_message(self.loaded[].spec))
 
     def _condition(mut self, c: Int, env: Env, call: Call) -> Verdict:
         ref spec = self.loaded[].spec
         var j = judge(spec, c, env, self.host)
         if j.is_true():
-            return .PASS
+            return .Pass
         if j.is_false():
-            return .FAIL(String(spec.clauses[c].id, " is false", call.due_notes))
+            return .Fail(String(spec.clauses[c].id, " is false", call.due_notes))
         return self._unjudged(j, call)
 
     def _raises(mut self, c: Int, call: Call) raises -> Verdict:
@@ -763,39 +763,39 @@ struct Prop[D: Driver](Movable, Property):
         var when = source_text(spec, cl.expr) if cl.expr != 0 else String("always")
         if j.is_true():
             if call.raised and contains_name(call.must, call.mapped):
-                return .PASS
+                return .Pass
             var did = String("raised ", call.reply.error_text()) if call.raised else String("returned")
-            return .FAIL(String(cl.error, " was due (", when, " holds), but the call ", did))
+            return .Fail(String(cl.error, " was due (", when, " holds), but the call ", did))
         if call.must:
-            return .SKIP(.RaiseDue)
+            return .Skip(.RaiseDue)
         if call.raised and call.mapped == cl.error and not contains_name(call.may, call.mapped):
-            return .FAIL(String("the call raised ", cl.error, " although ", when, " is false"))
-        return .PASS
+            return .Fail(String("the call raised ", cl.error, " although ", when, " is false"))
+        return .Pass
 
     def _any_raises(mut self, call: Call) -> Verdict:
         if not call.raised:
-            return .PASS
+            return .Pass
         if call.mapped == "":
-            return .FAIL(String("no raises or may_raise admits ", call.reply.error_text()))
+            return .Fail(String("no raises or may_raise admits ", call.reply.error_text()))
         if contains_name(call.must, call.mapped) or contains_name(call.may, call.mapped):
-            return .PASS
+            return .Pass
         ref spec = self.loaded[].spec
         if any([spec.clauses[c].kind == .RAISES and spec.clauses[c].error == call.mapped for c in self.plan.conditions]):
-            return .PASS
+            return .Pass
         for c, j in zip(self.plan.conditions, call.conditions):
             ref cl = spec.clauses[c]
             if cl.kind == .MAY_RAISE and cl.error == call.mapped and _undecided(j):
                 return self._error(String(cl.id, ": ", j.located_message(spec)))
-        return .FAIL(String("no raises or may_raise admits ", call.mapped, " here"))
+        return .Fail(String("no raises or may_raise admits ", call.mapped, " here"))
 
     def _type_verdict(mut self, call: Call) -> Verdict:
         ref spec = self.loaded[].spec
         if call.raised:
-            return .SKIP(.Raised)
+            return .Skip(.Raised)
         if call.type_error is not None:
-            return .FAIL(String("the result is not ", spec.types.text(self.result_type), ": ", call.type_error.value()))
+            return .Fail(String("the result is not ", spec.types.text(self.result_type), ": ", call.type_error.value()))
         if not self.plan.result_has_model:
-            return .PASS
+            return .Pass
         var models: List[String] = []
         collect_models(spec.types, self.result_type, models)
         for name in models:
@@ -809,19 +809,19 @@ struct Prop[D: Driver](Movable, Property):
                     except e:
                         var text = String(e)
                         if "NotAValue" in text:
-                            return .FAIL(String("the result is not ", spec.types.text(self.result_type), ": ", text))
+                            return .Fail(String("the result is not ", spec.types.text(self.result_type), ": ", text))
                         return self._error(String("reading the result: ", text))
-        return .PASS
+        return .Pass
 
     def _frame_verdict(mut self, changes: Changes) -> Verdict:
         if changes.error is not None:
             return self._error(String("digest: ", changes.error.value()))
         if not changes.names:
-            return .PASS
+            return .Pass
         var allowed = ", ".join(self.plan.modified)
         if self.stateful:
             allowed = String("self (", self.receiver, ")") if "self" in self.plan.modified else String()
-        return .FAIL(String("the call changed ", ", ".join(changes.names), ", but it may modify only ", allowed if allowed else String("nothing")))
+        return .Fail(String("the call changed ", ", ".join(changes.names), ", but it may modify only ", allowed if allowed else String("nothing")))
 
     def _invariant(mut self, i: Int, c: Int, model: Int, args: List[Value], call: Call) -> Verdict:
         """Judges an invariant on the handles of its model the call returned or modified."""
@@ -837,7 +837,7 @@ struct Prop[D: Driver](Movable, Property):
                 for handle in handles_of(spec.types, args[p], self.param_types[p], name):
                     handles.append((handle.copy(), param.name.copy()))
         if not handles:
-            return .SKIP(.Other)
+            return .Skip(.Other)
         for handle, where in handles:
             var env = Env()
             env.set_self(handle.copy())
@@ -850,8 +850,8 @@ struct Prop[D: Driver](Movable, Property):
             if self.explain_all or self.focus == i:
                 self.invariant_explanation = [(where.copy(), self.show(handle, spec.models[model].type))]
                 self.invariant_explanation += explain(spec, c, env, self.host)
-            return .FAIL(String(spec.clauses[c].id, " is false on ", where, call.due_notes))
-        return .PASS
+            return .Fail(String(spec.clauses[c].id, " is false on ", where, call.due_notes))
+        return .Pass
 
     def _tally(mut self, args: List[Value], is_replay: Bool):
         var covered = [self.plan.coverage_starts[p] + k for p, k in enumerate(self.classes) if k >= 0]
@@ -859,10 +859,10 @@ struct Prop[D: Driver](Movable, Property):
             var verdict = self.verdicts[i]
             self.tallies[i].count(verdict, is_replay=is_replay)
             match verdict:
-                case .PASS | .FAIL(_):
+                case .Pass | .Fail(_):
                     for slot in covered:
                         self.tallies[i].coverage[slot] += 1
-                case .ERROR(message):
+                case .Error(message):
                     self._note_spec_error(i, message, args)
                 case _:
                     pass

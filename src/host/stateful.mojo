@@ -311,9 +311,9 @@ struct Machine[D: Driver](Property):
 
     def _note(mut self, slot: Int, verdict: Verdict):
         match verdict:
-            case .FAIL(_):
+            case .Fail(_):
                 self.outcomes[slot] = FAILED
-            case .PASS:
+            case .Pass:
                 if self.outcomes[slot] != FAILED:
                     self.outcomes[slot] = PASSED
             case _:
@@ -403,7 +403,7 @@ struct Machine[D: Driver](Property):
             if counting:
                 ref invariant = self.invariants[q]
                 invariant.tally.count(verdict, is_replay=is_replay)
-                if case .ERROR(message) = verdict:
+                if case .Error(message) = verdict:
                     if message not in invariant.errors and len(invariant.errors) < KEPT_SPEC_ERRORS:
                         invariant.errors.append(message)
             stop = stop or (verdict.failed() and focus == slot)
@@ -411,7 +411,7 @@ struct Machine[D: Driver](Property):
 
     def _invariant(mut self, q: Int, live: List[Live], capture: Bool) -> Verdict:
         if not live:
-            return .SKIP(.Other)
+            return .Skip(.Other)
         ref spec = self.loaded[].spec
         var c = self.invariants[q].clause
         self.invariant_host.begin_example([])
@@ -425,14 +425,14 @@ struct Machine[D: Driver](Property):
             if j.is_false():
                 if capture:
                     self._capture_invariant(q, live, k, env)
-                return .FAIL(String(self.invariants[q].id, " is false on ", live[k].name))
+                return .Fail(String(self.invariants[q].id, " is false on ", live[k].name))
             if j.is_skip():
-                return .SKIP(.Other)
+                return .Skip(.Other)
             var message = j.located_message(spec)
             if self.invariant_host.take_timeout():
-                return .TIMEOUT
-            return .ERROR(message)
-        return .PASS
+                return .Timeout
+            return .Error(message)
+        return .Pass
 
     def _capture_invariant(mut self, q: Int, live: List[Live], bad: Int, env: Env):
         var d = Counterexample()
