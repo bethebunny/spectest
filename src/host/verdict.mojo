@@ -19,13 +19,13 @@ comptime CAUSE_NAMES: Array[StaticString, CAUSE_COUNT] = [
 __enum Cause(ImplicitlyCopyable, Writable):
     """Why a clause was skipped on an example."""
 
-    case REQUIRES
-    case RAISED
-    case RAISE_DUE
-    case WRONG_TYPE
-    case UNREPRESENTABLE
-    case PLANNED_CALL
-    case OTHER
+    case Requires
+    case Raised
+    case RaiseDue
+    case WrongType
+    case Unrepresentable
+    case PlannedCall
+    case Other
 
     def index(self) -> Int:
         return Int(self._get_enum_discriminant())

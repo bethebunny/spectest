@@ -214,13 +214,13 @@ def test_error_names() raises:
 
 
 def test_skip_causes() raises:
-    var causes: List[Cause] = [.REQUIRES, .RAISED, .RAISE_DUE, .WRONG_TYPE, .UNREPRESENTABLE, .PLANNED_CALL, .OTHER]
+    var causes: List[Cause] = [.Requires, .Raised, .RaiseDue, .WrongType, .Unrepresentable, .PlannedCall, .Other]
     var names = materialize[CAUSE_NAMES]()
     for i, cause in enumerate(causes):
         assert_equal(cause.index(), i)
         assert_equal(String(cause), String(names[i]))
-    assert_equal(Cause.OTHER.index(), CAUSE_COUNT - 1)
-    assert_equal(String(Cause.RAISE_DUE), "raise due")
+    assert_equal(Cause.Other.index(), CAUSE_COUNT - 1)
+    assert_equal(String(Cause.RaiseDue), "raise due")
 
 
 def test_models_inside_types() raises:

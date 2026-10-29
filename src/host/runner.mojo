@@ -422,7 +422,7 @@ struct Prop[D: Driver](Movable, Property):
             if self.host.take_timeout():
                 return self._inconclusive_all(counting, [])
             if src.invalid and counting and src.extend:
-                self._skip_all(.UNREPRESENTABLE)
+                self._skip_all(.Unrepresentable)
             raise e^
         var noted = len(self.spec_errors)
         if self.target is not None:
@@ -590,7 +590,7 @@ struct Prop[D: Driver](Movable, Property):
             var j = judge(spec, c, env, self.host)
             if j.is_false():
                 if counting:
-                    self._skip_all(.REQUIRES)
+                    self._skip_all(.Requires)
                 return Outcome.invalid()
             if not j.is_true():
                 return self._spec_error_all(String(spec.clauses[c].id, ": ", j.located_message(spec)), counting, args)
@@ -714,9 +714,9 @@ struct Prop[D: Driver](Movable, Property):
         match check:
             case .Condition:
                 if call.raised:
-                    return .SKIP(.RAISED)
+                    return .SKIP(.Raised)
                 if call.type_error is not None:
-                    return .SKIP(.WRONG_TYPE)
+                    return .SKIP(.WrongType)
                 return self._condition(clause, env, call)
             case .Raises:
                 return self._raises(clause, call)
@@ -740,9 +740,9 @@ struct Prop[D: Driver](Movable, Property):
     def _unjudged(mut self, j: Judgment, call: Call) -> Verdict:
         """A clause that is neither true nor false: skipped when a planned call or a due raise explains it."""
         if j.is_skip():
-            return .SKIP(.PLANNED_CALL)
+            return .SKIP(.PlannedCall)
         if call.raise_due():
-            return .SKIP(.RAISE_DUE)
+            return .SKIP(.RaiseDue)
         return self._error(j.located_message(self.loaded[].spec))
 
     def _condition(mut self, c: Int, env: Env, call: Call) -> Verdict:
@@ -767,7 +767,7 @@ struct Prop[D: Driver](Movable, Property):
             var did = String("raised ", call.reply.error_text()) if call.raised else String("returned")
             return .FAIL(String(cl.error, " was due (", when, " holds), but the call ", did))
         if call.must:
-            return .SKIP(.RAISE_DUE)
+            return .SKIP(.RaiseDue)
         if call.raised and call.mapped == cl.error and not contains_name(call.may, call.mapped):
             return .FAIL(String("the call raised ", cl.error, " although ", when, " is false"))
         return .PASS
@@ -791,7 +791,7 @@ struct Prop[D: Driver](Movable, Property):
     def _type_verdict(mut self, call: Call) -> Verdict:
         ref spec = self.loaded[].spec
         if call.raised:
-            return .SKIP(.RAISED)
+            return .SKIP(.Raised)
         if call.type_error is not None:
             return .FAIL(String("the result is not ", spec.types.text(self.result_type), ": ", call.type_error.value()))
         if not self.plan.result_has_model:
@@ -837,7 +837,7 @@ struct Prop[D: Driver](Movable, Property):
                 for handle in handles_of(spec.types, args[p], self.param_types[p], name):
                     handles.append((handle.copy(), param.name.copy()))
         if not handles:
-            return .SKIP(.OTHER)
+            return .SKIP(.Other)
         for handle, where in handles:
             var env = Env()
             env.set_self(handle.copy())

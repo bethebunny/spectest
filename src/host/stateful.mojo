@@ -411,7 +411,7 @@ struct Machine[D: Driver](Property):
 
     def _invariant(mut self, q: Int, live: List[Live], capture: Bool) -> Verdict:
         if not live:
-            return .SKIP(.OTHER)
+            return .SKIP(.Other)
         ref spec = self.loaded[].spec
         var c = self.invariants[q].clause
         self.invariant_host.begin_example([])
@@ -427,7 +427,7 @@ struct Machine[D: Driver](Property):
                     self._capture_invariant(q, live, k, env)
                 return .FAIL(String(self.invariants[q].id, " is false on ", live[k].name))
             if j.is_skip():
-                return .SKIP(.OTHER)
+                return .SKIP(.Other)
             var message = j.located_message(spec)
             if self.invariant_host.take_timeout():
                 return .TIMEOUT
