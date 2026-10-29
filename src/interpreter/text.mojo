@@ -11,36 +11,36 @@ __enum _Scan(ImplicitlyCopyable):
     """Where `normalize` is: in code, in a string literal, just after a backslash in
     one, or in a comment."""
 
-    case CODE
-    case STRING
-    case ESCAPE
-    case COMMENT
+    case Code
+    case String
+    case Escape
+    case Comment
 
 
 def normalize(text: String) -> String:
     """Drops comments and collapses whitespace outside string literals."""
     var out = String()
-    var scan = _Scan.CODE
+    var scan = _Scan.Code
     var pending_space = False
     for cp in text.codepoints():
         var ch = String(cp)
         match scan:
-            case .COMMENT:
+            case .Comment:
                 if ch == "\n":
-                    scan = .CODE
+                    scan = .Code
                     pending_space = True
-            case .ESCAPE:
+            case .Escape:
                 out += ch
-                scan = .STRING
-            case .STRING:
+                scan = .String
+            case .String:
                 out += ch
                 if ch == "\\":
-                    scan = .ESCAPE
+                    scan = .Escape
                 elif ch == '"':
-                    scan = .CODE
-            case .CODE:
+                    scan = .Code
+            case .Code:
                 if ch == "#":
-                    scan = .COMMENT
+                    scan = .Comment
                 elif ch in " \n\t\r":
                     pending_space = True
                 else:
@@ -49,7 +49,7 @@ def normalize(text: String) -> String:
                     pending_space = False
                     out += ch
                     if ch == '"':
-                        scan = .STRING
+                        scan = .String
     return out^
 
 
