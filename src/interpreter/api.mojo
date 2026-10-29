@@ -23,10 +23,10 @@ comptime EXPLAIN_LIMIT = 16
 __enum Verdict(Equatable, ImplicitlyCopyable):
     """Whether a clause holds: true, false, or neither for an error or a skip."""
 
-    case TRUE
-    case FALSE
-    case ERROR
-    case SKIP
+    case Holds
+    case Fails
+    case Error
+    case Skip
 
     def __eq__(self, other: Self) -> Bool:
         return self._get_enum_discriminant() == other._get_enum_discriminant()
@@ -47,19 +47,19 @@ struct Judgment(Copyable):
         self.node = node
 
     def __init__(out self, failure: Failure):
-        self = Self(Verdict.SKIP if failure.skipped else Verdict.ERROR, failure.message.copy(), failure.node)
+        self = Self(Verdict.Skip if failure.skipped else Verdict.Error, failure.message.copy(), failure.node)
 
     def is_true(self) -> Bool:
-        return self.verdict == .TRUE
+        return self.verdict == .Holds
 
     def is_false(self) -> Bool:
-        return self.verdict == .FALSE
+        return self.verdict == .Fails
 
     def is_error(self) -> Bool:
-        return self.verdict == .ERROR
+        return self.verdict == .Error
 
     def is_skip(self) -> Bool:
-        return self.verdict == .SKIP
+        return self.verdict == .Skip
 
     def located_message(self, spec: Spec) -> String:
         """The message, with the location and source of its node when it has one."""
@@ -68,13 +68,13 @@ struct Judgment(Copyable):
     def describe(self, spec: Spec) -> String:
         """`true`, `false`, `error: message (at ...)` or `skip: cause (at ...)`."""
         match self.verdict:
-            case .TRUE:
+            case .Holds:
                 return "true"
-            case .FALSE:
+            case .Fails:
                 return "false"
-            case .ERROR:
+            case .Error:
                 return String("error: ", self.located_message(spec))
-            case .SKIP:
+            case .Skip:
                 return String("skip: ", self.located_message(spec))
 
 
@@ -99,14 +99,14 @@ def judge[
     ref c = spec.clauses[clause]
     if c.expr == 0:
         if c.kind in [Op.RAISES, Op.MAY_RAISE]:
-            return Judgment(Verdict.TRUE)
-        return Judgment(Verdict.ERROR, String(t"{c.id}: a {c.kind} clause has no condition to evaluate"), c.node)
+            return Judgment(Verdict.Holds)
+        return Judgment(Verdict.Error, String(t"{c.id}: a {c.kind} clause has no condition to evaluate"), c.node)
     var run = Run()
     try:
         var v = value_of(spec, c.expr, env, run, host)
         if v.kind != .Bool:
-            return Judgment(Verdict.ERROR, String(t"the clause must evaluate to a bool, but it is {show(v)}"), c.expr)
-        return Judgment(Verdict.TRUE if v.as_bool() else Verdict.FALSE)
+            return Judgment(Verdict.Error, String(t"the clause must evaluate to a bool, but it is {show(v)}"), c.expr)
+        return Judgment(Verdict.Holds if v.as_bool() else Verdict.Fails)
     except err:
         return Judgment(run.failure_or(err, c.expr))
 
