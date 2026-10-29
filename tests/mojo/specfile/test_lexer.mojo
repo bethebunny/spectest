@@ -9,17 +9,17 @@ def kinds(source: String) raises -> String:
     for t in tokens(source, "t.spec"):
         if out.byte_length() > 0:
             out += " "
-        if t.kind == .NEWLINE:
+        if t.kind == .Newline:
             out += "NEWLINE"
-        elif t.kind == .INDENT:
+        elif t.kind == .Indent:
             out += "INDENT"
-        elif t.kind == .DEDENT:
+        elif t.kind == .Dedent:
             out += "DEDENT"
-        elif t.kind == .EOF:
+        elif t.kind == .Eof:
             out += "EOF"
-        elif t.kind == .STRING:
+        elif t.kind == .String:
             out += '"' + t.text + '"'
-        elif t.kind == .PERF:
+        elif t.kind == .Perf:
             out += "PERF(" + t.text + ")"
         else:
             out += t.text

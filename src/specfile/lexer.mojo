@@ -15,22 +15,22 @@ from specfile.chars import is_digit, is_word_char, is_word_start
 
 
 __enum TokenKind(Equatable, ImplicitlyCopyable, Writable):
-    case NAME
-    case NUMBER
-    case STRING
-    case OP
-    case PERF
-    case NEWLINE
-    case INDENT
-    case DEDENT
-    case EOF
+    case Name
+    case Number
+    case String
+    case Op
+    case Perf
+    case Newline
+    case Indent
+    case Dedent
+    case Eof
 
     def __eq__(self, other: Self) -> Bool:
         return self._get_enum_discriminant() == other._get_enum_discriminant()
 
     def is_layout(self) -> Bool:
-        """NEWLINE, INDENT or DEDENT, which the layout rule adds between the words."""
-        return self in (Self.NEWLINE, Self.INDENT, Self.DEDENT)
+        """Newline, Indent or Dedent, which the layout rule adds between the words."""
+        return self in (Self.Newline, Self.Indent, Self.Dedent)
 
 
 @fieldwise_init
@@ -43,10 +43,10 @@ struct Token(Copyable):
     var end_column: Int
 
     def is_op(self, op: StaticString) -> Bool:
-        return self.kind == .OP and self.text == op
+        return self.kind == .Op and self.text == op
 
     def is_keyword(self, word: StaticString) -> Bool:
-        return self.kind == .NAME and self.text == word
+        return self.kind == .Name and self.text == word
 
 
 def syntax_error(path: String, span: Span, message: String) -> Error:
@@ -218,13 +218,13 @@ struct _Lexer[origin: ImmOrigin]:
 
     def layout(mut self, kind: TokenKind, at: Span):
         """Appends a NEWLINE, INDENT, DEDENT or EOF, which stand for no text."""
-        self.tokens.append(Token(kind, "\n" if kind == .NEWLINE else "", at, at.column))
+        self.tokens.append(Token(kind, "\n" if kind == .Newline else "", at, at.column))
 
     def dedent(mut self, indent: Int, at: Span):
         """Closes the blocks indented deeper than `indent`."""
         while indent < self.block_indent():
             _ = self.indents.pop()
-            self.layout(.DEDENT, at)
+            self.layout(.Dedent, at)
 
     def continues(self, indent: Int) -> Bool:
         """Whether a line indented `indent` continues the current logical line."""
@@ -257,11 +257,11 @@ struct _Lexer[origin: ImmOrigin]:
         var opens_block = False
         if self.logical is not None:
             var previous = self.logical.value()
-            self.layout(.NEWLINE, previous.end)
+            self.layout(.Newline, previous.end)
             opens_block = previous.opener
         if opens_block and indent > self.block_indent():
             self.indents.append(indent)
-            self.layout(.INDENT, here)
+            self.layout(.Indent, here)
         elif indent > self.block_indent():
             raise self.error(i, "unexpected indentation")
         else:
@@ -273,7 +273,7 @@ struct _Lexer[origin: ImmOrigin]:
         var opener = any([_opens(rest, word) for word in materialize[_OPENERS]()])
         self.logical = _LogicalLine(indent=indent, opener=opener, perf=perf, end=here)
         if perf:
-            self.emit(.NAME, start=i, end=i + 4)
+            self.emit(.Name, start=i, end=i + 4)
             self.scan_perf(i + 4)
         else:
             self.scan(i)
@@ -284,10 +284,10 @@ struct _Lexer[origin: ImmOrigin]:
             raise self.error_at(bracket.span, t"'{chr(bracket.open)}' is never closed")
         if self.logical is not None:
             var end = self.logical.value().end
-            self.layout(.NEWLINE, end)
+            self.layout(.Newline, end)
         var end = self.position(self.line.end)
         self.dedent(0, end)
-        self.layout(.EOF, end)
+        self.layout(.Eof, end)
         var tokens: List[Token] = []
         swap(tokens, self.tokens)
         return tokens^
@@ -298,7 +298,7 @@ struct _Lexer[origin: ImmOrigin]:
         var a = self.line.end - left.byte_length()
         var b = a + left.rstrip(_SPACES).byte_length()
         if a < b:
-            self.emit(.PERF, start=a, end=b)
+            self.emit(.Perf, start=a, end=b)
 
     def scan(mut self, start: Int) raises:
         var i = start
@@ -321,7 +321,7 @@ struct _Lexer[origin: ImmOrigin]:
         var end = start + 1
         while is_word_char(self.byte(end)):
             end += 1
-        self.emit(.NAME, start=start, end=end)
+        self.emit(.Name, start=start, end=end)
         return end
 
     def scan_operator(mut self, start: Int) raises -> Int:
@@ -340,7 +340,7 @@ struct _Lexer[origin: ImmOrigin]:
                 raise self.error(
                     start, t"'{chr(c)}' does not match '{chr(opened.open)}' at {opened.span}"
                 )
-        self.emit(.OP, start=start, end=start + width)
+        self.emit(.Op, start=start, end=start + width)
         return start + width
 
     def after_digits(self, start: Int, *, hex: Bool) -> Int:
@@ -400,7 +400,7 @@ struct _Lexer[origin: ImmOrigin]:
                 stop += 1
             var text = self.text[byte=start:stop]
             raise self.error(start, t"invalid numeric literal '{text}'")
-        self.emit(.NUMBER, start=start, end=end)
+        self.emit(.Number, start=start, end=end)
         return end
 
     def scan_string(mut self, start: Int) raises -> Int:
@@ -417,7 +417,7 @@ struct _Lexer[origin: ImmOrigin]:
             else:
                 value.append(UInt8(c))
                 i += 1
-        self.emit_text(.STRING, String(unsafe_from_utf8=value), start=start, end=i + 1)
+        self.emit_text(.String, String(unsafe_from_utf8=value), start=start, end=i + 1)
         return i + 1
 
     def scan_escape(mut self, i: Int, mut value: List[UInt8]) raises -> Int:

@@ -77,7 +77,7 @@ struct Parser:
 
     def skip(mut self):
         ref t = self.current()
-        if t.kind == .EOF:
+        if t.kind == .Eof:
             return
         if not t.kind.is_layout():
             self.last_end = t.span.end
@@ -101,17 +101,17 @@ struct Parser:
         return False
 
     def is_clause_keyword(self) -> Bool:
-        return self.kind() == .NAME and _clause_op(self.current().text) != .NO_OP
+        return self.kind() == .Name and _clause_op(self.current().text) != .NO_OP
 
     def describe(self, t: Token) -> String:
         match t.kind:
-            case .NEWLINE:
+            case .Newline:
                 return "end of line"
-            case .INDENT:
+            case .Indent:
                 return "an indented block"
-            case .DEDENT:
+            case .Dedent:
                 return "end of block"
-            case .EOF:
+            case .Eof:
                 return "end of file"
             case _:
                 return String("'", self.ast.source[byte = t.span.start : t.span.end], "'")
@@ -136,14 +136,14 @@ struct Parser:
         self.skip()
 
     def expect_name(mut self, what: String = "a name") raises -> Token:
-        if self.kind() != .NAME:
+        if self.kind() != .Name:
             raise self.unexpected(what)
         if _is_reserved(self.current().text):
             raise self.error(t"'{self.current().text}' is a reserved word and cannot be {what}")
         return self.advance()
 
     def expect_newline(mut self) raises:
-        if self.kind() != .NEWLINE:
+        if self.kind() != .Newline:
             raise self.unexpected("end of line")
         self.skip()
 
@@ -208,7 +208,7 @@ struct Parser:
         var name = self.parse_qname_text("the spec name")
         self.expect_newline()
         var decls: List[Int] = []
-        while self.kind() != .EOF:
+        while self.kind() != .Eof:
             decls.append(self.parse_decl())
         self.ast.files[0].root = self.ast.add(.File, self.close(m), text=name^, children=decls^)
         return self.ast.root()
@@ -216,7 +216,7 @@ struct Parser:
     def parse_prelude_file(mut self) raises -> Int:
         var m = self.mark()
         var decls: List[Int] = []
-        while self.kind() != .EOF:
+        while self.kind() != .Eof:
             if self.is_keyword("use"):
                 decls.append(self.parse_use(.Use, "use"))
             elif self.is_keyword("fn"):
@@ -227,7 +227,7 @@ struct Parser:
                         at, "a prelude holds definitions: fn name(...) -> type = expression"
                     )
                 decls.append(id)
-            elif self.kind() == .INDENT:
+            elif self.kind() == .Indent:
                 raise self.error("unexpected indentation")
             else:
                 raise self.unexpected("a definition ('fn name(...) -> type = expression') or 'use'")
@@ -235,9 +235,9 @@ struct Parser:
         return self.ast.root()
 
     def parse_decl(mut self) raises -> Int:
-        if self.kind() == .INDENT:
+        if self.kind() == .Indent:
             raise self.error("unexpected indentation")
-        if self.kind() == .NAME:
+        if self.kind() == .Name:
             var text = self.current().text.copy()
             match text:
                 case "use":
@@ -275,7 +275,7 @@ struct Parser:
     def parse_use(mut self, kind: NodeKind, word: String) raises -> Int:
         var m = self.mark()
         self.skip()
-        if self.kind() != .STRING:
+        if self.kind() != .String:
             raise self.unexpected(t"a file name in quotes, e.g. {word} \"other\"")
         var path = self.advance().text.copy()
         var id = self.ast.add(kind, self.close(m), text=path^)
@@ -342,10 +342,10 @@ struct Parser:
         var name = self.parse_qname_text("an interface name" if interface else "a model name")
         var children: List[Int] = [self.parse_tparams()]
         self.expect_newline()
-        if self.kind() == .INDENT:
+        if self.kind() == .Indent:
             self.skip()
-            while self.kind() != .DEDENT:
-                if self.kind() == .EOF:
+            while self.kind() != .Dedent:
+                if self.kind() == .Eof:
                     raise self.unexpected(
                         "an interface member" if interface else "an observer or invariant"
                     )
@@ -384,14 +384,14 @@ struct Parser:
         if "." in name:
             raise self.error("a definition's name is a single name, not a qualified one")
         self.skip()
-        var continued = self.kind() == .NEWLINE and self.peek(1).kind == .INDENT
+        var continued = self.kind() == .Newline and self.peek(1).kind == .Indent
         if continued:
             self.skip()
             self.skip()
         children.append(self.parse_expr())
         self.expect_newline()
         if continued:
-            if self.kind() != .DEDENT:
+            if self.kind() != .Dedent:
                 raise self.unexpected("end of block")
             self.skip()
         return self.ast.add(.Def, self.close(m), text=name^, children=children^)
@@ -425,13 +425,13 @@ struct Parser:
 
     def parse_body(mut self, mut children: List[Int]) raises:
         """An optional indented block of partitions and clauses."""
-        if self.kind() != .INDENT:
+        if self.kind() != .Indent:
             return
         self.skip()
-        while self.kind() != .DEDENT:
-            if self.kind() == .EOF:
+        while self.kind() != .Dedent:
+            if self.kind() == .Eof:
                 raise self.unexpected("a clause")
-            if self.is_keyword("partition") and self.peek(1).kind == .NAME:
+            if self.is_keyword("partition") and self.peek(1).kind == .Name:
                 children.append(self.parse_partition())
             elif self.is_clause_keyword():
                 children.append(self.parse_clause())
@@ -465,12 +465,12 @@ struct Parser:
         self.skip()
         var param = self.expect_name("the partitioned parameter").text.copy()
         self.expect_newline()
-        if self.kind() != .INDENT:
+        if self.kind() != .Indent:
             raise self.unexpected("an indented list of classes ('name = expr')")
         self.skip()
         var classes: List[Int] = []
-        while self.kind() != .DEDENT:
-            if self.kind() == .EOF:
+        while self.kind() != .Dedent:
+            if self.kind() == .Eof:
                 raise self.unexpected("a partition class")
             var cm = self.mark()
             var class_name = self.expect_name("a partition class name").text.copy()
@@ -483,7 +483,7 @@ struct Parser:
 
     def parse_label(mut self) -> String:
         if (
-            self.kind() == .NAME
+            self.kind() == .Name
             and not _is_reserved(self.current().text)
             and self.peek(1).is_op(":")
         ):
@@ -518,7 +518,7 @@ struct Parser:
             case _:
                 var pm = self.mark()
                 var lines: List[String] = []
-                while self.kind() == .PERF:
+                while self.kind() == .Perf:
                     lines.append(self.advance().text.copy())
                 if not lines:
                     pm.start = self.last_end
@@ -533,7 +533,7 @@ struct Parser:
 
     def parse_qname_text(mut self, what: String) raises -> String:
         var name = self.expect_name(what).text.copy()
-        while self.is_op(".") and self.peek(1).kind == .NAME:
+        while self.is_op(".") and self.peek(1).kind == .Name:
             self.skip()
             name += String(".", self.advance().text)
         return name^
@@ -583,16 +583,16 @@ struct Parser:
 
     def parse_choice_alternative(mut self) raises -> Int:
         var m = self.mark()
-        if self.kind() == .STRING:
+        if self.kind() == .String:
             var value = self.advance().text.copy()
             return self.ast.add(.String, self.close(m), text=value^)
-        if self.kind() == .NAME:
+        if self.kind() == .Name:
             return self.parse_qname_node("a constant name")
         raise self.unexpected("a string literal or a constant name in the choice")
 
     def parse_type(mut self) raises -> Int:
         var m = self.mark()
-        if self.kind() == .STRING:
+        if self.kind() == .String:
             var alternatives = self.separated[Self.parse_choice_alternative]("|")
             return self.ast.add(.ChoiceType, self.close(m), children=alternatives^)
         if self.accept_op("("):
@@ -654,7 +654,7 @@ struct Parser:
         ref t = self.current()
         if t.is_keyword("in"):
             return .NO_OP if self.no_in else .IN
-        return Op.named(t.text, first=.EQ, last=.GE) if t.kind == .OP else .NO_OP
+        return Op.named(t.text, first=.EQ, last=.GE) if t.kind == .Op else .NO_OP
 
     def parse_comparison(mut self) raises -> Int:
         var m = self.mark()
@@ -675,7 +675,7 @@ struct Parser:
             return self.parse_unary()
         var m = self.mark()
         var left = self.parse_level(level + 1)
-        while self.kind() == .OP:
+        while self.kind() == .Op:
             var op = _level_op(level, self.current().text)
             if op == .NO_OP:
                 break
@@ -738,10 +738,10 @@ struct Parser:
             if self.is_op("("):
                 node = self.parse_call(node, self.empty_node(.TypeArgs), m)
             elif self.accept_op("."):
-                if self.kind() == .NUMBER:
+                if self.kind() == .Number:
                     var index = self.advance().text.copy()
                     node = self.ast.add(.TupleIndex, self.close(m), text=index^, children=[node])
-                elif self.kind() == .NAME:
+                elif self.kind() == .Name:
                     var attribute = self.advance().text.copy()
                     node = self.ast.add(.Attribute, self.close(m), text=attribute^, children=[node])
                 else:
@@ -770,7 +770,7 @@ struct Parser:
         if not self.accept_op(")"):
             while True:
                 var am = self.mark()
-                if self.kind() == .NAME and self.peek(1).is_op("="):
+                if self.kind() == .Name and self.peek(1).is_op("="):
                     var key = self.expect_name("an argument name")
                     self.skip()
                     if key.text in keywords:
@@ -794,13 +794,13 @@ struct Parser:
     def parse_atom(mut self) raises -> Int:
         var m = self.mark()
         match self.kind():
-            case .NUMBER:
+            case .Number:
                 var literal = self.advance().text.copy()
                 return self.ast.add(.Number, self.close(m), text=literal^)
-            case .STRING:
+            case .String:
                 var literal = self.advance().text.copy()
                 return self.ast.add(.String, self.close(m), text=literal^)
-            case .NAME:
+            case .Name:
                 return self.parse_name_atom()
             case _:
                 pass
@@ -830,7 +830,7 @@ struct Parser:
         if (
             _comprehension_op(text) != .NO_OP
             and self.peek(1).is_op("(")
-            and self.peek(2).kind == .NAME
+            and self.peek(2).kind == .Name
             and self.peek(3).is_keyword("in")
         ):
             return self.parse_comprehension()
